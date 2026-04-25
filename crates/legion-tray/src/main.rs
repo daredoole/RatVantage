@@ -54,8 +54,8 @@ fn run_tray(_bus_address: Option<String>) -> Result<()> {
         TrayMenu::read_only_scaffold().items.len()
     );
     let desktop = DesktopSession::from_env();
-    if desktop.may_need_appindicator_extension() {
-        println!("Desktop note: GNOME may require an AppIndicator extension.");
+    if let Some(guidance) = desktop.status_notifier_guidance() {
+        println!("Desktop note: {guidance}");
     }
     println!("Build with --features status-notifier to enable the tray backend.");
     Ok(())

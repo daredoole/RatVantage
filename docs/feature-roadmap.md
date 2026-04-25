@@ -131,7 +131,7 @@ Goal: make the confirmed controls more complete and user-friendly.
 - Quick fan preset selector. [implemented as disabled read-only menu scaffold]
 - Quick battery charge type selector. [implemented as disabled read-only menu scaffold]
 - Pending reboot indicator for GPU mode.
-- Fallback behavior when GNOME AppIndicator extension is missing.
+- Fallback behavior when GNOME AppIndicator extension is missing. [implemented as read-only guidance]
 
 ### Functional keyboard/peripheral probes
 

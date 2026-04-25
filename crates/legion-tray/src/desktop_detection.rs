@@ -30,6 +30,14 @@ impl DesktopSession {
             .as_deref()
             .is_some_and(|desktop| contains_token(desktop, "GNOME"))
     }
+
+    pub fn status_notifier_guidance(&self) -> Option<&'static str> {
+        if self.may_need_appindicator_extension() {
+            Some("GNOME may require an AppIndicator/KStatusNotifier extension for tray icons.")
+        } else {
+            None
+        }
+    }
 }
 
 fn contains_token(value: &str, token: &str) -> bool {
@@ -51,5 +59,12 @@ mod tests {
         let gnome = DesktopSession::from_values(Some("GNOME"), Some("wayland"));
         assert!(!gnome.prefers_status_notifier());
         assert!(gnome.may_need_appindicator_extension());
+        assert_eq!(
+            gnome.status_notifier_guidance(),
+            Some("GNOME may require an AppIndicator/KStatusNotifier extension for tray icons.")
+        );
+
+        let unknown = DesktopSession::from_values(None, None);
+        assert_eq!(unknown.status_notifier_guidance(), None);
     }
 }

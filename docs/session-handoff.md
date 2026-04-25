@@ -15,7 +15,7 @@
   - `5d3f1c0` (`Expose read-only dry-run planning`)
   - `e32dde0` (`Forward tray dashboard bus address`)
   - `15cdf63` (`Add packaged fan presets`)
-- Latest known milestone: read-only pre-alpha scaffold with GTK smoke coverage, hardened packaging metadata, disabled write planning, runtime 82WM fixture coverage, diagnostics log excerpts and compact summary counts, packaged fan preset assets with dry-run planning, read-only StatusNotifier tray backend, tray dashboard bus-address forwarding, tray tooltip profile/fan/count details, disabled quick fan preset and battery charge tray entries, KDE StatusNotifier tooltip/menu/quit smoke evidence, documented GNOME untested path, read-only battery overview telemetry, read-only EnvyControl GPU query, UI status/overview/diagnostics/dry-run output, GPU dry-run planning with reboot-required messaging, diagnostics choice-source paths, per-capability status labels, and GTK read-only Status, Profiles, Battery, Fans, and Diagnostics tabs.
+- Latest known milestone: read-only pre-alpha scaffold with GTK smoke coverage, hardened packaging metadata, disabled write planning, runtime 82WM fixture coverage, diagnostics log excerpts and compact summary counts, packaged fan preset assets with dry-run planning, read-only StatusNotifier tray backend, tray dashboard bus-address forwarding, tray tooltip profile/fan/count details, disabled quick fan preset and battery charge tray entries, GNOME tray extension guidance, KDE StatusNotifier tooltip/menu/quit smoke evidence, documented GNOME untested path, read-only battery overview telemetry, read-only EnvyControl GPU query, UI status/overview/diagnostics/dry-run output, GPU dry-run planning with reboot-required messaging, diagnostics choice-source paths, per-capability status labels, and GTK read-only Status, Profiles, Battery, Fans, and Diagnostics tabs.
 - Rust toolchain: pinned stable in `rust-toolchain.toml`; local stable installed because GTK stack requires rustc 1.92+.
 
 ## Implemented
@@ -54,6 +54,7 @@
 - StatusNotifier tray smoke script and manual checklist; autostart is still disabled.
 - KDE Plasma Wayland StatusNotifier smoke passed with fixture daemon: registration, screenshot capture, tooltip properties, read-only menu export, refresh, quit, and disabled write actions were verified.
 - GNOME AppIndicator extension path is intentionally untested for now: GNOME Shell and the extension are installed, but the active graphical session is KDE Wayland. Keep tray autostart disabled.
+- Tray startup emits GNOME AppIndicator/KStatusNotifier extension guidance when the desktop session reports GNOME.
 - Disabled tray autostart packaging placeholder.
 - Headless GTK smoke test for the optional shell, run through Xvfb in local and GitHub CI.
 - Private-bus contract tests and shared test support.

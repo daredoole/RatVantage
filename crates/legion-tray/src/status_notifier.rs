@@ -12,7 +12,7 @@ use ksni::menu::StandardItem;
 use ksni::{Category, MenuItem, Status, ToolTip, Tray};
 use legion_control_ui::LegionControlClient;
 
-use crate::{TrayAction, TrayMenu, TrayMenuItem, TraySummary};
+use crate::{DesktopSession, TrayAction, TrayMenu, TrayMenuItem, TraySummary};
 
 const TRAY_ID: &str = "org.ratvantage.LegionControl";
 const ICON_NAME: &str = "applications-system";
@@ -133,6 +133,10 @@ impl Tray for StatusNotifierTray {
 }
 
 pub fn run_status_notifier_tray(bus_address: Option<String>) -> Result<()> {
+    if let Some(guidance) = DesktopSession::from_env().status_notifier_guidance() {
+        eprintln!("Desktop note: {guidance}");
+    }
+
     let summary = load_summary(bus_address.as_deref())?;
     let shutdown_requested = Arc::new(AtomicBool::new(false));
     let tray = StatusNotifierTray::new(summary, bus_address, Arc::clone(&shutdown_requested));
