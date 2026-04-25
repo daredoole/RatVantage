@@ -76,6 +76,15 @@ pub struct HwmonSensor {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct BatteryTelemetry {
+    pub name: String,
+    pub path: String,
+    pub capacity_percent: Option<i64>,
+    pub status: Option<String>,
+    pub health: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct FanCurveCapability {
     pub id: String,
     pub status: CapabilityStatus,
@@ -117,6 +126,7 @@ pub struct GpuCapability {
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]
 pub struct TelemetrySnapshot {
     pub sensors: Vec<HwmonSensor>,
+    pub battery: Option<BatteryTelemetry>,
 }
 
 #[derive(Debug, Clone, Copy, Serialize, PartialEq, Eq)]

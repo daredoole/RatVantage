@@ -2,9 +2,9 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use legion_common::{
-    BatteryChargeTypeCapability, Capability, CapabilityRegistry, CapabilityStatus,
-    FanCurveCapability, FirmwareAttributeCapability, HardwareSummary, HwmonSensor,
-    IdeapadToggleCapability, LedCapability, PlatformProfileCapability, RiskLevel,
+    BatteryChargeTypeCapability, BatteryTelemetry, Capability, CapabilityRegistry,
+    CapabilityStatus, FanCurveCapability, FirmwareAttributeCapability, HardwareSummary,
+    HwmonSensor, IdeapadToggleCapability, LedCapability, PlatformProfileCapability, RiskLevel,
     TelemetrySnapshot,
 };
 
@@ -24,6 +24,7 @@ impl Default for ProbeOptions {
 pub fn probe(options: &ProbeOptions) -> CapabilityRegistry {
     let platform_profile = detect_platform_profile(&options.sysfs_root);
     let battery_charge_type = detect_battery_charge_type(&options.sysfs_root);
+    let battery_telemetry = detect_battery_telemetry(&options.sysfs_root);
     let hwmon_sensors = detect_hwmon_sensors(&options.sysfs_root);
     let fan_curves = detect_fan_curves(&options.sysfs_root);
     let leds = detect_leds(&options.sysfs_root);
@@ -76,6 +77,7 @@ pub fn probe(options: &ProbeOptions) -> CapabilityRegistry {
         battery_charge_type,
         telemetry: TelemetrySnapshot {
             sensors: hwmon_sensors.clone(),
+            battery: battery_telemetry,
         },
         hwmon_sensors,
         fan_curves,
@@ -159,6 +161,25 @@ fn detect_battery_charge_type(root: &Path) -> Option<BatteryChargeTypeCapability
         current,
         choices,
         path: path.display().to_string(),
+    })
+}
+
+fn detect_battery_telemetry(root: &Path) -> Option<BatteryTelemetry> {
+    let path = root.join("sys/class/power_supply/BAT0");
+    let capacity_percent = read_i64(path.join("capacity"));
+    let status = read_trim(path.join("status"));
+    let health = read_trim(path.join("health"));
+
+    if capacity_percent.is_none() && status.is_none() && health.is_none() {
+        return None;
+    }
+
+    Some(BatteryTelemetry {
+        name: "BAT0".to_owned(),
+        path: path.display().to_string(),
+        capacity_percent,
+        status,
+        health,
     })
 }
 
@@ -433,6 +454,11 @@ mod tests {
         assert!(registry.ideapad_toggles.iter().any(|toggle| {
             toggle.name == "conservation_mode" && toggle.current_value.as_deref() == Some("1")
         }));
+        let battery = registry.telemetry.battery.as_ref().unwrap();
+        assert_eq!(battery.name, "BAT0");
+        assert_eq!(battery.capacity_percent, Some(79));
+        assert_eq!(battery.status.as_deref(), Some("Charging"));
+        assert_eq!(battery.health.as_deref(), Some("Good"));
     }
 
     #[test]
@@ -508,6 +534,7 @@ mod tests {
         assert!(registry.fan_curves.is_empty());
         assert!(registry.leds.is_empty());
         assert!(registry.ideapad_toggles.is_empty());
+        assert!(registry.telemetry.battery.is_none());
 
         fs::remove_dir_all(root).unwrap();
     }

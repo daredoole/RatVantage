@@ -20,6 +20,7 @@ Current pre-alpha code provides the safe read-only base:
 - Validator-backed dry-run planning for platform profile and battery charge type.
 - Daemon-side Rust adapters for dry-run planning, without D-Bus write methods.
 - Runtime-captured 82WM fixture coverage, including bracketed battery `charge_types` current-value parsing.
+- Read-only battery telemetry for capacity, status, and health where `BAT0` exposes it.
 - Fixture tests, private-bus integration tests, clippy/fmt/test local CI, and GitHub CI.
 
 ## Next immediate work
@@ -52,7 +53,7 @@ Goal: safe, useful daily controls using only confirmed interfaces and conservati
 - Fan 1 / fan 2 RPM.
 - Temperature telemetry with sensor labels where available.
 - GPU mode from EnvyControl if installed.
-- Basic battery capacity/status/health where exposed.
+- Basic battery capacity/status/health where exposed. [implemented for `BAT0` telemetry]
 
 ### Profiles
 

@@ -29,6 +29,27 @@ fn read_only_methods_return_expected_json_contracts() {
         .sensors
         .iter()
         .any(|sensor| sensor.label.as_deref() == Some("CPU Fan")));
+    assert_eq!(
+        telemetry
+            .battery
+            .as_ref()
+            .and_then(|battery| battery.capacity_percent),
+        Some(79)
+    );
+    assert_eq!(
+        telemetry
+            .battery
+            .as_ref()
+            .and_then(|battery| battery.status.as_deref()),
+        Some("Charging")
+    );
+    assert_eq!(
+        telemetry
+            .battery
+            .as_ref()
+            .and_then(|battery| battery.health.as_deref()),
+        Some("Good")
+    );
 
     let raw: CapabilityRegistry = call_json(&proxy, "GetRawProbeReport");
     assert_eq!(raw.hardware, hardware);
