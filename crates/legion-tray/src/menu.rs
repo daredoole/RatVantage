@@ -37,7 +37,22 @@ impl TrayMenu {
                     &write_disabled,
                 ),
                 disabled_item(
-                    "Set battery charge type",
+                    "Set battery charge type: Fast",
+                    TrayAction::SetBatteryChargeType,
+                    &write_disabled,
+                ),
+                disabled_item(
+                    "Set battery charge type: Standard",
+                    TrayAction::SetBatteryChargeType,
+                    &write_disabled,
+                ),
+                disabled_item(
+                    "Set battery charge type: Conservation",
+                    TrayAction::SetBatteryChargeType,
+                    &write_disabled,
+                ),
+                disabled_item(
+                    "Set battery charge type: Long_Life",
                     TrayAction::SetBatteryChargeType,
                     &write_disabled,
                 ),
@@ -90,6 +105,19 @@ mod tests {
 
         assert_eq!(menu.items[0].action, TrayAction::OpenDashboard);
         assert!(menu.items[0].enabled);
+        assert_eq!(
+            menu.items
+                .iter()
+                .filter(|item| item.action == TrayAction::SetBatteryChargeType)
+                .map(|item| item.label.as_str())
+                .collect::<Vec<_>>(),
+            [
+                "Set battery charge type: Fast",
+                "Set battery charge type: Standard",
+                "Set battery charge type: Conservation",
+                "Set battery charge type: Long_Life"
+            ]
+        );
         assert_eq!(
             menu.items
                 .iter()

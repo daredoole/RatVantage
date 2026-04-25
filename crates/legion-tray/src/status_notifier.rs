@@ -230,7 +230,22 @@ mod tests {
         assert!(menu_has_enabled_item(&menu, "Refresh status"));
         assert!(menu_has_enabled_item(&menu, "Quit"));
         assert!(menu_has_disabled_item(&menu, "Set platform profile"));
-        assert!(menu_has_disabled_item(&menu, "Set battery charge type"));
+        assert!(menu_has_disabled_item(
+            &menu,
+            "Set battery charge type: Fast"
+        ));
+        assert!(menu_has_disabled_item(
+            &menu,
+            "Set battery charge type: Standard"
+        ));
+        assert!(menu_has_disabled_item(
+            &menu,
+            "Set battery charge type: Conservation"
+        ));
+        assert!(menu_has_disabled_item(
+            &menu,
+            "Set battery charge type: Long_Life"
+        ));
         assert!(menu_has_disabled_item(&menu, "Apply preset: Quiet office"));
         assert!(menu_has_disabled_item(
             &menu,
