@@ -1,6 +1,8 @@
 use anyhow::Result;
 use clap::Parser;
-use legion_control_ui::{LegionControlClient, UiStatus, DBUS_INTERFACE};
+#[cfg(not(feature = "gtk-ui"))]
+use legion_control_ui::DBUS_INTERFACE;
+use legion_control_ui::{LegionControlClient, UiStatus};
 
 #[cfg(feature = "gtk-ui")]
 mod gtk_shell;
