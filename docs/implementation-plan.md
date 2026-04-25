@@ -516,6 +516,7 @@ ErrorOccurred(s code, s message)
 16. [x] Add read-only daemon session-bus dev mode and record automated KDE StatusNotifier registration smoke.
 17. [x] Record KDE Plasma Wayland StatusNotifier tooltip/menu/quit smoke evidence.
 18. [x] Record GNOME-with-extension smoke blocker from the current KDE session.
+19. [x] Mark GNOME AppIndicator extension path untested and continue read-only MVP work.
 
 ## Test strategy
 

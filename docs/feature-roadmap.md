@@ -24,7 +24,8 @@ Current pre-alpha code provides the safe read-only base:
 
 ## Next immediate work
 
-- Log into GNOME with AppIndicator/KStatusNotifier enabled and run StatusNotifier smoke before enabling autostart.
+- Keep tray autostart disabled; GNOME AppIndicator extension path is untested.
+- Continue MVP overview/diagnostics work using read-only daemon data.
 - Add more captured fixtures when additional supported Legion machines are available.
 - Keep progress docs current after each completed roadmap slice.
 - Keep GitHub CI as remote guard; run `./scripts/ci-local.sh` before pushing to reduce failed CI minutes.
@@ -158,7 +159,7 @@ Expose only when probed and with warnings:
 - Optional sync policy between Lenovo platform profile and generic desktop power profile.
 - Notifications for profile/fan reset after resume.
 - KDE-specific tray behavior testing.
-- GNOME-specific AppIndicator extension detection.
+- GNOME-specific AppIndicator extension detection and smoke testing.
 
 ### Preset automation, local only
 

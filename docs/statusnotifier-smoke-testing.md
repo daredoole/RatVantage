@@ -40,10 +40,11 @@ Manual checks during the hold window:
 | Desktop | Expected result | Gate |
 |---|---|---|
 | KDE Plasma | StatusNotifier item appears natively. | Must pass before autostart. |
-| GNOME with AppIndicator/KStatusNotifier extension | StatusNotifier item appears through the extension. | Must pass before autostart. |
+| GNOME with AppIndicator/KStatusNotifier extension | StatusNotifier item may appear through the extension. | Untested; do not rely on it for release readiness yet. |
 | GNOME without extension or unsupported shell | Script fails because no watcher is available, or no tray item is visible. | Do not enable autostart. |
 
-Do not flip `Hidden=true` or `X-GNOME-Autostart-enabled=false` until KDE and GNOME-with-extension smoke checks pass.
+Do not flip `Hidden=true` or `X-GNOME-Autostart-enabled=false` yet. KDE smoke has
+passed, but the GNOME AppIndicator extension path is explicitly untested.
 
 ## GNOME Availability Check
 
@@ -60,7 +61,8 @@ gnome-extensions info appindicatorsupport@rgcjonas.gmail.com
 ```
 
 The smoke only counts as GNOME coverage when `XDG_CURRENT_DESKTOP` is GNOME and
-the AppIndicator/KStatusNotifier extension is enabled in that same session.
+the AppIndicator/KStatusNotifier extension is enabled in that same session. Until
+that happens, treat the GNOME extension JavaScript path as untested.
 
 ## Recorded Results
 
@@ -68,4 +70,4 @@ the AppIndicator/KStatusNotifier extension is enabled in that same session.
 |---|---|---|---|---|
 | 2026-04-25 | KDE Plasma Wayland | `scripts/smoke-statusnotifier-tray.sh --bus-address "$DBUS_SESSION_BUS_ADDRESS" --hold-seconds 1` with fixture daemon on `--session` | Automated registration passed, `before=6 after=7`, autostart disabled. | Completed by KDE desktop evidence below. |
 | 2026-04-25 | KDE Plasma Wayland | Fixture daemon on `--session`, tray on session bus, `busctl` StatusNotifier/DBusMenu checks, screenshot at `target/smoke/statusnotifier-kde-wayland-2026-04-25.png` | Registered item exposed `Id=org.ratvantage.LegionControl`, `Title=Legion Control`, `Category=Hardware`, `Status=Active`, `IconName=applications-system`, tooltip `82WM Legion Pro 5 16ARX8: 7 read-only capabilities`; menu exported Open dashboard, Refresh status, Quit, and disabled write actions; DBusMenu Refresh succeeded; DBusMenu Quit removed the tray item. | GNOME-with-extension smoke still required before enabling autostart. |
-| 2026-04-25 | GNOME with AppIndicator/KStatusNotifier extension | Local availability check from current session | Blocked: active graphical session is KDE Wayland (`XDG_CURRENT_DESKTOP=KDE`, `KDE_FULL_SESSION=true`). GNOME Shell 49.6 is installed, GNOME session files exist, and `/usr/share/gnome-shell/extensions/appindicatorsupport@rgcjonas.gmail.com` supports shell versions 45-49, but no active GNOME session is available to validate extension rendering. | Log into GNOME with the extension enabled and run the supported desktop check. |
+| 2026-04-25 | GNOME with AppIndicator/KStatusNotifier extension | Local availability check from current session | Skipped for now: active graphical session is KDE Wayland (`XDG_CURRENT_DESKTOP=KDE`, `KDE_FULL_SESSION=true`). GNOME Shell 49.6 is installed, GNOME session files exist, and `/usr/share/gnome-shell/extensions/appindicatorsupport@rgcjonas.gmail.com` supports shell versions 45-49, but the extension JavaScript/rendering path is untested. | Optional future GNOME validation; not the next roadmap blocker. |
