@@ -28,14 +28,17 @@ fn main() -> Result<()> {
 
     #[cfg(feature = "gtk-ui")]
     {
-        return gtk_shell::run();
+        gtk_shell::run()
     }
 
-    println!("Legion Control UI scaffold");
-    println!("D-Bus target: {DBUS_INTERFACE}");
-    println!("Read-only client module is available for hardware summary and capabilities.");
-    println!("Direct sysfs access is intentionally not implemented.");
-    Ok(())
+    #[cfg(not(feature = "gtk-ui"))]
+    {
+        println!("Legion Control UI scaffold");
+        println!("D-Bus target: {DBUS_INTERFACE}");
+        println!("Read-only client module is available for hardware summary and capabilities.");
+        println!("Direct sysfs access is intentionally not implemented.");
+        Ok(())
+    }
 }
 
 fn print_status(status: &UiStatus) {
