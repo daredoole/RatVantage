@@ -60,6 +60,7 @@ cargo run -p legion-probe -- --json --sysfs-root tests/fixtures/sysfs-82wm-confi
 cargo run -p legion-control-daemon -- --dry-run
 cargo run -p legion-control-daemon -- --session --sysfs-root tests/fixtures/sysfs-82wm-confirmed
 cargo run -p legion-control-ui --features gtk-ui
+cargo run -p legion-control-ui -- --overview --bus-address <dbus-address>
 cargo run -p legion-control-tray -- --bus-address <dbus-address>
 cargo run -p legion-control-tray -- --status --bus-address <dbus-address>
 cargo run -p legion-control-tray -- --tooltip --bus-address <dbus-address>
@@ -73,7 +74,7 @@ Do not turn GitHub CI off completely yet. Use local CI before pushing, then keep
 
 ## Next tasks
 
-1. Continue MVP overview/diagnostics work using read-only daemon data.
+1. Continue MVP diagnostics work using read-only daemon data.
 2. Add more captured fixtures when additional supported Legion machines are available.
 
 ## Working process

@@ -74,6 +74,7 @@ cargo run -p legion-probe -- --json --sysfs-root tests/fixtures/sysfs-82wm-runti
 cargo run -p legion-control-daemon -- --dry-run
 cargo run -p legion-control-daemon -- --session --sysfs-root tests/fixtures/sysfs-82wm-confirmed
 cargo run -p legion-control-ui -- --status --bus-address <dbus-address>
+cargo run -p legion-control-ui -- --overview --bus-address <dbus-address>
 cargo run -p legion-control-tray -- --status --bus-address <dbus-address>
 cargo run -p legion-control-tray -- --tooltip --bus-address <dbus-address>
 cargo run -p legion-control-ui --features gtk-ui

@@ -519,6 +519,7 @@ ErrorOccurred(s code, s message)
 19. [x] Mark GNOME AppIndicator extension path untested and continue read-only MVP work.
 20. [x] Add read-only `BAT0` capacity/status/health telemetry for overview data.
 21. [x] Add read-only EnvyControl GPU mode query when installed.
+22. [x] Add read-only UI `--overview` summary for MVP overview data.
 
 ## Test strategy
 

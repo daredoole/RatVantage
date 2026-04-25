@@ -22,12 +22,13 @@ Current pre-alpha code provides the safe read-only base:
 - Runtime-captured 82WM fixture coverage, including bracketed battery `charge_types` current-value parsing.
 - Read-only battery telemetry for capacity, status, and health where `BAT0` exposes it.
 - Read-only EnvyControl GPU mode query when `envycontrol --query` is available.
+- Read-only UI `--overview` summary for platform profile, battery mode, fan RPM, temperatures, GPU mode, and battery telemetry.
 - Fixture tests, private-bus integration tests, clippy/fmt/test local CI, and GitHub CI.
 
 ## Next immediate work
 
 - Keep tray autostart disabled; GNOME AppIndicator extension path is untested.
-- Continue MVP overview/diagnostics work using read-only daemon data.
+- Continue MVP diagnostics work using read-only daemon data.
 - Add more captured fixtures when additional supported Legion machines are available.
 - Keep progress docs current after each completed roadmap slice.
 - Keep GitHub CI as remote guard; run `./scripts/ci-local.sh` before pushing to reduce failed CI minutes.
@@ -49,12 +50,12 @@ Goal: safe, useful daily controls using only confirmed interfaces and conservati
 
 ### Overview
 
-- Current platform profile.
-- Current battery charge type.
-- Fan 1 / fan 2 RPM.
-- Temperature telemetry with sensor labels where available.
-- GPU mode from EnvyControl if installed. [implemented as read-only query]
-- Basic battery capacity/status/health where exposed. [implemented for `BAT0` telemetry]
+- Current platform profile. [implemented in `--overview`]
+- Current battery charge type. [implemented in `--overview`]
+- Fan 1 / fan 2 RPM. [implemented in `--overview`]
+- Temperature telemetry with sensor labels where available. [implemented in `--overview`]
+- GPU mode from EnvyControl if installed. [implemented in `--overview` as read-only query]
+- Basic battery capacity/status/health where exposed. [implemented in `--overview` for `BAT0` telemetry]
 
 ### Profiles
 

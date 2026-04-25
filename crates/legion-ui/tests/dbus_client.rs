@@ -2,7 +2,7 @@ use std::process::Command;
 
 use legion_common::{Capability, CapabilityStatus, HardwareSummary, RiskLevel};
 use legion_control_daemon::{LegionControl, DBUS_INTERFACE, DBUS_PATH};
-use legion_control_ui::{LegionControlClient, UiStatus};
+use legion_control_ui::{render_overview_lines, LegionControlClient, UiStatus};
 use legion_probe::ProbeOptions;
 use ratvantage_test_support::{fixture_root, PrivateBus};
 use zbus::blocking::ConnectionBuilder;
@@ -52,6 +52,13 @@ fn client_reads_daemon_contract_over_private_bus() {
         .sensors
         .iter()
         .any(|sensor| sensor.label.as_deref() == Some("CPU Fan")));
+    assert_eq!(
+        telemetry
+            .battery
+            .as_ref()
+            .and_then(|battery| battery.capacity_percent),
+        Some(79)
+    );
 
     let raw = client.raw_probe_report().unwrap();
     assert_eq!(raw.hardware, hardware);
@@ -68,6 +75,20 @@ fn client_reads_daemon_contract_over_private_bus() {
             .as_ref()
             .and_then(|charge_type| charge_type.current.as_deref()),
         Some("Standard")
+    );
+    assert_eq!(
+        render_overview_lines(&raw),
+        [
+            "Legion Control overview",
+            "platform_profile=balanced",
+            "battery_charge_type=Standard",
+            "fan_rpm=CPU Fan:2410",
+            "temperatures=CPU Temp:52000",
+            "gpu_mode=unknown",
+            "battery_capacity_percent=79",
+            "battery_status=Charging",
+            "battery_health=Good",
+        ]
     );
 
     let refreshed = client.refresh_capabilities().unwrap();
@@ -146,6 +167,32 @@ fn status_cli_prints_hardware_and_capability_summary() {
             "product_version=Legion Pro 5 16ARX8\n",
             "capability_count=8\n",
             "capabilities=battery_charge_type,fan_curves,firmware_attributes,gpu,hwmon,ideapad_toggles,leds,platform_profile\n",
+        )
+    );
+}
+
+#[test]
+fn overview_cli_prints_read_only_mvp_summary() {
+    let (_bus, _service_connection, address) = fixture_service();
+    let output = Command::new(env!("CARGO_BIN_EXE_legion-control-ui"))
+        .args(["--overview", "--bus-address", &address])
+        .output()
+        .unwrap();
+
+    assert!(output.status.success());
+    assert!(output.stderr.is_empty());
+    assert_eq!(
+        String::from_utf8(output.stdout).unwrap(),
+        concat!(
+            "Legion Control overview\n",
+            "platform_profile=balanced\n",
+            "battery_charge_type=Standard\n",
+            "fan_rpm=CPU Fan:2410\n",
+            "temperatures=CPU Temp:52000\n",
+            "gpu_mode=unknown\n",
+            "battery_capacity_percent=79\n",
+            "battery_status=Charging\n",
+            "battery_health=Good\n",
         )
     );
 }

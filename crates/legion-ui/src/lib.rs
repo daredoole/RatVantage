@@ -92,6 +92,95 @@ impl UiStatus {
     }
 }
 
+pub fn render_overview_lines(report: &CapabilityRegistry) -> Vec<String> {
+    vec![
+        "Legion Control overview".to_owned(),
+        format!(
+            "platform_profile={}",
+            report
+                .platform_profile
+                .as_ref()
+                .and_then(|profile| profile.current.as_deref())
+                .unwrap_or("unknown")
+        ),
+        format!(
+            "battery_charge_type={}",
+            report
+                .battery_charge_type
+                .as_ref()
+                .and_then(|charge_type| charge_type.current.as_deref())
+                .unwrap_or("unknown")
+        ),
+        format!(
+            "fan_rpm={}",
+            render_sensor_values(&report.telemetry.sensors, "fan")
+        ),
+        format!(
+            "temperatures={}",
+            render_sensor_values(&report.telemetry.sensors, "temp")
+        ),
+        format!(
+            "gpu_mode={}",
+            report
+                .gpu
+                .as_ref()
+                .and_then(|gpu| gpu.mode.as_deref())
+                .unwrap_or("unknown")
+        ),
+        format!(
+            "battery_capacity_percent={}",
+            report
+                .telemetry
+                .battery
+                .as_ref()
+                .and_then(|battery| battery.capacity_percent)
+                .map(|value| value.to_string())
+                .unwrap_or_else(|| "unknown".to_owned())
+        ),
+        format!(
+            "battery_status={}",
+            report
+                .telemetry
+                .battery
+                .as_ref()
+                .and_then(|battery| battery.status.as_deref())
+                .unwrap_or("unknown")
+        ),
+        format!(
+            "battery_health={}",
+            report
+                .telemetry
+                .battery
+                .as_ref()
+                .and_then(|battery| battery.health.as_deref())
+                .unwrap_or("unknown")
+        ),
+    ]
+}
+
+fn render_sensor_values(sensors: &[legion_common::HwmonSensor], kind: &str) -> String {
+    let values = sensors
+        .iter()
+        .filter(|sensor| sensor.kind == kind)
+        .map(|sensor| {
+            format!(
+                "{}:{}",
+                sensor.label.as_deref().unwrap_or("unknown"),
+                sensor
+                    .value
+                    .map(|value| value.to_string())
+                    .unwrap_or_else(|| "unknown".to_owned())
+            )
+        })
+        .collect::<Vec<_>>();
+
+    if values.is_empty() {
+        "unknown".to_owned()
+    } else {
+        values.join(",")
+    }
+}
+
 impl LegionControlClient {
     pub fn system() -> Result<Self> {
         Ok(Self {
