@@ -15,6 +15,8 @@ Next implementation work should keep the read-only boundary intact while packagi
 
 ## Repo structure
 
+Current scaffold:
+
 ```text
 RatVantage/
 ├── Cargo.toml
@@ -49,7 +51,67 @@ RatVantage/
 └── target/
 ```
 
-Planned packaging directories (`data/`, `packaging/`, `xtask/`, and tray-specific code) are not present yet.
+Target layout:
+
+```text
+RatVantage/
+├── Cargo.toml
+├── README.md
+├── BRAND.md
+├── AGENTS.md
+├── docs/
+│   ├── architecture.md
+│   ├── fedora-packaging.md
+│   ├── feature-roadmap.md
+│   ├── hardware-control-matrix.md
+│   ├── implementation-plan.md
+│   ├── research-summary.md
+│   ├── safety-model.md
+│   └── session-handoff.md
+├── prompts/
+│   └── codex-build-kickoff.md
+├── scripts/
+│   ├── ci-local.sh
+│   └── install-dev-deps-fedora.sh
+├── crates/
+│   ├── legion-common/
+│   ├── legion-daemon/
+│   ├── legion-ui/
+│   ├── legion-tray/
+│   ├── legion-probe/
+│   └── test-support/
+├── data/
+│   ├── dbus/
+│   │   ├── org.ratvantage.LegionControl1.conf
+│   │   └── org.ratvantage.LegionControl1.service
+│   ├── systemd/
+│   │   └── legion-control-daemon.service
+│   ├── polkit/
+│   │   └── org.ratvantage.LegionControl1.policy
+│   ├── desktop/
+│   │   ├── org.ratvantage.LegionControl.desktop
+│   │   └── org.ratvantage.LegionControl.Tray.desktop
+│   ├── metainfo/
+│   │   └── org.ratvantage.LegionControl.metainfo.xml
+│   ├── icons/
+│   │   └── hicolor/
+│   └── presets/
+│       ├── quiet-office.toml
+│       ├── balanced-daily.toml
+│       ├── gaming.toml
+│       └── max-safe.toml
+├── packaging/
+│   └── rpm/
+│       └── legion-control.spec
+├── tests/
+│   ├── fixtures/
+│   │   └── sysfs-82wm-confirmed/
+│   └── integration/
+└── xtask/
+    └── src/main.rs
+```
+
+Keep the current scaffold accurate, but preserve the target layout so future work has a clear destination.
 
 ## Rust crate layout
 
