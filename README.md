@@ -32,6 +32,8 @@ Pre-alpha implementation scaffold exists:
 
 No hardware write path exists yet. Write support must wait for validators, polkit policy, rollback behavior, and manual target-machine validation.
 
+For continuation work, start from [docs/session-handoff.md](docs/session-handoff.md). It records the latest commits, next roadmap slice, safety constraints, validation commands, and the expected orchestrator/agent workflow for new Codex sessions.
+
 ## Supported Hardware
 
 Initial target:

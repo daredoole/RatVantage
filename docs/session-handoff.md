@@ -7,13 +7,15 @@
 - Branch: `main`
 - Global Codex config: GitHub MCP is disabled, not removed, in `/home/darrian/.codex/config.toml`. New sessions should not rely on GitHub MCP unless the user explicitly re-enables it.
 - Latest local commits:
-  - `0f93663` (`Refresh overview handoff`)
-  - `cb8983e` (`Add read-only UI overview command`)
-  - `000029c` (`Refresh EnvyControl handoff`)
-  - `bb1de2f` (`Add read-only EnvyControl GPU query`)
-  - `832a084` (`Refresh battery telemetry handoff`)
-  - `1d23afd` (`Add battery overview telemetry`)
-- Latest known milestone: read-only pre-alpha scaffold with GTK smoke coverage, hardened packaging metadata, disabled write planning, runtime 82WM fixture coverage, read-only StatusNotifier tray backend, KDE StatusNotifier tooltip/menu/quit smoke evidence, documented GNOME untested path, read-only battery overview telemetry, read-only EnvyControl GPU query, UI status/overview/diagnostics output, and GTK read-only Status, Profiles, Battery, and Diagnostics tabs.
+  - `HEAD` (`Refresh session handoff`; run `git log --oneline -1` for the exact hash)
+  - `26c103a` (`Add GTK profile and battery pages`)
+  - `c7d7f97` (`Track choice source paths`)
+  - `cd42ebb` (`Clarify tray capability counts`)
+  - `120078c` (`Add UI dry-run plan preview`)
+  - `5d3f1c0` (`Expose read-only dry-run planning`)
+  - `e32dde0` (`Forward tray dashboard bus address`)
+  - `15cdf63` (`Add packaged fan presets`)
+- Latest known milestone: read-only pre-alpha scaffold with GTK smoke coverage, hardened packaging metadata, disabled write planning, runtime 82WM fixture coverage, diagnostics log excerpts, packaged fan preset assets, read-only StatusNotifier tray backend, tray dashboard bus-address forwarding, tray available/missing capability counts, KDE StatusNotifier tooltip/menu/quit smoke evidence, documented GNOME untested path, read-only battery overview telemetry, read-only EnvyControl GPU query, UI status/overview/diagnostics/dry-run output, diagnostics choice-source paths, per-capability status labels, and GTK read-only Status, Profiles, Battery, and Diagnostics tabs.
 - Rust toolchain: pinned stable in `rust-toolchain.toml`; local stable installed because GTK stack requires rustc 1.92+.
 
 ## Implemented
@@ -89,11 +91,16 @@ Do not turn GitHub CI off completely yet. Use local CI before pushing, then keep
 
 ## Next tasks
 
-1. Add more captured fixtures when additional supported Legion machines are available.
+1. If another supported Legion machine is available, add a captured fixture with `scripts/capture-sysfs-fixture.sh`, validate probe behavior, update docs, and commit.
+2. If no new hardware fixture is available, pick the next safe planning-only slice from the roadmap. Best current candidate: EnvyControl GPU switch dry-run planning with validation and reboot-required messaging, but no execution.
+3. After that, continue with fan preset validation/planning or GTK read-only polish. Keep all hardware mutation disabled until the safety checklist below is satisfied.
 
 ## Working process
 
 - Read `AGENTS.md`, this handoff, and current `git status` before editing.
+- Act as orchestrator for the session: form the slice plan, delegate independent audits or bounded implementation work to agents when useful, keep the critical path local, then integrate and review agent results.
+- Prefer multiple agents when there are independent questions or disjoint write scopes, such as roadmap selection, fixture audit, UI tests, packaging/docs review, or separate crate changes.
+- When spawning worker agents, state exact file ownership, remind them that others may edit the repo, and require changed file paths in their final answer.
 - Keep responses under 500 words when possible and put long artifacts in files.
 - Follow context-mode routing from `AGENTS.md`: no `curl`, no `wget`, no inline HTTP fetches, and route large command/search/file-analysis output through context-mode.
 - Use `rg`/`rg --files` for local search, and use parallel reads where useful.
@@ -102,7 +109,6 @@ Do not turn GitHub CI off completely yet. Use local CI before pushing, then keep
 - Validate with focused checks plus `./scripts/ci-local.sh` before committing.
 - Update `README.md`, `docs/feature-roadmap.md`, `docs/implementation-plan.md`, and this handoff when progress or next tasks change.
 - Commit each completed slice separately with a short imperative message.
-- Use multiple agents for bounded, independent roadmap slices or audits. Give each agent a clear write scope, remind it not to revert others' edits, then integrate and review before committing.
 - Do not end a slice half-finished: implement, validate, update progress docs, and commit.
 
 ## New session prompt
@@ -110,7 +116,7 @@ Do not turn GitHub CI off completely yet. Use local CI before pushing, then keep
 Start with:
 
 ```text
-Read AGENTS.md and docs/session-handoff.md first. Then inspect current git status and continue from the next task without changing safety constraints. Work one roadmap slice at a time, validate it, update docs, and commit before starting the next slice. Use multiple agents for independent subtasks when useful.
+Read AGENTS.md and docs/session-handoff.md first. Act as the orchestrator: inspect current git status, identify the next roadmap slice, spawn agents for independent audits or bounded work when useful, keep the critical path local, integrate results, validate, update docs, and commit. Continue from the latest committed state without changing safety constraints. Do not stop at planning unless blocked.
 ```
 
 ## Safety constraints
