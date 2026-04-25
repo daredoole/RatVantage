@@ -1,0 +1,8 @@
+[Desktop Entry]
+Type=Application
+Name=Legion Control
+Comment=Probe Lenovo Legion hardware capabilities on Fedora
+Exec=legion-control-ui
+Icon=org.ratvantage.LegionControl
+Terminal=false
+Categories=System;Settings;

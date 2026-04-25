@@ -1,0 +1,21 @@
+[workspace]
+members = [
+    "crates/legion-common",
+    "crates/legion-probe",
+    "crates/legion-daemon",
+    "crates/legion-ui",
+]
+resolver = "2"
+
+[workspace.package]
+edition = "2021"
+license = "MIT"
+repository = "https://github.com/daredoole/RatVantage"
+
+[workspace.dependencies]
+anyhow = "1"
+clap = { version = "4", features = ["derive"] }
+legion-common = { path = "crates/legion-common" }
+legion-probe = { path = "crates/legion-probe" }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"

@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<component type="desktop-application">
+  <id>org.ratvantage.LegionControl</id>
+  <name>Legion Control</name>
+  <summary>Fedora-native Lenovo Legion hardware capability probe</summary>
+  <metadata_license>MIT</metadata_license>
+  <project_license>MIT</project_license>
+  <description>
+    <p>Legion Control is an experimental, probe-first hardware control project. This project is not affiliated with or endorsed by Lenovo.</p>
+  </description>
+  <launchable type="desktop-id">org.ratvantage.LegionControl.desktop</launchable>
+</component>

@@ -1,0 +1,11 @@
+[Unit]
+Description=Legion Control daemon
+After=dbus.service
+
+[Service]
+Type=simple
+ExecStart=/usr/libexec/legion-control-daemon --dry-run
+Restart=on-failure
+
+[Install]
+WantedBy=multi-user.target
