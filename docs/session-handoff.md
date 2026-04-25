@@ -7,15 +7,15 @@
 - Branch: `main`
 - Global Codex config: GitHub MCP is disabled, not removed, in `/home/darrian/.codex/config.toml`. New sessions should not rely on GitHub MCP unless the user explicitly re-enables it.
 - Latest local commits:
-  - `HEAD` (`Refresh session handoff`; run `git log --oneline -1` for the exact hash)
-  - `26c103a` (`Add GTK profile and battery pages`)
-  - `c7d7f97` (`Track choice source paths`)
-  - `cd42ebb` (`Clarify tray capability counts`)
-  - `120078c` (`Add UI dry-run plan preview`)
-  - `5d3f1c0` (`Expose read-only dry-run planning`)
-  - `e32dde0` (`Forward tray dashboard bus address`)
-  - `15cdf63` (`Add packaged fan presets`)
-- Latest known milestone: read-only pre-alpha scaffold with GTK smoke coverage, hardened packaging metadata, disabled write planning, runtime 82WM fixture coverage, diagnostics log excerpts and compact summary counts, packaged fan preset assets with dry-run planning, read-only StatusNotifier tray backend, tray dashboard bus-address forwarding, tray tooltip profile/fan/count details, disabled quick fan preset and battery charge tray entries, GNOME tray extension guidance, KDE StatusNotifier tooltip/menu/quit smoke evidence, documented GNOME untested path, read-only battery overview telemetry, read-only EnvyControl GPU query, UI status/overview/diagnostics/dry-run output, GPU dry-run planning with reboot-required messaging, diagnostics choice-source paths, per-capability status labels, and GTK read-only Status, Profiles, Battery, Fans, Appearance, and Diagnostics tabs.
+  - `HEAD` (`Add appearance data to overview`; run `git log --oneline -1` for the exact hash)
+  - `717fda9` (`Add GTK appearance page`)
+  - `4341c1d` (`Add tray desktop guidance`)
+  - `3dde848` (`Add disabled tray battery entries`)
+  - `ab128c4` (`Add disabled tray fan preset entries`)
+  - `c61cef8` (`Polish tray tooltip details`)
+  - `ea35b0d` (`Add diagnostics summary counts`)
+  - `ca108a4` (`Add GTK fans page`)
+- Latest known milestone: read-only pre-alpha scaffold with GTK smoke coverage, hardened packaging metadata, disabled write planning, runtime 82WM fixture coverage, diagnostics log excerpts and compact summary counts, packaged fan preset assets with dry-run planning, read-only StatusNotifier tray backend, tray dashboard bus-address forwarding, tray tooltip profile/fan/count details, disabled quick fan preset and battery charge tray entries, GNOME tray extension guidance, KDE StatusNotifier tooltip/menu/quit smoke evidence, documented GNOME untested path, read-only battery overview telemetry, read-only EnvyControl GPU query, UI status/overview/diagnostics/dry-run output with LED brightness and firmware toggle values, GPU dry-run planning with reboot-required messaging, diagnostics choice-source paths, per-capability status labels, and GTK read-only Status, Profiles, Battery, Fans, Appearance, and Diagnostics tabs.
 - Rust toolchain: pinned stable in `rust-toolchain.toml`; local stable installed because GTK stack requires rustc 1.92+.
 
 ## Implemented
@@ -26,7 +26,7 @@
 - Read-only `BAT0` telemetry for capacity percent, charging status, and health string when exposed.
 - Read-only EnvyControl GPU mode query when `envycontrol --query` is available; fixture-backed runs keep GPU capability missing for deterministic tests.
 - EnvyControl GPU mode dry-run planning for `integrated`, `hybrid`, and `nvidia`, with write execution disabled and reboot-required metadata in the plan.
-- UI `--overview` command for platform profile, battery charge type, fan RPM, temperatures, GPU mode, and battery telemetry.
+- UI `--overview` command for platform profile, battery charge type, fan RPM, temperatures, GPU mode, battery telemetry, LED brightness, and firmware toggle values.
 - UI `--diagnostics` command for a read-only JSON debug bundle containing hardware summary, compact capability/sensor/fan/path counts, kernel version, detected sysfs paths, recent daemon log excerpts, and raw probe report.
 - Platform profile and battery charge type models include both current-value paths and choice-list paths for diagnostics.
 - UI status output includes per-capability status and risk labels.

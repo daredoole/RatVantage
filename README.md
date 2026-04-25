@@ -120,6 +120,7 @@ Completed scaffold:
 - Read-only daemon planning methods over D-Bus; no write methods are exposed.
 - UI CLI previews for platform profile, battery charge type, GPU mode, and fan preset dry-run plans.
 - Read-only diagnostics JSON bundle with hardware summary, compact counts, kernel version, detected sysfs paths, recent daemon log excerpts, and raw probe report.
+- Read-only overview output includes LED brightness and firmware toggle values when exposed.
 - Diagnostics include choice file paths for platform profiles and battery charge types.
 - Read-only GTK Fans tab for fan telemetry, detected fan curve paths, and packaged preset IDs.
 - Read-only GTK diagnostics tab with the same debug bundle and a Copy JSON action.

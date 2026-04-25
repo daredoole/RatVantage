@@ -204,7 +204,7 @@ pub fn risk_level_label(risk: RiskLevel) -> &'static str {
 }
 
 pub fn render_overview_lines(report: &CapabilityRegistry) -> Vec<String> {
-    vec![
+    let mut lines = vec![
         "Legion Control overview".to_owned(),
         format!(
             "platform_profile={}",
@@ -266,7 +266,13 @@ pub fn render_overview_lines(report: &CapabilityRegistry) -> Vec<String> {
                 .and_then(|battery| battery.health.as_deref())
                 .unwrap_or("unknown")
         ),
-    ]
+    ];
+    lines.push(format!("leds={}", render_led_values(report)));
+    lines.push(format!(
+        "firmware_toggles={}",
+        render_ideapad_toggle_values(report)
+    ));
+    lines
 }
 
 fn render_sensor_values(sensors: &[legion_common::HwmonSensor], kind: &str) -> String {
@@ -281,6 +287,48 @@ fn render_sensor_values(sensors: &[legion_common::HwmonSensor], kind: &str) -> S
                     .value
                     .map(|value| value.to_string())
                     .unwrap_or_else(|| "unknown".to_owned())
+            )
+        })
+        .collect::<Vec<_>>();
+
+    if values.is_empty() {
+        "unknown".to_owned()
+    } else {
+        values.join(",")
+    }
+}
+
+fn render_led_values(report: &CapabilityRegistry) -> String {
+    let values = report
+        .leds
+        .iter()
+        .map(|led| {
+            format!(
+                "{}:{}",
+                led.name,
+                led.brightness
+                    .map(|value| value.to_string())
+                    .unwrap_or_else(|| "unknown".to_owned())
+            )
+        })
+        .collect::<Vec<_>>();
+
+    if values.is_empty() {
+        "unknown".to_owned()
+    } else {
+        values.join(",")
+    }
+}
+
+fn render_ideapad_toggle_values(report: &CapabilityRegistry) -> String {
+    let values = report
+        .ideapad_toggles
+        .iter()
+        .map(|toggle| {
+            format!(
+                "{}:{}",
+                toggle.name,
+                toggle.current_value.as_deref().unwrap_or("unknown")
             )
         })
         .collect::<Vec<_>>();

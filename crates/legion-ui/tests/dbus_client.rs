@@ -91,6 +91,8 @@ fn client_reads_daemon_contract_over_private_bus() {
             "battery_capacity_percent=79",
             "battery_status=Charging",
             "battery_health=Good",
+            "leds=platform::fnlock:0,platform::ylogo:1",
+            "firmware_toggles=camera_power:1,conservation_mode:1,fn_lock:0",
         ]
     );
 
@@ -275,6 +277,8 @@ fn overview_cli_prints_read_only_mvp_summary() {
             "battery_capacity_percent=79\n",
             "battery_status=Charging\n",
             "battery_health=Good\n",
+            "leds=platform::fnlock:0,platform::ylogo:1\n",
+            "firmware_toggles=camera_power:1,conservation_mode:1,fn_lock:0\n",
         )
     );
 }

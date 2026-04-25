@@ -24,7 +24,7 @@ Current pre-alpha code provides the safe read-only base:
 - Runtime-captured 82WM fixture coverage, including bracketed battery `charge_types` current-value parsing.
 - Read-only battery telemetry for capacity, status, and health where `BAT0` exposes it.
 - Read-only EnvyControl GPU mode query when `envycontrol --query` is available.
-- Read-only UI `--overview` summary for platform profile, battery mode, fan RPM, temperatures, GPU mode, and battery telemetry.
+- Read-only UI `--overview` summary for platform profile, battery mode, fan RPM, temperatures, GPU mode, battery telemetry, LED brightness, and firmware toggle values.
 - Read-only UI `--diagnostics` JSON bundle with hardware summary, compact counts, kernel version, detected sysfs paths, recent daemon log excerpts, and raw probe report.
 - Diagnostics include `platform_profile_choices` and `charge_types` source paths.
 - Read-only UI dry-run plan previews for platform profile, battery charge type, GPU mode, and fan preset writes.
@@ -66,6 +66,7 @@ Goal: safe, useful daily controls using only confirmed interfaces and conservati
 - Temperature telemetry with sensor labels where available. [implemented in `--overview`]
 - GPU mode from EnvyControl if installed. [implemented in `--overview` as read-only query]
 - Basic battery capacity/status/health where exposed. [implemented in `--overview` for `BAT0` telemetry]
+- LED brightness and firmware toggle values where exposed. [implemented in `--overview` as read-only data]
 
 ### Profiles
 
@@ -109,8 +110,8 @@ Suggested labels:
 
 ### Appearance
 
-- Y-logo LED toggle if `/sys/class/leds/platform::ylogo/brightness` exists.
-- Fn-lock LED display only if `/sys/class/leds/platform::fnlock/brightness` exists. [implemented as read-only GTK Appearance data]
+- Y-logo LED toggle if `/sys/class/leds/platform::ylogo/brightness` exists. [implemented as read-only GTK Appearance and `--overview` data]
+- Fn-lock LED display only if `/sys/class/leds/platform::fnlock/brightness` exists. [implemented as read-only GTK Appearance and `--overview` data]
 
 ## Version 0.2
 
@@ -138,8 +139,8 @@ Goal: make the confirmed controls more complete and user-friendly.
 
 Expose only if present:
 
-- functional Fn-lock via VPC2004 `fn_lock`;
-- always-on USB charging via VPC2004 `usb_charging`;
+- functional Fn-lock via VPC2004 `fn_lock`; [implemented as read-only GTK Appearance and `--overview` data]
+- always-on USB charging via VPC2004 `usb_charging`; [implemented as read-only GTK Appearance and `--overview` data when exposed]
 - IO-port LED if a stable LED node exists.
 
 ### Diagnostics
