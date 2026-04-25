@@ -39,6 +39,15 @@ Requires:       %{name}-daemon%{?_isa} = %{version}-%{release}
 %description ui
 The Legion Control UI is a GTK4/libadwaita dashboard for the read-only daemon.
 
+%package tray
+Summary:        Read-only tray/status helper for Legion Control
+Requires:       %{name}-daemon%{?_isa} = %{version}-%{release}
+
+%description tray
+The Legion Control tray helper currently provides read-only status and tooltip
+output. AppIndicator/StatusNotifier integration is intentionally not packaged
+yet.
+
 %prep
 %autosetup
 
@@ -46,6 +55,7 @@ The Legion Control UI is a GTK4/libadwaita dashboard for the read-only daemon.
 %{__cargo} build --release --locked \
     -p legion-probe \
     -p legion-control-daemon \
+    -p legion-control-tray \
     -p legion-control-ui \
     --features legion-control-ui/gtk-ui
 
@@ -54,6 +64,8 @@ install -Dpm0755 target/release/legion-probe \
     %{buildroot}%{_bindir}/legion-probe
 install -Dpm0755 target/release/legion-control-ui \
     %{buildroot}%{_bindir}/legion-control-ui
+install -Dpm0755 target/release/legion-control-tray \
+    %{buildroot}%{_bindir}/legion-control-tray
 install -Dpm0755 target/release/legion-control-daemon \
     %{buildroot}%{_libexecdir}/legion-control/legion-control-daemon
 
@@ -67,11 +79,14 @@ install -Dpm0644 data/polkit/org.ratvantage.LegionControl1.policy \
     %{buildroot}%{_datadir}/polkit-1/actions/org.ratvantage.LegionControl1.policy
 install -Dpm0644 data/desktop/org.ratvantage.LegionControl.desktop \
     %{buildroot}%{_datadir}/applications/org.ratvantage.LegionControl.desktop
+install -Dpm0644 data/desktop/org.ratvantage.LegionControl.Tray.desktop \
+    %{buildroot}%{_sysconfdir}/xdg/autostart/org.ratvantage.LegionControl.Tray.desktop
 install -Dpm0644 data/metainfo/org.ratvantage.LegionControl.metainfo.xml \
     %{buildroot}%{_datadir}/metainfo/org.ratvantage.LegionControl.metainfo.xml
 
 %check
 desktop-file-validate %{buildroot}%{_datadir}/applications/org.ratvantage.LegionControl.desktop
+desktop-file-validate %{buildroot}%{_sysconfdir}/xdg/autostart/org.ratvantage.LegionControl.Tray.desktop
 appstreamcli validate --no-net %{buildroot}%{_datadir}/metainfo/org.ratvantage.LegionControl.metainfo.xml
 
 %post daemon
@@ -99,3 +114,7 @@ appstreamcli validate --no-net %{buildroot}%{_datadir}/metainfo/org.ratvantage.L
 %files ui
 %{_bindir}/legion-control-ui
 %{_datadir}/applications/org.ratvantage.LegionControl.desktop
+
+%files tray
+%{_bindir}/legion-control-tray
+%config(noreplace) %{_sysconfdir}/xdg/autostart/org.ratvantage.LegionControl.Tray.desktop

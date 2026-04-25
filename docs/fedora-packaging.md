@@ -63,7 +63,7 @@ Start with one source package and split binary subpackages:
 | `legion-control` | Common files, README, icons, metainfo, presets |
 | `legion-control-daemon` | Root system daemon, systemd unit, D-Bus service config, polkit policy |
 | `legion-control-ui` | GTK4/libadwaita dashboard, desktop file |
-| `legion-control-tray` | Optional tray helper, autostart file, AppIndicator/SNI support |
+| `legion-control-tray` | Optional read-only tray/status helper and disabled autostart placeholder; AppIndicator/SNI support is future work |
 | `legion-control-devel` | Optional D-Bus XML/spec files for integrations |
 
 Recommended first distribution path:

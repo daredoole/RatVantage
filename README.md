@@ -15,6 +15,7 @@ Pre-alpha implementation scaffold exists:
 - Private D-Bus contract tests for read-only daemon methods.
 - UI `--status` model and optional GTK4/libadwaita shell behind `gtk-ui`.
 - Read-only tray/status helper scaffold.
+- Disabled tray autostart packaging placeholder.
 - Headless GTK smoke coverage for the optional shell.
 - Fedora packaging metadata and validation for systemd, D-Bus, polkit, desktop, AppStream, and RPM assets.
 - Read-only sysfs fixture capture workflow for adding more real hardware reports.
@@ -88,6 +89,7 @@ Completed scaffold:
 - Read-only daemon D-Bus methods.
 - UI status client and optional GTK shell.
 - Read-only tray/status helper scaffold.
+- Disabled tray autostart packaging placeholder.
 - Headless GTK smoke coverage.
 - Fedora packaging metadata and validation.
 - Read-only fixture capture workflow.
@@ -101,7 +103,7 @@ Completed scaffold:
 Next:
 
 - Add captured probe fixtures from additional supported Legion machines.
-- Tray/autostart packaging for the existing tray scaffold.
+- Real tray backend selection and AppIndicator/StatusNotifier implementation.
 
 See [docs/feature-roadmap.md](docs/feature-roadmap.md) and [docs/implementation-plan.md](docs/implementation-plan.md).
 

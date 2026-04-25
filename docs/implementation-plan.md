@@ -507,6 +507,7 @@ ErrorOccurred(s code, s message)
 9. [x] Draft write-method D-Bus contracts without enabling writes.
 10. [x] Implement validators, pure dry-run planning, and non-D-Bus daemon planning adapters before any write methods.
 11. [x] Add read-only tray/status helper scaffold.
+12. [x] Add disabled tray autostart packaging placeholder.
 
 ## Test strategy
 

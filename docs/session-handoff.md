@@ -23,6 +23,7 @@
   - `GetRawProbeReport`
 - UI `--status` command and optional GTK4/libadwaita shell behind `gtk-ui`.
 - Read-only `legion-control-tray --status` scaffold.
+- Disabled tray autostart packaging placeholder.
 - Headless GTK smoke test for the optional shell, run through Xvfb in local and GitHub CI.
 - Private-bus contract tests and shared test support.
 - Fedora packaging assets for systemd, D-Bus, polkit, desktop metadata, AppStream metadata, and RPM spec.
@@ -58,7 +59,7 @@ Do not turn GitHub CI off completely yet. Use local CI before pushing, then keep
 ## Next tasks
 
 1. Capture and add fixtures from additional supported Legion machines.
-2. Add placeholder tray/autostart packaging for the existing tray scaffold.
+2. Choose and implement a real tray backend before enabling autostart.
 
 ## Working process
 

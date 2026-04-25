@@ -8,6 +8,7 @@ Current pre-alpha code provides the safe read-only base:
 - Root-capable daemon shape with read-only D-Bus API only.
 - UI status client and optional GTK4/libadwaita shell.
 - Read-only tray/status helper scaffold.
+- Disabled tray autostart packaging placeholder.
 - Headless GTK smoke coverage for the optional shell.
 - Fedora packaging assets for systemd, D-Bus, polkit, desktop metadata, AppStream metadata, and RPM spec.
 - Packaging metadata validation in local and GitHub CI.
@@ -21,7 +22,7 @@ Current pre-alpha code provides the safe read-only base:
 ## Next immediate work
 
 - Use the capture workflow to add fixtures from additional supported Legion machines.
-- Add tray/autostart packaging for the existing tray scaffold.
+- Choose and implement a real tray backend before enabling autostart.
 - Keep progress docs current after each completed roadmap slice.
 - Keep GitHub CI as remote guard; run `./scripts/ci-local.sh` before pushing to reduce failed CI minutes.
 

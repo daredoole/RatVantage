@@ -2,6 +2,7 @@
 set -euo pipefail
 
 desktop-file-validate data/desktop/org.ratvantage.LegionControl.desktop
+desktop-file-validate data/desktop/org.ratvantage.LegionControl.Tray.desktop
 appstreamcli validate --no-net data/metainfo/org.ratvantage.LegionControl.metainfo.xml
 unit_tmp="$(mktemp --suffix=.service)"
 trap 'rm -f "$unit_tmp"' EXIT

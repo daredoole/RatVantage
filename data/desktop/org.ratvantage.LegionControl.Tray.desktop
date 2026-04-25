@@ -1,0 +1,10 @@
+[Desktop Entry]
+Type=Application
+Name=Legion Control Tray
+Comment=Read-only Legion Control tray/status scaffold
+Exec=legion-control-tray
+Icon=org.ratvantage.LegionControl
+Terminal=false
+NoDisplay=true
+Hidden=true
+X-GNOME-Autostart-enabled=false
