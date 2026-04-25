@@ -76,6 +76,7 @@ cargo run -p legion-control-ui -- --status --bus-address <dbus-address>
 cargo run -p legion-control-tray -- --status --bus-address <dbus-address>
 cargo run -p legion-control-tray -- --tooltip --bus-address <dbus-address>
 cargo run -p legion-control-ui --features gtk-ui
+scripts/smoke-statusnotifier-tray.sh --hold-seconds 15
 ```
 
 To collect a read-only fixture from another Legion machine, use

@@ -14,6 +14,7 @@ Current pre-alpha code provides the safe read-only base:
 - Fedora packaging assets for systemd, D-Bus, polkit, desktop metadata, AppStream metadata, and RPM spec.
 - Packaging metadata validation in local and GitHub CI.
 - Read-only sysfs fixture capture workflow for adding real hardware reports.
+- StatusNotifier tray smoke script and manual checklist.
 - Disabled draft write-method contracts for platform profile and battery charge type.
 - Pure validators for platform profile and battery charge type choices.
 - Validator-backed dry-run planning for platform profile and battery charge type.
@@ -23,7 +24,7 @@ Current pre-alpha code provides the safe read-only base:
 
 ## Next immediate work
 
-- Desktop smoke test the StatusNotifier tray backend before enabling autostart.
+- Run and record StatusNotifier tray smoke results on target desktops before enabling autostart.
 - Add more captured fixtures when additional supported Legion machines are available.
 - Keep progress docs current after each completed roadmap slice.
 - Keep GitHub CI as remote guard; run `./scripts/ci-local.sh` before pushing to reduce failed CI minutes.

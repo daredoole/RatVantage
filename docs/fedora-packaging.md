@@ -341,6 +341,9 @@ Do not enable tray autostart until the StatusNotifier backend is manually tested
 on target desktops. The helper also keeps read-only `--status` and `--tooltip`
 CLI output for diagnostics.
 
+Use [statusnotifier-smoke-testing.md](statusnotifier-smoke-testing.md) as the
+manual desktop gate before enabling this autostart file.
+
 For a polished Fedora app, also ship:
 
 ```text
