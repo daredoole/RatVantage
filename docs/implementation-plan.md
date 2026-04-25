@@ -12,7 +12,7 @@ The repository now has a working pre-alpha scaffold:
 - Packaged read-only fan preset TOML assets with CI schema validation and runtime dry-run planning.
 - Local CI script, Fedora dependency installer, GitHub Actions CI, and pinned stable Rust toolchain.
 
-Next implementation work should add more captured fixtures when additional supported Legion machines are available, or continue with read-only UI/tray polish. Hardware writes remain design-only until validators, polkit policy, rollback, and manual validation are complete.
+Next implementation work should add more captured fixtures when additional supported Legion machines are available, or continue with read-only UI/tray polish. Hardware writes remain design-only until validators, polkit policy, rollback, write-specific manual validation, and recovery instructions are complete.
 
 ## Repo structure
 
@@ -583,16 +583,26 @@ LEGION_CONTROL_ALLOW_BATTERY_WRITE=1
 
 #### Read-only probe
 
-- [ ] Confirm product/vendor DMI fields.
-- [ ] Confirm platform profile current value.
-- [ ] Confirm platform profile choices.
-- [ ] Confirm battery charge type choices.
-- [ ] Confirm fan RPM sensors.
-- [ ] Confirm temperature sensors.
-- [ ] Confirm Y-logo LED node.
-- [ ] Confirm Fn-lock LED node.
-- [ ] Confirm EnvyControl presence/mode.
-- [ ] Confirm firmware attributes are correctly present or absent.
+- [x] Confirm product/vendor DMI fields.
+- [x] Confirm platform profile current value.
+- [x] Confirm platform profile choices.
+- [x] Confirm battery charge type choices.
+- [x] Confirm fan RPM sensors.
+- [x] Confirm temperature sensors.
+- [x] Confirm Y-logo LED node.
+- [x] Confirm Fn-lock LED node.
+- [x] Confirm EnvyControl presence/mode.
+- [x] Confirm firmware attributes are correctly present or absent.
+
+Read-only evidence from the current 82WM target on 2026-04-25:
+
+- Product: `82WM Legion Pro 5 16ARX8`.
+- Platform profile: `performance`; choices: `quiet`, `balanced`, `balanced-performance`, `performance`.
+- Battery charge type: `Long_Life`; choices: `Fast`, `Standard`, `Long_Life`.
+- Sensors: 2 fan RPM sensors and 15 temperature sensors; one fan curve capability.
+- LEDs: `platform::fnlock`, `platform::ylogo`.
+- Firmware toggles: `camera_power`, `conservation_mode`, `fan_mode`, `fn_lock`, `usb_charging`.
+- GPU: EnvyControl reports `nvidia`.
 
 #### Platform profile write
 

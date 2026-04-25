@@ -22,6 +22,7 @@ Current pre-alpha code provides the safe read-only base:
 - Validator-backed dry-run planning for platform profile, battery charge type, GPU mode, and fan presets.
 - Daemon-side Rust adapters for dry-run planning, without D-Bus write methods.
 - Runtime-captured 82WM fixture coverage, including bracketed battery `charge_types` current-value parsing.
+- Current 82WM read-only validation evidence for DMI, platform profiles, charge choices, sensors, LEDs, firmware toggles, and EnvyControl.
 - Read-only battery telemetry for capacity, status, and health where `BAT0` exposes it.
 - Read-only EnvyControl GPU mode query when `envycontrol --query` is available.
 - Read-only UI `--overview` summary for platform profile, battery mode, fan RPM, temperatures, GPU mode, battery telemetry, LED brightness, and firmware toggle values.

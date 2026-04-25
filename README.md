@@ -23,6 +23,7 @@ Pre-alpha implementation scaffold exists:
 - Headless GTK smoke coverage for the optional shell.
 - Fedora packaging metadata and validation for systemd, D-Bus, polkit, desktop, AppStream, and RPM assets.
 - Read-only sysfs fixture capture workflow for adding more real hardware reports.
+- Read-only validation evidence for the current 82WM target is recorded in `docs/implementation-plan.md`.
 - Packaged read-only fan preset TOML assets with CI schema validation and dry-run planning.
 - Disabled write-method contract drafts for platform profile, battery charge type, GPU mode, and fan presets.
 - Pure validators for platform profile, battery charge type, EnvyControl GPU mode, and packaged fan preset choices.
