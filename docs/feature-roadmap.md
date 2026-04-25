@@ -25,7 +25,7 @@ Current pre-alpha code provides the safe read-only base:
 - Read-only battery telemetry for capacity, status, and health where `BAT0` exposes it.
 - Read-only EnvyControl GPU mode query when `envycontrol --query` is available.
 - Read-only UI `--overview` summary for platform profile, battery mode, fan RPM, temperatures, GPU mode, and battery telemetry.
-- Read-only UI `--diagnostics` JSON bundle with hardware summary, kernel version, detected sysfs paths, recent daemon log excerpts, and raw probe report.
+- Read-only UI `--diagnostics` JSON bundle with hardware summary, compact counts, kernel version, detected sysfs paths, recent daemon log excerpts, and raw probe report.
 - Diagnostics include `platform_profile_choices` and `charge_types` source paths.
 - Read-only UI dry-run plan previews for platform profile, battery charge type, GPU mode, and fan preset writes.
 - UI status output includes per-capability status and risk labels.
@@ -38,7 +38,7 @@ Current pre-alpha code provides the safe read-only base:
 
 - Keep tray autostart disabled; GNOME AppIndicator extension path is untested.
 - Add more captured fixtures when additional supported Legion machines are available.
-- Add more captured hardware fixtures when available; otherwise continue with diagnostics polish.
+- Add more captured hardware fixtures when available; otherwise continue with read-only UI/tray polish.
 - Keep progress docs current after each completed roadmap slice.
 - Keep GitHub CI as remote guard; run `./scripts/ci-local.sh` before pushing to reduce failed CI minutes.
 
@@ -146,6 +146,7 @@ Expose only if present:
 - Hardware summary page. [implemented in CLI and GTK diagnostics surfaces]
 - Raw capability registry viewer. [implemented in CLI and GTK diagnostics surfaces]
 - CLI debug bundle via `legion-control-ui --diagnostics`. [implemented]
+- Compact diagnostics summary with capability, sensor, fan curve, and detected-path counts. [implemented]
 - Copy debug bundle:
   - DMI model fields;
   - kernel version;

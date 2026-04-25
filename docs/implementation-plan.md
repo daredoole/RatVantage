@@ -12,7 +12,7 @@ The repository now has a working pre-alpha scaffold:
 - Packaged read-only fan preset TOML assets with CI schema validation and runtime dry-run planning.
 - Local CI script, Fedora dependency installer, GitHub Actions CI, and pinned stable Rust toolchain.
 
-Next implementation work should add more captured fixtures when additional supported Legion machines are available, or continue with diagnostics polish. Hardware writes remain design-only until validators, polkit policy, rollback, and manual validation are complete.
+Next implementation work should add more captured fixtures when additional supported Legion machines are available, or continue with read-only UI/tray polish. Hardware writes remain design-only until validators, polkit policy, rollback, and manual validation are complete.
 
 ## Repo structure
 

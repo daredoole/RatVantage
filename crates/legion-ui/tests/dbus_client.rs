@@ -124,6 +124,17 @@ fn client_reads_daemon_contract_over_private_bus() {
     assert_eq!(json["kernel_version"], "test-kernel");
     assert_eq!(json["recent_daemon_logs"], serde_json::json!([]));
     assert_eq!(json["hardware"]["product_name"], "82WM");
+    assert_eq!(json["summary"]["capability_count"], 8);
+    assert_eq!(json["summary"]["available_capability_count"], 7);
+    assert_eq!(json["summary"]["missing_capability_count"], 1);
+    assert_eq!(json["summary"]["capability_status_counts"]["probe_only"], 7);
+    assert_eq!(json["summary"]["capability_status_counts"]["missing"], 1);
+    assert_eq!(json["summary"]["sensor_count"], 2);
+    assert_eq!(json["summary"]["fan_curve_count"], 1);
+    assert_eq!(
+        json["summary"]["detected_sysfs_path_count"],
+        bundle.detected_sysfs_paths.len()
+    );
     assert_eq!(
         json["raw_probe_report"]["platform_profile"]["current"],
         "balanced"

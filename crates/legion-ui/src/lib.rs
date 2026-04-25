@@ -1,3 +1,4 @@
+use std::collections::BTreeMap;
 use std::process::Command;
 
 use anyhow::Result;
@@ -44,9 +45,21 @@ pub struct UiCapabilityStatus {
 pub struct DiagnosticsBundle {
     pub hardware: HardwareSummary,
     pub kernel_version: Option<String>,
+    pub summary: DiagnosticsSummary,
     pub detected_sysfs_paths: Vec<String>,
     pub recent_daemon_logs: Vec<String>,
     pub raw_probe_report: CapabilityRegistry,
+}
+
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+pub struct DiagnosticsSummary {
+    pub capability_count: usize,
+    pub available_capability_count: usize,
+    pub missing_capability_count: usize,
+    pub capability_status_counts: BTreeMap<String, usize>,
+    pub sensor_count: usize,
+    pub fan_curve_count: usize,
+    pub detected_sysfs_path_count: usize,
 }
 
 impl DiagnosticsBundle {
@@ -59,12 +72,42 @@ impl DiagnosticsBundle {
         kernel_version: Option<String>,
         recent_daemon_logs: Vec<String>,
     ) -> Self {
+        let detected_sysfs_paths = detected_sysfs_paths(&report);
+        let summary = DiagnosticsSummary::from_report(&report, detected_sysfs_paths.len());
         Self {
             hardware: report.hardware.clone(),
             kernel_version,
-            detected_sysfs_paths: detected_sysfs_paths(&report),
+            summary,
+            detected_sysfs_paths,
             recent_daemon_logs,
             raw_probe_report: report,
+        }
+    }
+}
+
+impl DiagnosticsSummary {
+    fn from_report(report: &CapabilityRegistry, detected_sysfs_path_count: usize) -> Self {
+        let mut capability_status_counts = BTreeMap::new();
+        for capability in &report.capabilities {
+            *capability_status_counts
+                .entry(capability_status_label(capability.status).to_owned())
+                .or_insert(0) += 1;
+        }
+
+        let missing_capability_count = report
+            .capabilities
+            .iter()
+            .filter(|capability| capability.status == CapabilityStatus::Missing)
+            .count();
+
+        Self {
+            capability_count: report.capabilities.len(),
+            available_capability_count: report.capabilities.len() - missing_capability_count,
+            missing_capability_count,
+            capability_status_counts,
+            sensor_count: report.telemetry.sensors.len(),
+            fan_curve_count: report.fan_curves.len(),
+            detected_sysfs_path_count,
         }
     }
 }

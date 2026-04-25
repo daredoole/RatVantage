@@ -13,7 +13,7 @@ Pre-alpha implementation scaffold exists:
 - Rust workspace with shared models, read-only probe, read-only daemon, UI client, and test support crates.
 - Probe fixture coverage for confirmed and runtime-captured 82WM-style sysfs paths.
 - Private D-Bus contract tests for read-only daemon methods.
-- UI `--status`, `--overview`, and `--diagnostics` commands plus optional GTK4/libadwaita shell with read-only Status, Profiles, Battery, and Diagnostics tabs behind `gtk-ui`.
+- UI `--status`, `--overview`, and `--diagnostics` commands plus optional GTK4/libadwaita shell with read-only Status, Profiles, Battery, Fans, and Diagnostics tabs behind `gtk-ui`.
 - Read-only tray/status helper scaffold.
 - Tray dashboard launch forwards custom D-Bus addresses for private/session-bus smoke workflows.
 - Tray status separates available and missing capabilities in tooltips.
@@ -119,7 +119,7 @@ Completed scaffold:
 - Pure dry-run planning for future platform profile, battery charge type, GPU mode, and fan preset writes.
 - Read-only daemon planning methods over D-Bus; no write methods are exposed.
 - UI CLI previews for platform profile, battery charge type, GPU mode, and fan preset dry-run plans.
-- Read-only diagnostics JSON bundle with hardware summary, kernel version, detected sysfs paths, recent daemon log excerpts, and raw probe report.
+- Read-only diagnostics JSON bundle with hardware summary, compact counts, kernel version, detected sysfs paths, recent daemon log excerpts, and raw probe report.
 - Diagnostics include choice file paths for platform profiles and battery charge types.
 - Read-only GTK Fans tab for fan telemetry, detected fan curve paths, and packaged preset IDs.
 - Read-only GTK diagnostics tab with the same debug bundle and a Copy JSON action.

@@ -348,8 +348,19 @@ fn append_diagnostics(page: &gtk4::Box, bundle: &DiagnosticsBundle) {
         &bundle.detected_sysfs_paths.len().to_string(),
     ));
     group.add(&info_row(
-        "Raw capabilities",
-        &bundle.raw_probe_report.capabilities.len().to_string(),
+        "Capabilities",
+        &format!(
+            "{} available, {} missing",
+            bundle.summary.available_capability_count, bundle.summary.missing_capability_count
+        ),
+    ));
+    group.add(&info_row(
+        "Sensors",
+        &bundle.summary.sensor_count.to_string(),
+    ));
+    group.add(&info_row(
+        "Fan curves",
+        &bundle.summary.fan_curve_count.to_string(),
     ));
     group.add(&info_row(
         "Daemon log lines",
