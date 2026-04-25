@@ -1,6 +1,8 @@
 use anyhow::Result;
 use clap::Parser;
-use legion_control_tray::{DesktopSession, TrayMenu, TraySummary};
+use legion_control_tray::TraySummary;
+#[cfg(not(feature = "status-notifier"))]
+use legion_control_tray::{DesktopSession, TrayMenu};
 use legion_control_ui::LegionControlClient;
 
 #[derive(Debug, Parser)]
@@ -34,6 +36,16 @@ fn main() -> Result<()> {
         return Ok(());
     }
 
+    run_tray(args.bus_address)
+}
+
+#[cfg(feature = "status-notifier")]
+fn run_tray(bus_address: Option<String>) -> Result<()> {
+    legion_control_tray::run_status_notifier_tray(bus_address)
+}
+
+#[cfg(not(feature = "status-notifier"))]
+fn run_tray(_bus_address: Option<String>) -> Result<()> {
     println!("Legion Control tray scaffold");
     println!("Read-only status summary is available with --status.");
     println!(
@@ -44,6 +56,6 @@ fn main() -> Result<()> {
     if desktop.may_need_appindicator_extension() {
         println!("Desktop note: GNOME may require an AppIndicator extension.");
     }
-    println!("AppIndicator/StatusNotifier integration is intentionally not implemented yet.");
+    println!("Build with --features status-notifier to enable the tray backend.");
     Ok(())
 }

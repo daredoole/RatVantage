@@ -24,7 +24,7 @@ Recommended implementation stack:
 
 - **Daemon:** Rust, `zbus`, `tokio` or `async-io`, typed adapters, journald logging.
 - **Dashboard UI:** Rust, GTK4, libadwaita, system D-Bus client.
-- **Tray/status:** optional Rust StatusNotifier/AppIndicator implementation. If that is not reliable enough on Fedora/GNOME, isolate a tiny GTK3/Ayatana tray helper as a separate user process.
+- **Tray/status:** optional Rust StatusNotifier implementation. If that is not reliable enough on Fedora/GNOME, isolate a tiny GTK3/Ayatana tray helper as a separate user process.
 - **Probe CLI:** Rust debug tool that prints the daemon's capability registry as JSON.
 - **Packaging:** Fedora RPM first. Flatpak is GUI-only at best because it cannot install the root daemon, D-Bus system service file, systemd unit, or polkit policy.
 
@@ -60,9 +60,10 @@ Tray support is useful on KDE and optional on GNOME.
 
 Responsibilities:
 
-- show current platform profile, battery mode, fan RPM, and GPU mode in tooltip/status text;
-- expose fast actions only: profile selection, fan preset, battery mode, Y-logo toggle, open dashboard;
-- forward actions to the daemon;
+- show read-only hardware and capability status in tooltip/status text;
+- expose dashboard, refresh, and quit actions now;
+- keep profile selection, fan preset, battery mode, and Y-logo actions disabled until daemon write methods exist;
+- forward future write actions to the daemon;
 - never include manual fan curve editing or firmware sliders.
 
 Fedora GNOME caveat:

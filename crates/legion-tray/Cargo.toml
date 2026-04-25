@@ -5,9 +5,14 @@ edition.workspace = true
 license.workspace = true
 repository.workspace = true
 
+[features]
+default = ["status-notifier"]
+status-notifier = ["dep:ksni"]
+
 [dependencies]
 anyhow.workspace = true
 clap.workspace = true
+ksni = { version = "0.3.4", features = ["blocking"], optional = true }
 legion-control-ui.workspace = true
 
 [dev-dependencies]

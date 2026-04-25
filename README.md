@@ -91,6 +91,7 @@ Completed scaffold:
 - Read-only daemon D-Bus methods.
 - UI status client and optional GTK shell.
 - Read-only tray/status helper scaffold.
+- Read-only StatusNotifier tray backend with disabled write actions.
 - Disabled tray autostart packaging placeholder.
 - Headless GTK smoke coverage.
 - Fedora packaging metadata and validation.
@@ -105,8 +106,8 @@ Completed scaffold:
 
 Next:
 
-- Real tray backend selection and AppIndicator/StatusNotifier implementation.
-- Real tray backend selection and AppIndicator/StatusNotifier implementation.
+- Desktop smoke testing for the StatusNotifier tray backend before enabling autostart.
+- Additional captured fixtures when more supported Legion machines are available.
 
 See [docs/feature-roadmap.md](docs/feature-roadmap.md) and [docs/implementation-plan.md](docs/implementation-plan.md).
 

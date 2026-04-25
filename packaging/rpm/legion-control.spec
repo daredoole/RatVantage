@@ -44,9 +44,8 @@ Summary:        Read-only tray/status helper for Legion Control
 Requires:       %{name}-daemon%{?_isa} = %{version}-%{release}
 
 %description tray
-The Legion Control tray helper currently provides read-only status and tooltip
-output. AppIndicator/StatusNotifier integration is intentionally not packaged
-yet.
+The Legion Control tray helper provides a read-only StatusNotifier tray item
+plus status and tooltip CLI output. Autostart remains packaged disabled.
 
 %prep
 %autosetup
@@ -57,7 +56,7 @@ yet.
     -p legion-control-daemon \
     -p legion-control-tray \
     -p legion-control-ui \
-    --features legion-control-ui/gtk-ui
+    --features legion-control-ui/gtk-ui,legion-control-tray/status-notifier
 
 %install
 install -Dpm0755 target/release/legion-probe \

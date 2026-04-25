@@ -15,7 +15,8 @@ sudo dnf install \
   systemd-rpm-macros pkgconf-pkg-config
 ```
 
-Optional tray helper build dependencies:
+Optional tray helper build dependencies if the StatusNotifier backend is replaced
+with an Ayatana helper:
 
 ```bash
 sudo dnf install \
@@ -26,8 +27,8 @@ sudo dnf install \
 Notes:
 
 - `gtk4-devel` and `libadwaita-devel` are for the native dashboard.
-- `libayatana-appindicator-gtk3` is useful if the tray helper uses Ayatana AppIndicator.
-- A pure Rust StatusNotifier implementation may avoid the GTK3 dependency, but test it on GNOME and KDE before committing.
+- The current tray backend uses a pure Rust StatusNotifier implementation and does not require GTK3/Ayatana packages.
+- `libayatana-appindicator-gtk3` is useful only if the tray helper is moved to Ayatana AppIndicator.
 
 ### Runtime dependencies
 
@@ -63,7 +64,7 @@ Start with one source package and split binary subpackages:
 | `legion-control` | Common files, README, icons, metainfo, presets |
 | `legion-control-daemon` | Root system daemon, systemd unit, D-Bus service config, polkit policy |
 | `legion-control-ui` | GTK4/libadwaita dashboard, desktop file |
-| `legion-control-tray` | Optional read-only tray/status helper and disabled autostart placeholder; AppIndicator/SNI support is future work |
+| `legion-control-tray` | Optional read-only StatusNotifier tray/status helper and disabled autostart placeholder |
 | `legion-control-devel` | Optional D-Bus XML/spec files for integrations |
 
 Recommended first distribution path:
@@ -327,7 +328,7 @@ Current disabled placeholder:
 [Desktop Entry]
 Type=Application
 Name=Legion Control Tray
-Comment=Read-only Legion Control tray/status scaffold
+Comment=Read-only Legion Control tray/status helper
 Exec=legion-control-tray
 Icon=org.ratvantage.LegionControl
 Terminal=false
@@ -336,9 +337,9 @@ Hidden=true
 X-GNOME-Autostart-enabled=false
 ```
 
-Do not enable tray autostart until a real AppIndicator/StatusNotifier backend is
-implemented and tested. The current helper provides read-only `--status` and
-`--tooltip` output only.
+Do not enable tray autostart until the StatusNotifier backend is manually tested
+on target desktops. The helper also keeps read-only `--status` and `--tooltip`
+CLI output for diagnostics.
 
 For a polished Fedora app, also ship:
 

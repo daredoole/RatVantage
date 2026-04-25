@@ -6,13 +6,13 @@
 - Visibility: private for now.
 - Branch: `main`
 - Latest local commits:
+  - `29b174f` (`Refresh runtime fixture progress docs`)
   - `f0d7b14` (`Add runtime 82WM probe fixture`)
   - `431f457` (`Clarify disabled tray autostart docs`)
   - `d10599e` (`Package disabled tray autostart placeholder`)
   - `e0ff36c` (`Add read-only tray scaffold`)
   - `22c0820` (`Add daemon dry-run planning adapters`)
-  - `29407b7` (`Add pure write dry-run planning`)
-- Latest known milestone: read-only pre-alpha scaffold with GTK smoke coverage, hardened packaging metadata, disabled write planning, read-only tray scaffold, and runtime 82WM fixture coverage.
+- Latest known milestone: read-only pre-alpha scaffold with GTK smoke coverage, hardened packaging metadata, disabled write planning, runtime 82WM fixture coverage, and a read-only StatusNotifier tray backend.
 - Rust toolchain: pinned stable in `rust-toolchain.toml`; local stable installed because GTK stack requires rustc 1.92+.
 
 ## Implemented
@@ -28,6 +28,7 @@
   - `GetRawProbeReport`
 - UI `--status` command and optional GTK4/libadwaita shell behind `gtk-ui`.
 - Read-only `legion-control-tray --status` scaffold.
+- Read-only `legion-control-tray` StatusNotifier backend with dashboard, refresh, quit, and disabled write actions.
 - Disabled tray autostart packaging placeholder.
 - Headless GTK smoke test for the optional shell, run through Xvfb in local and GitHub CI.
 - Private-bus contract tests and shared test support.
@@ -53,6 +54,7 @@ scripts/capture-sysfs-fixture.sh --output tests/fixtures/sysfs-<model>-<note>
 cargo run -p legion-probe -- --json --sysfs-root tests/fixtures/sysfs-82wm-confirmed
 cargo run -p legion-control-daemon -- --dry-run
 cargo run -p legion-control-ui --features gtk-ui
+cargo run -p legion-control-tray -- --bus-address <dbus-address>
 cargo run -p legion-control-tray -- --status --bus-address <dbus-address>
 cargo run -p legion-control-tray -- --tooltip --bus-address <dbus-address>
 cargo run -p legion-probe -- --json --sysfs-root tests/fixtures/sysfs-82wm-runtime-capture
@@ -64,9 +66,8 @@ Do not turn GitHub CI off completely yet. Use local CI before pushing, then keep
 
 ## Next tasks
 
-1. Choose and implement a real tray backend before enabling autostart.
+1. Desktop smoke test the StatusNotifier tray backend before enabling autostart.
 2. Add more captured fixtures when additional supported Legion machines are available.
-2. Choose and implement a real tray backend before enabling autostart.
 
 ## Working process
 
