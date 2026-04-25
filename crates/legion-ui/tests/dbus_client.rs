@@ -10,19 +10,8 @@ use zbus::blocking::ConnectionBuilder;
 
 #[test]
 fn client_reads_daemon_contract_over_private_bus() {
-    let bus = TestBus::start();
-    let service = LegionControl::new(ProbeOptions {
-        sysfs_root: fixture_root(),
-    });
-    let _service_connection = ConnectionBuilder::address(bus.address.as_str())
-        .unwrap()
-        .name(DBUS_INTERFACE)
-        .unwrap()
-        .serve_at(DBUS_PATH, service)
-        .unwrap()
-        .build()
-        .unwrap();
-    let client = LegionControlClient::address(&bus.address).unwrap();
+    let (_bus, _service_connection, address) = fixture_service();
+    let client = LegionControlClient::address(&address).unwrap();
 
     let hardware = client.hardware_summary().unwrap();
     assert_eq!(hardware.vendor.as_deref(), Some("LENOVO"));
@@ -77,6 +66,42 @@ fn client_reads_daemon_contract_over_private_bus() {
 
     let refreshed = client.refresh_capabilities().unwrap();
     assert_eq!(refreshed, capabilities);
+}
+
+#[test]
+fn status_cli_prints_hardware_and_capability_summary() {
+    let (_bus, _service_connection, address) = fixture_service();
+    let output = Command::new(env!("CARGO_BIN_EXE_legion-control-ui"))
+        .args(["--status", "--bus-address", &address])
+        .output()
+        .unwrap();
+
+    assert!(output.status.success());
+    let stdout = String::from_utf8(output.stdout).unwrap();
+    assert!(stdout.contains("Legion Control status"));
+    assert!(stdout.contains("vendor=LENOVO"));
+    assert!(stdout.contains("product_name=82WM"));
+    assert!(stdout.contains("capability_count=7"));
+    assert!(stdout.contains("platform_profile"));
+    assert!(stdout.contains("ideapad_toggles"));
+}
+
+fn fixture_service() -> (TestBus, zbus::blocking::Connection, String) {
+    let bus = TestBus::start();
+    let service = LegionControl::new(ProbeOptions {
+        sysfs_root: fixture_root(),
+    });
+    let service_connection = ConnectionBuilder::address(bus.address.as_str())
+        .unwrap()
+        .name(DBUS_INTERFACE)
+        .unwrap()
+        .serve_at(DBUS_PATH, service)
+        .unwrap()
+        .build()
+        .unwrap();
+    let address = bus.address.clone();
+
+    (bus, service_connection, address)
 }
 
 fn fixture_root() -> PathBuf {
