@@ -25,6 +25,7 @@
 - Read-only EnvyControl GPU mode query when `envycontrol --query` is available; fixture-backed runs keep GPU capability missing for deterministic tests.
 - UI `--overview` command for platform profile, battery charge type, fan RPM, temperatures, GPU mode, and battery telemetry.
 - UI `--diagnostics` command for a read-only JSON debug bundle containing hardware summary, kernel version, detected sysfs paths, recent daemon log excerpts, and raw probe report.
+- Platform profile and battery charge type models include both current-value paths and choice-list paths for diagnostics.
 - Optional GTK diagnostics tab for the same read-only hardware/debug bundle, with Copy JSON.
 - Packaged read-only fan preset TOML assets in `data/presets/`, validated by `scripts/validate-packaging.sh` and installed by the RPM spec.
 - Read-only D-Bus daemon methods:

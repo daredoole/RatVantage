@@ -115,6 +115,7 @@ Completed scaffold:
 - Read-only daemon planning methods over D-Bus; no write methods are exposed.
 - UI CLI previews for platform profile and battery charge type dry-run plans.
 - Read-only diagnostics JSON bundle with hardware summary, kernel version, detected sysfs paths, recent daemon log excerpts, and raw probe report.
+- Diagnostics include choice file paths for platform profiles and battery charge types.
 - Read-only GTK diagnostics tab with the same debug bundle and a Copy JSON action.
 - Fixture, private-bus, unit, and contract tests.
 - Local and GitHub CI.

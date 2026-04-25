@@ -153,6 +153,7 @@ fn detect_platform_profile(root: &Path) -> Option<PlatformProfileCapability> {
         current,
         choices,
         path: path.display().to_string(),
+        choices_path: choices_path.display().to_string(),
     })
 }
 
@@ -172,6 +173,7 @@ fn detect_battery_charge_type(root: &Path) -> Option<BatteryChargeTypeCapability
         current,
         choices,
         path: path.display().to_string(),
+        choices_path: choices_path.display().to_string(),
     })
 }
 
@@ -483,6 +485,12 @@ mod tests {
                 "performance".to_owned()
             ])
         );
+        assert!(registry
+            .platform_profile
+            .as_ref()
+            .unwrap()
+            .choices_path
+            .ends_with("sys/firmware/acpi/platform_profile_choices"));
         assert!(registry.hwmon_sensors.iter().any(|sensor| {
             sensor.hwmon_name.as_deref() == Some("legion-hwmon")
                 && sensor.label.as_deref() == Some("CPU Fan")
@@ -536,6 +544,12 @@ mod tests {
                 "performance".to_owned()
             ])
         );
+        assert!(registry
+            .platform_profile
+            .as_ref()
+            .unwrap()
+            .choices_path
+            .ends_with("sys/firmware/acpi/platform_profile_choices"));
         assert_eq!(
             registry
                 .battery_charge_type
@@ -554,6 +568,12 @@ mod tests {
                 "Long_Life".to_owned()
             ])
         );
+        assert!(registry
+            .battery_charge_type
+            .as_ref()
+            .unwrap()
+            .choices_path
+            .ends_with("sys/class/power_supply/BAT0/charge_types"));
         assert!(registry.hwmon_sensors.len() > 10);
         assert!(registry.fan_curves.iter().any(|fan_curve| {
             fan_curve.id == "legion_hwmon" && fan_curve.point_paths.len() >= 20

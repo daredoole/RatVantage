@@ -57,6 +57,7 @@ pub struct PlatformProfileCapability {
     pub current: Option<String>,
     pub choices: Vec<String>,
     pub path: String,
+    pub choices_path: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -64,6 +65,7 @@ pub struct BatteryChargeTypeCapability {
     pub current: Option<String>,
     pub choices: Vec<String>,
     pub path: String,
+    pub choices_path: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -442,6 +444,7 @@ mod tests {
                 "performance".to_owned(),
             ],
             path: "/sys/firmware/acpi/platform_profile".to_owned(),
+            choices_path: "/sys/firmware/acpi/platform_profile_choices".to_owned(),
         };
 
         assert_eq!(
@@ -460,16 +463,19 @@ mod tests {
                 "extreme".to_owned(),
             ],
             path: "/sys/firmware/acpi/platform_profile".to_owned(),
+            choices_path: "/sys/firmware/acpi/platform_profile_choices".to_owned(),
         };
         let missing_current = PlatformProfileCapability {
             current: None,
             choices: vec!["balanced".to_owned()],
             path: "/sys/firmware/acpi/platform_profile".to_owned(),
+            choices_path: "/sys/firmware/acpi/platform_profile_choices".to_owned(),
         };
         let missing_choices = PlatformProfileCapability {
             current: Some("balanced".to_owned()),
             choices: vec![],
             path: "/sys/firmware/acpi/platform_profile".to_owned(),
+            choices_path: "/sys/firmware/acpi/platform_profile_choices".to_owned(),
         };
 
         assert!(matches!(
@@ -508,6 +514,7 @@ mod tests {
                 "Long_Life".to_owned(),
             ],
             path: "/sys/class/power_supply/BAT0/charge_type".to_owned(),
+            choices_path: "/sys/class/power_supply/BAT0/charge_types".to_owned(),
         };
 
         assert_eq!(
@@ -522,16 +529,19 @@ mod tests {
             current: Some("Standard".to_owned()),
             choices: vec!["Fast".to_owned(), "Standard".to_owned()],
             path: "/sys/class/power_supply/BAT0/charge_type".to_owned(),
+            choices_path: "/sys/class/power_supply/BAT0/charge_types".to_owned(),
         };
         let missing_current = BatteryChargeTypeCapability {
             current: None,
             choices: vec!["Standard".to_owned()],
             path: "/sys/class/power_supply/BAT0/charge_type".to_owned(),
+            choices_path: "/sys/class/power_supply/BAT0/charge_types".to_owned(),
         };
         let missing_choices = BatteryChargeTypeCapability {
             current: Some("Standard".to_owned()),
             choices: vec![],
             path: "/sys/class/power_supply/BAT0/charge_type".to_owned(),
+            choices_path: "/sys/class/power_supply/BAT0/charge_types".to_owned(),
         };
 
         assert!(matches!(
@@ -562,6 +572,7 @@ mod tests {
             current: Some("balanced".to_owned()),
             choices: vec!["quiet".to_owned(), "balanced".to_owned()],
             path: "/sys/firmware/acpi/platform_profile".to_owned(),
+            choices_path: "/sys/firmware/acpi/platform_profile_choices".to_owned(),
         };
 
         let plan = plan_platform_profile_write(Some(&capability), "quiet").unwrap();
@@ -589,6 +600,7 @@ mod tests {
             current: Some("Standard".to_owned()),
             choices: vec!["Standard".to_owned(), "Conservation".to_owned()],
             path: "/sys/class/power_supply/BAT0/charge_type".to_owned(),
+            choices_path: "/sys/class/power_supply/BAT0/charge_types".to_owned(),
         };
 
         let plan = plan_battery_charge_type_write(Some(&capability), "Conservation").unwrap();
@@ -611,11 +623,13 @@ mod tests {
             current: Some("balanced".to_owned()),
             choices: vec!["balanced".to_owned(), "custom".to_owned()],
             path: "/sys/firmware/acpi/platform_profile".to_owned(),
+            choices_path: "/sys/firmware/acpi/platform_profile_choices".to_owned(),
         };
         let battery = BatteryChargeTypeCapability {
             current: Some("Standard".to_owned()),
             choices: vec!["Standard".to_owned()],
             path: "/sys/class/power_supply/BAT0/charge_type".to_owned(),
+            choices_path: "/sys/class/power_supply/BAT0/charge_types".to_owned(),
         };
 
         assert!(matches!(

@@ -227,9 +227,11 @@ fn detected_sysfs_paths(report: &CapabilityRegistry) -> Vec<String> {
 
     if let Some(profile) = &report.platform_profile {
         push_path(&mut paths, &profile.path);
+        push_path(&mut paths, &profile.choices_path);
     }
     if let Some(charge_type) = &report.battery_charge_type {
         push_path(&mut paths, &charge_type.path);
+        push_path(&mut paths, &charge_type.choices_path);
     }
     for sensor in &report.hwmon_sensors {
         push_path(&mut paths, &sensor.input_path);

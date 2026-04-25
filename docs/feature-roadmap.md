@@ -26,6 +26,7 @@ Current pre-alpha code provides the safe read-only base:
 - Read-only EnvyControl GPU mode query when `envycontrol --query` is available.
 - Read-only UI `--overview` summary for platform profile, battery mode, fan RPM, temperatures, GPU mode, and battery telemetry.
 - Read-only UI `--diagnostics` JSON bundle with hardware summary, kernel version, detected sysfs paths, recent daemon log excerpts, and raw probe report.
+- Diagnostics include `platform_profile_choices` and `charge_types` source paths.
 - Read-only UI dry-run plan previews for platform profile and battery charge type writes.
 - Read-only GTK diagnostics tab for the same hardware/debug bundle, including Copy JSON.
 - Packaged read-only fan preset TOML assets with CI schema validation.

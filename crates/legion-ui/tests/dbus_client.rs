@@ -109,6 +109,14 @@ fn client_reads_daemon_contract_over_private_bus() {
     assert!(bundle
         .detected_sysfs_paths
         .iter()
+        .any(|path| path.ends_with("sys/firmware/acpi/platform_profile_choices")));
+    assert!(bundle
+        .detected_sysfs_paths
+        .iter()
+        .any(|path| path.ends_with("sys/class/power_supply/BAT0/charge_types")));
+    assert!(bundle
+        .detected_sysfs_paths
+        .iter()
         .any(|path| path.ends_with("sys/class/power_supply/BAT0")));
 
     let json: serde_json::Value =
@@ -119,6 +127,16 @@ fn client_reads_daemon_contract_over_private_bus() {
     assert_eq!(
         json["raw_probe_report"]["platform_profile"]["current"],
         "balanced"
+    );
+    assert!(json["raw_probe_report"]["platform_profile"]["choices_path"]
+        .as_str()
+        .unwrap()
+        .ends_with("sys/firmware/acpi/platform_profile_choices"));
+    assert!(
+        json["raw_probe_report"]["battery_charge_type"]["choices_path"]
+            .as_str()
+            .unwrap()
+            .ends_with("sys/class/power_supply/BAT0/charge_types")
     );
 
     let bundle = DiagnosticsBundle::from_report_with_logs(
