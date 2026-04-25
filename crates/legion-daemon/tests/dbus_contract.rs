@@ -9,29 +9,7 @@ use zbus::blocking::{ConnectionBuilder, Proxy};
 
 #[test]
 fn read_only_methods_return_expected_json_contracts() {
-    let bus = TestBus::start();
-    let service = LegionControl::new(ProbeOptions {
-        sysfs_root: fixture_root(),
-    });
-    let _service_connection = ConnectionBuilder::address(bus.address.as_str())
-        .unwrap()
-        .name(DBUS_INTERFACE)
-        .unwrap()
-        .serve_at(DBUS_PATH, service)
-        .unwrap()
-        .build()
-        .unwrap();
-    let client_connection = ConnectionBuilder::address(bus.address.as_str())
-        .unwrap()
-        .build()
-        .unwrap();
-    let proxy = Proxy::new(
-        &client_connection,
-        DBUS_INTERFACE,
-        DBUS_PATH,
-        DBUS_INTERFACE,
-    )
-    .unwrap();
+    let (_bus, _service_connection, proxy) = test_proxy();
 
     let hardware: HardwareSummary = call_json(&proxy, "GetHardwareSummary");
     assert_eq!(hardware.vendor.as_deref(), Some("LENOVO"));
@@ -66,6 +44,71 @@ fn read_only_methods_return_expected_json_contracts() {
 
     let refreshed: Vec<Capability> = call_json(&proxy, "RefreshCapabilities");
     assert_eq!(refreshed, capabilities);
+}
+
+#[test]
+fn introspection_exposes_only_read_only_legion_methods() {
+    let (_bus, _service_connection, proxy) = test_proxy();
+    let xml = proxy.introspect().unwrap();
+    let mut methods = introspected_methods(&xml, DBUS_INTERFACE);
+    methods.sort_unstable();
+
+    assert_eq!(
+        methods,
+        [
+            "GetCapabilities",
+            "GetHardwareSummary",
+            "GetRawProbeReport",
+            "GetTelemetry",
+            "RefreshCapabilities"
+        ]
+    );
+    assert!(methods
+        .iter()
+        .all(|method| !method.starts_with("Set") && !method.starts_with("Write")));
+}
+
+fn test_proxy() -> (TestBus, zbus::blocking::Connection, Proxy<'static>) {
+    let bus = TestBus::start();
+    let service = LegionControl::new(ProbeOptions {
+        sysfs_root: fixture_root(),
+    });
+    let service_connection = ConnectionBuilder::address(bus.address.as_str())
+        .unwrap()
+        .name(DBUS_INTERFACE)
+        .unwrap()
+        .serve_at(DBUS_PATH, service)
+        .unwrap()
+        .build()
+        .unwrap();
+    let client_connection = ConnectionBuilder::address(bus.address.as_str())
+        .unwrap()
+        .build()
+        .unwrap();
+    let proxy =
+        Proxy::new_owned(client_connection, DBUS_INTERFACE, DBUS_PATH, DBUS_INTERFACE).unwrap();
+
+    (bus, service_connection, proxy)
+}
+
+fn introspected_methods(xml: &str, interface: &str) -> Vec<String> {
+    let Some(interface_start) = xml.find(&format!("<interface name=\"{interface}\">")) else {
+        return Vec::new();
+    };
+    let interface_xml = &xml[interface_start..];
+    let Some(interface_end) = interface_xml.find("</interface>") else {
+        return Vec::new();
+    };
+
+    interface_xml[..interface_end]
+        .lines()
+        .filter_map(|line| {
+            line.trim()
+                .strip_prefix("<method name=\"")?
+                .split_once('"')
+                .map(|(name, _)| name.to_owned())
+        })
+        .collect()
 }
 
 fn call_json<T>(proxy: &Proxy<'_>, method: &str) -> T
