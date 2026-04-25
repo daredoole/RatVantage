@@ -1,11 +1,12 @@
 use std::fs;
 use std::path::{Path, PathBuf};
+use std::process::Command;
 
 use legion_common::{
     BatteryChargeTypeCapability, BatteryTelemetry, Capability, CapabilityRegistry,
-    CapabilityStatus, FanCurveCapability, FirmwareAttributeCapability, HardwareSummary,
-    HwmonSensor, IdeapadToggleCapability, LedCapability, PlatformProfileCapability, RiskLevel,
-    TelemetrySnapshot,
+    CapabilityStatus, FanCurveCapability, FirmwareAttributeCapability, GpuCapability,
+    HardwareSummary, HwmonSensor, IdeapadToggleCapability, LedCapability,
+    PlatformProfileCapability, RiskLevel, TelemetrySnapshot,
 };
 
 #[derive(Debug, Clone)]
@@ -30,6 +31,7 @@ pub fn probe(options: &ProbeOptions) -> CapabilityRegistry {
     let leds = detect_leds(&options.sysfs_root);
     let firmware_attributes = detect_firmware_attributes(&options.sysfs_root);
     let ideapad_toggles = detect_ideapad_toggles(&options.sysfs_root);
+    let gpu = detect_envycontrol_gpu(&options.sysfs_root);
 
     let mut capabilities = Vec::new();
     push_capability(
@@ -69,6 +71,7 @@ pub fn probe(options: &ProbeOptions) -> CapabilityRegistry {
         "Ideapad toggles",
         !ideapad_toggles.is_empty(),
     );
+    push_capability(&mut capabilities, "gpu", "GPU mode", gpu.is_some());
 
     CapabilityRegistry {
         hardware: detect_hardware(&options.sysfs_root),
@@ -84,7 +87,7 @@ pub fn probe(options: &ProbeOptions) -> CapabilityRegistry {
         leds,
         firmware_attributes,
         ideapad_toggles,
-        ..CapabilityRegistry::default()
+        gpu,
     }
 }
 
@@ -101,6 +104,14 @@ pub fn parse_marked_current_choice(raw: &str) -> Option<String> {
             .strip_suffix(']')
             .map(str::to_owned)
     })
+}
+
+pub fn parse_envycontrol_mode(raw: &str) -> Option<String> {
+    raw.split(|character: char| {
+        !character.is_ascii_alphanumeric() && character != '-' && character != '_'
+    })
+    .map(str::to_ascii_lowercase)
+    .find(|token| matches!(token.as_str(), "integrated" | "hybrid" | "nvidia"))
 }
 
 fn push_capability(capabilities: &mut Vec<Capability>, id: &str, label: &str, detected: bool) {
@@ -372,6 +383,27 @@ fn detect_ideapad_toggles(root: &Path) -> Vec<IdeapadToggleCapability> {
     toggles
 }
 
+fn detect_envycontrol_gpu(root: &Path) -> Option<GpuCapability> {
+    if root != Path::new("/") {
+        return None;
+    }
+
+    let output = Command::new("envycontrol").arg("--query").output().ok()?;
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    let mode = parse_envycontrol_mode(&stdout).or_else(|| parse_envycontrol_mode(&stderr));
+
+    Some(GpuCapability {
+        provider: "envycontrol".to_owned(),
+        status: if output.status.success() && mode.is_some() {
+            CapabilityStatus::ProbeOnly
+        } else {
+            CapabilityStatus::Unsupported
+        },
+        mode,
+    })
+}
+
 fn read_i64(path: impl AsRef<Path>) -> Option<i64> {
     read_trim(path).and_then(|value| value.parse().ok())
 }
@@ -411,6 +443,23 @@ mod tests {
             parse_marked_current_choice("Fast Standard [Long_Life]").as_deref(),
             Some("Long_Life")
         );
+    }
+
+    #[test]
+    fn parses_envycontrol_mode_from_common_outputs() {
+        assert_eq!(
+            parse_envycontrol_mode("nvidia\n").as_deref(),
+            Some("nvidia")
+        );
+        assert_eq!(
+            parse_envycontrol_mode("Current GPU mode: hybrid").as_deref(),
+            Some("hybrid")
+        );
+        assert_eq!(
+            parse_envycontrol_mode("mode = integrated").as_deref(),
+            Some("integrated")
+        );
+        assert!(parse_envycontrol_mode("unsupported").is_none());
     }
 
     #[test]
@@ -454,6 +503,7 @@ mod tests {
         assert!(registry.ideapad_toggles.iter().any(|toggle| {
             toggle.name == "conservation_mode" && toggle.current_value.as_deref() == Some("1")
         }));
+        assert!(registry.gpu.is_none());
         let battery = registry.telemetry.battery.as_ref().unwrap();
         assert_eq!(battery.name, "BAT0");
         assert_eq!(battery.capacity_percent, Some(79));

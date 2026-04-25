@@ -21,6 +21,7 @@
 - Probe fixture coverage for confirmed and runtime-captured 82WM-style sysfs paths.
 - Bracketed battery `charge_types` parsing, including inferred current value when `charge_type` is absent.
 - Read-only `BAT0` telemetry for capacity percent, charging status, and health string when exposed.
+- Read-only EnvyControl GPU mode query when `envycontrol --query` is available; fixture-backed runs keep GPU capability missing for deterministic tests.
 - Read-only D-Bus daemon methods:
   - `GetHardwareSummary`
   - `GetCapabilities`

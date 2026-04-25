@@ -21,6 +21,7 @@ Current pre-alpha code provides the safe read-only base:
 - Daemon-side Rust adapters for dry-run planning, without D-Bus write methods.
 - Runtime-captured 82WM fixture coverage, including bracketed battery `charge_types` current-value parsing.
 - Read-only battery telemetry for capacity, status, and health where `BAT0` exposes it.
+- Read-only EnvyControl GPU mode query when `envycontrol --query` is available.
 - Fixture tests, private-bus integration tests, clippy/fmt/test local CI, and GitHub CI.
 
 ## Next immediate work
@@ -52,7 +53,7 @@ Goal: safe, useful daily controls using only confirmed interfaces and conservati
 - Current battery charge type.
 - Fan 1 / fan 2 RPM.
 - Temperature telemetry with sensor labels where available.
-- GPU mode from EnvyControl if installed.
+- GPU mode from EnvyControl if installed. [implemented as read-only query]
 - Basic battery capacity/status/health where exposed. [implemented for `BAT0` telemetry]
 
 ### Profiles
@@ -90,7 +91,7 @@ Suggested labels:
 
 ### GPU
 
-- Read `envycontrol --query` when available.
+- Read `envycontrol --query` when available. [implemented]
 - Offer guided switch to `integrated`, `hybrid`, or `nvidia` only if EnvyControl is installed and daemon validation passes.
 - Mark changes as pending reboot.
 - Provide clear rollback instructions.

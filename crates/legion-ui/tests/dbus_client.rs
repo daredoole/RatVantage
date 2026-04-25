@@ -28,6 +28,7 @@ fn client_reads_daemon_contract_over_private_bus() {
             "battery_charge_type",
             "fan_curves",
             "firmware_attributes",
+            "gpu",
             "hwmon",
             "ideapad_toggles",
             "leds",
@@ -36,9 +37,15 @@ fn client_reads_daemon_contract_over_private_bus() {
     );
     assert!(capabilities.iter().all(|capability| {
         capability.risk == RiskLevel::ReadOnly
-            && capability.status == CapabilityStatus::ProbeOnly
+            && (capability.status == CapabilityStatus::ProbeOnly || capability.id == "gpu")
             && capability.details.is_null()
     }));
+    assert!(
+        capabilities
+            .iter()
+            .any(|capability| capability.id == "gpu"
+                && capability.status == CapabilityStatus::Missing)
+    );
 
     let telemetry = client.telemetry().unwrap();
     assert!(telemetry
@@ -80,13 +87,14 @@ fn status_model_normalizes_daemon_data_for_ui() {
         status.hardware.product_sku.as_deref(),
         Some("LENOVO_MT_82WM_BU_idea_FM_Legion Pro 5 16ARX8")
     );
-    assert_eq!(status.capability_count(), 7);
+    assert_eq!(status.capability_count(), 8);
     assert_eq!(
         status.capability_ids(),
         [
             "battery_charge_type",
             "fan_curves",
             "firmware_attributes",
+            "gpu",
             "hwmon",
             "ideapad_toggles",
             "leds",
@@ -96,8 +104,15 @@ fn status_model_normalizes_daemon_data_for_ui() {
     assert!(status.capabilities.iter().all(|capability| {
         !capability.label.is_empty()
             && capability.risk == RiskLevel::ReadOnly
-            && capability.status == CapabilityStatus::ProbeOnly
+            && (capability.status == CapabilityStatus::ProbeOnly || capability.id == "gpu")
     }));
+    assert!(
+        status
+            .capabilities
+            .iter()
+            .any(|capability| capability.id == "gpu"
+                && capability.status == CapabilityStatus::Missing)
+    );
     assert_eq!(
         status.render_lines(),
         [
@@ -105,8 +120,8 @@ fn status_model_normalizes_daemon_data_for_ui() {
             "vendor=LENOVO",
             "product_name=82WM",
             "product_version=Legion Pro 5 16ARX8",
-            "capability_count=7",
-            "capabilities=battery_charge_type,fan_curves,firmware_attributes,hwmon,ideapad_toggles,leds,platform_profile",
+            "capability_count=8",
+            "capabilities=battery_charge_type,fan_curves,firmware_attributes,gpu,hwmon,ideapad_toggles,leds,platform_profile",
         ]
     );
 }
@@ -129,8 +144,8 @@ fn status_cli_prints_hardware_and_capability_summary() {
             "vendor=LENOVO\n",
             "product_name=82WM\n",
             "product_version=Legion Pro 5 16ARX8\n",
-            "capability_count=7\n",
-            "capabilities=battery_charge_type,fan_curves,firmware_attributes,hwmon,ideapad_toggles,leds,platform_profile\n",
+            "capability_count=8\n",
+            "capabilities=battery_charge_type,fan_curves,firmware_attributes,gpu,hwmon,ideapad_toggles,leds,platform_profile\n",
         )
     );
 }
