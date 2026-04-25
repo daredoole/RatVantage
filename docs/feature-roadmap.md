@@ -10,11 +10,12 @@ Current pre-alpha code provides the safe read-only base:
 - Headless GTK smoke coverage for the optional shell.
 - Fedora packaging assets for systemd, D-Bus, polkit, desktop metadata, AppStream metadata, and RPM spec.
 - Packaging metadata validation in local and GitHub CI.
+- Read-only sysfs fixture capture workflow for adding real hardware reports.
 - Fixture tests, private-bus integration tests, clippy/fmt/test local CI, and GitHub CI.
 
 ## Next immediate work
 
-- Expand fixtures using real probe reports from supported Legion machines.
+- Use the capture workflow to add fixtures from additional supported Legion machines.
 - Draft write-method contracts without enabling writes.
 - Keep progress docs current after each completed roadmap slice.
 - Keep GitHub CI as remote guard; run `./scripts/ci-local.sh` before pushing to reduce failed CI minutes.

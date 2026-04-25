@@ -16,6 +16,7 @@ Pre-alpha implementation scaffold exists:
 - UI `--status` model and optional GTK4/libadwaita shell behind `gtk-ui`.
 - Headless GTK smoke coverage for the optional shell.
 - Fedora packaging metadata and validation for systemd, D-Bus, polkit, desktop, AppStream, and RPM assets.
+- Read-only sysfs fixture capture workflow for adding more real hardware reports.
 - Local CI script and GitHub Actions CI.
 
 No hardware write path exists yet. Write support must wait for validators, polkit policy, rollback behavior, and manual target-machine validation.
@@ -67,6 +68,9 @@ cargo run -p legion-control-ui -- --status --bus-address <dbus-address>
 cargo run -p legion-control-ui --features gtk-ui
 ```
 
+To collect a read-only fixture from another Legion machine, use
+`scripts/capture-sysfs-fixture.sh`. See [docs/fixture-capture.md](docs/fixture-capture.md).
+
 Keep GitHub CI enabled as the clean-checkout and remote-runner guard. Local CI prevents wasted failed pushes; GitHub CI catches missing packages, toolchain drift, and workflow breakage.
 
 ## Roadmap Summary
@@ -78,12 +82,13 @@ Completed scaffold:
 - UI status client and optional GTK shell.
 - Headless GTK smoke coverage.
 - Fedora packaging metadata and validation.
+- Read-only fixture capture workflow.
 - Fixture, private-bus, unit, and contract tests.
 - Local and GitHub CI.
 
 Next:
 
-- Expanded probe fixtures from real hardware reports.
+- Add captured probe fixtures from additional supported Legion machines.
 - First write-method design, still disabled until safety checks exist.
 
 See [docs/feature-roadmap.md](docs/feature-roadmap.md) and [docs/implementation-plan.md](docs/implementation-plan.md).

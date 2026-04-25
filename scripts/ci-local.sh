@@ -47,6 +47,12 @@ cargo test --workspace
 xvfb-run -a cargo test -p legion-control-ui --features gtk-ui --test gtk_shell
 cargo clippy --all-targets --all-features -- -D warnings
 scripts/validate-packaging.sh
+fixture_tmp="$(mktemp -d)"
+trap 'rm -rf "$fixture_tmp"' EXIT
+scripts/capture-sysfs-fixture.sh \
+  --sysfs-root tests/fixtures/sysfs-82wm-confirmed \
+  --output "$fixture_tmp/captured" >/tmp/ratvantage-fixture-capture.txt
+cargo run -p legion-probe -- --json --sysfs-root "$fixture_tmp/captured" >/tmp/ratvantage-captured-probe.json
 cargo run -p legion-probe -- --json --sysfs-root tests/fixtures/sysfs-82wm-confirmed >/tmp/ratvantage-probe.json
 cargo run -p legion-control-daemon -- --dry-run >/tmp/ratvantage-daemon.txt
 

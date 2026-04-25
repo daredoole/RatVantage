@@ -29,6 +29,7 @@ RatVantage/
 │   ├── architecture.md
 │   ├── fedora-packaging.md
 │   ├── feature-roadmap.md
+│   ├── fixture-capture.md
 │   ├── hardware-control-matrix.md
 │   ├── implementation-plan.md
 │   ├── research-summary.md
@@ -489,10 +490,10 @@ ErrorOccurred(s code, s message)
 4. [x] Add fixture-based tests for probe parsing using fake sysfs directories.
 5. [x] Implement daemon skeleton with zbus service and read-only hardware, capability, telemetry, refresh, and raw-report methods.
 6. [x] Add systemd, D-Bus, polkit, desktop, metainfo, and RPM packaging assets while keeping write methods absent.
-7. [ ] Expand fixtures using real probe reports from supported Legion machines.
-8. [ ] Draft write-method D-Bus contracts without enabling writes.
-9. [ ] Implement validators for platform profile and battery charge type.
-10. [ ] Implement polkit checks and write methods for platform profile and battery charge type after validators and rollback exist.
+7. [x] Add a read-only sysfs fixture capture workflow for real hardware reports.
+8. [ ] Capture and add fixtures from additional supported Legion machines.
+9. [ ] Draft write-method D-Bus contracts without enabling writes.
+10. [ ] Implement validators for platform profile and battery charge type before any write methods.
 
 ## Test strategy
 
