@@ -128,7 +128,7 @@ Goal: make the confirmed controls more complete and user-friendly.
 ### Tray polish
 
 - Better tooltip with fan RPM and profile. [implemented]
-- Quick fan preset selector.
+- Quick fan preset selector. [implemented as disabled read-only menu scaffold]
 - Quick battery charge type selector.
 - Pending reboot indicator for GPU mode.
 - Fallback behavior when GNOME AppIndicator extension is missing.

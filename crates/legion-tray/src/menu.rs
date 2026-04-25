@@ -42,7 +42,22 @@ impl TrayMenu {
                     &write_disabled,
                 ),
                 disabled_item(
-                    "Apply fan preset",
+                    "Apply preset: Quiet office",
+                    TrayAction::ApplyFanPreset,
+                    &write_disabled,
+                ),
+                disabled_item(
+                    "Apply preset: Balanced daily",
+                    TrayAction::ApplyFanPreset,
+                    &write_disabled,
+                ),
+                disabled_item(
+                    "Apply preset: Gaming",
+                    TrayAction::ApplyFanPreset,
+                    &write_disabled,
+                ),
+                disabled_item(
+                    "Apply preset: Max safe",
                     TrayAction::ApplyFanPreset,
                     &write_disabled,
                 ),
@@ -75,6 +90,19 @@ mod tests {
 
         assert_eq!(menu.items[0].action, TrayAction::OpenDashboard);
         assert!(menu.items[0].enabled);
+        assert_eq!(
+            menu.items
+                .iter()
+                .filter(|item| item.action == TrayAction::ApplyFanPreset)
+                .map(|item| item.label.as_str())
+                .collect::<Vec<_>>(),
+            [
+                "Apply preset: Quiet office",
+                "Apply preset: Balanced daily",
+                "Apply preset: Gaming",
+                "Apply preset: Max safe"
+            ]
+        );
         assert!(menu.items[1..].iter().all(|item| {
             !item.enabled
                 && item

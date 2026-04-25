@@ -231,7 +231,13 @@ mod tests {
         assert!(menu_has_enabled_item(&menu, "Quit"));
         assert!(menu_has_disabled_item(&menu, "Set platform profile"));
         assert!(menu_has_disabled_item(&menu, "Set battery charge type"));
-        assert!(menu_has_disabled_item(&menu, "Apply fan preset"));
+        assert!(menu_has_disabled_item(&menu, "Apply preset: Quiet office"));
+        assert!(menu_has_disabled_item(
+            &menu,
+            "Apply preset: Balanced daily"
+        ));
+        assert!(menu_has_disabled_item(&menu, "Apply preset: Gaming"));
+        assert!(menu_has_disabled_item(&menu, "Apply preset: Max safe"));
         assert!(menu_has_disabled_item(&menu, "Toggle logo LED"));
     }
 
