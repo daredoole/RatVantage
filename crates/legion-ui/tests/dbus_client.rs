@@ -77,13 +77,19 @@ fn status_cli_prints_hardware_and_capability_summary() {
         .unwrap();
 
     assert!(output.status.success());
+    assert!(output.stderr.is_empty());
     let stdout = String::from_utf8(output.stdout).unwrap();
-    assert!(stdout.contains("Legion Control status"));
-    assert!(stdout.contains("vendor=LENOVO"));
-    assert!(stdout.contains("product_name=82WM"));
-    assert!(stdout.contains("capability_count=7"));
-    assert!(stdout.contains("platform_profile"));
-    assert!(stdout.contains("ideapad_toggles"));
+    assert_eq!(
+        stdout,
+        concat!(
+            "Legion Control status\n",
+            "vendor=LENOVO\n",
+            "product_name=82WM\n",
+            "product_version=Legion Pro 5 16ARX8\n",
+            "capability_count=7\n",
+            "capabilities=battery_charge_type,fan_curves,firmware_attributes,hwmon,ideapad_toggles,leds,platform_profile\n",
+        )
+    );
 }
 
 fn fixture_service() -> (TestBus, zbus::blocking::Connection, String) {
