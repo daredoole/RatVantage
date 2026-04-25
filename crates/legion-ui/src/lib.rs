@@ -408,6 +408,10 @@ impl LegionControlClient {
         self.call_json_arg("PlanGpuModeWrite", requested)
     }
 
+    pub fn plan_fan_preset_write(&self, requested: &str) -> Result<WriteDryRunPlan> {
+        self.call_json_arg("PlanFanPresetWrite", requested)
+    }
+
     pub fn status(&self) -> Result<UiStatus> {
         UiStatus::from_client(self)
     }

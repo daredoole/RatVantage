@@ -97,6 +97,7 @@ fn introspection_exposes_only_read_only_legion_methods() {
             "GetRawProbeReport",
             "GetTelemetry",
             "PlanBatteryChargeTypeWrite",
+            "PlanFanPresetWrite",
             "PlanGpuModeWrite",
             "PlanPlatformProfileWrite",
             "RefreshCapabilities"
@@ -134,6 +135,26 @@ fn daemon_builds_dry_run_plans_without_dbus_write_methods() {
     assert!(service.plan_platform_profile_write("custom").is_err());
     assert!(service.plan_battery_charge_type_write("Invalid").is_err());
     assert!(service.plan_gpu_mode_write("hybrid").is_err());
+    assert!(service.plan_fan_preset_write("balanced-daily").is_err());
+}
+
+#[test]
+fn daemon_builds_fan_preset_plan_from_runtime_fixture() {
+    let service = LegionControl::new(ProbeOptions {
+        sysfs_root: runtime_fixture_root(),
+    });
+
+    let plan = service.plan_fan_preset_write("balanced-daily").unwrap();
+    assert_eq!(plan.method, "ApplyFanPreset");
+    assert_eq!(plan.capability_id, "fan_curves");
+    assert_eq!(plan.requested_value, "balanced-daily");
+    assert_eq!(plan.previous_value, "current fan curve snapshot");
+    assert!(plan.readback_required);
+    assert!(!plan.reboot_required);
+    assert!(plan
+        .safety_notes
+        .iter()
+        .any(|note| note.contains("Middle-ground fan ramp")));
 }
 
 fn test_proxy() -> (PrivateBus, zbus::blocking::Connection, Proxy<'static>) {
@@ -157,4 +178,11 @@ fn test_proxy() -> (PrivateBus, zbus::blocking::Connection, Proxy<'static>) {
         Proxy::new_owned(client_connection, DBUS_INTERFACE, DBUS_PATH, DBUS_INTERFACE).unwrap();
 
     (bus, service_connection, proxy)
+}
+
+fn runtime_fixture_root() -> std::path::PathBuf {
+    fixture_root()
+        .parent()
+        .expect("fixture root must have parent")
+        .join("sysfs-82wm-runtime-capture")
 }

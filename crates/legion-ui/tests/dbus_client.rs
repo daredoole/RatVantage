@@ -336,6 +336,35 @@ fn plan_cli_prints_read_only_write_preview_json() {
 }
 
 #[test]
+fn fan_preset_plan_cli_prints_read_only_write_preview_json() {
+    let (_bus, _service_connection, address) = runtime_fixture_service();
+    let client = LegionControlClient::address(&address).unwrap();
+    let plan = client.plan_fan_preset_write("balanced-daily").unwrap();
+    assert_eq!(plan.method, "ApplyFanPreset");
+    assert_eq!(plan.previous_value, "current fan curve snapshot");
+    assert_eq!(plan.requested_value, "balanced-daily");
+    assert!(!plan.reboot_required);
+
+    let output = Command::new(env!("CARGO_BIN_EXE_legion-control-ui"))
+        .args([
+            "--plan-fan-preset",
+            "balanced-daily",
+            "--bus-address",
+            &address,
+        ])
+        .output()
+        .unwrap();
+
+    assert!(output.status.success());
+    assert!(output.stderr.is_empty());
+    let json: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(json["method"], "ApplyFanPreset");
+    assert_eq!(json["capability_id"], "fan_curves");
+    assert_eq!(json["requested_value"], "balanced-daily");
+    assert_eq!(json["readback_required"], true);
+}
+
+#[test]
 fn status_model_uses_unknown_for_missing_hardware_fields() {
     let status = UiStatus::from_parts(Default::default(), Vec::new()).unwrap();
 
@@ -399,6 +428,27 @@ fn fixture_service() -> (PrivateBus, zbus::blocking::Connection, String) {
     let bus = PrivateBus::start();
     let service = LegionControl::new(ProbeOptions {
         sysfs_root: fixture_root(),
+    });
+    let service_connection = ConnectionBuilder::address(bus.address())
+        .unwrap()
+        .name(DBUS_INTERFACE)
+        .unwrap()
+        .serve_at(DBUS_PATH, service)
+        .unwrap()
+        .build()
+        .unwrap();
+    let address = bus.address().to_owned();
+
+    (bus, service_connection, address)
+}
+
+fn runtime_fixture_service() -> (PrivateBus, zbus::blocking::Connection, String) {
+    let bus = PrivateBus::start();
+    let service = LegionControl::new(ProbeOptions {
+        sysfs_root: fixture_root()
+            .parent()
+            .expect("fixture root must have parent")
+            .join("sysfs-82wm-runtime-capture"),
     });
     let service_connection = ConnectionBuilder::address(bus.address())
         .unwrap()

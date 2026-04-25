@@ -3,8 +3,9 @@ use std::sync::Mutex;
 use anyhow::Result;
 use legion_common::{
     plan_battery_charge_type_write as plan_battery_charge_type,
-    plan_gpu_mode_write as plan_gpu_mode, plan_platform_profile_write as plan_platform_profile,
-    CapabilityRegistry, ValidationError, WriteDryRunPlan,
+    plan_fan_preset_write as plan_fan_preset, plan_gpu_mode_write as plan_gpu_mode,
+    plan_platform_profile_write as plan_platform_profile, CapabilityRegistry, FanPreset,
+    ValidationError, WriteDryRunPlan,
 };
 use legion_probe::{probe, ProbeOptions};
 use serde::Serialize;
@@ -12,7 +13,14 @@ use zbus::{blocking::Connection, blocking::ConnectionBuilder, fdo, interface};
 
 pub const DBUS_INTERFACE: &str = "org.ratvantage.LegionControl1";
 pub const DBUS_PATH: &str = "/org/ratvantage/LegionControl1";
-pub const READ_ONLY_METHODS: &str = "GetHardwareSummary,GetCapabilities,RefreshCapabilities,GetTelemetry,GetRawProbeReport,PlanPlatformProfileWrite,PlanBatteryChargeTypeWrite,PlanGpuModeWrite";
+pub const READ_ONLY_METHODS: &str = "GetHardwareSummary,GetCapabilities,RefreshCapabilities,GetTelemetry,GetRawProbeReport,PlanPlatformProfileWrite,PlanBatteryChargeTypeWrite,PlanGpuModeWrite,PlanFanPresetWrite";
+
+const PACKAGED_FAN_PRESETS: &[&str] = &[
+    include_str!("../../../data/presets/quiet-office.toml"),
+    include_str!("../../../data/presets/balanced-daily.toml"),
+    include_str!("../../../data/presets/gaming.toml"),
+    include_str!("../../../data/presets/max-safe.toml"),
+];
 
 pub struct LegionControl {
     options: ProbeOptions,
@@ -22,6 +30,7 @@ pub struct LegionControl {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum PlanningError {
     RegistryUnavailable,
+    PresetUnavailable(String),
     Validation(ValidationError),
 }
 
@@ -63,6 +72,13 @@ impl LegionControl {
     pub fn plan_gpu_mode_write(&self, requested: &str) -> Result<WriteDryRunPlan, PlanningError> {
         let registry = self.planning_snapshot()?;
         plan_gpu_mode(registry.gpu.as_ref(), requested).map_err(PlanningError::Validation)
+    }
+
+    pub fn plan_fan_preset_write(&self, requested: &str) -> Result<WriteDryRunPlan, PlanningError> {
+        let registry = self.planning_snapshot()?;
+        let presets = packaged_fan_presets()?;
+        plan_fan_preset(&registry.fan_curves, &presets, requested)
+            .map_err(PlanningError::Validation)
     }
 
     fn refresh(&self) -> fdo::Result<CapabilityRegistry> {
@@ -117,6 +133,10 @@ impl LegionControl {
     fn PlanGpuModeWrite(&self, requested: &str) -> fdo::Result<String> {
         to_plan_json(self.plan_gpu_mode_write(requested))
     }
+
+    fn PlanFanPresetWrite(&self, requested: &str) -> fdo::Result<String> {
+        to_plan_json(self.plan_fan_preset_write(requested))
+    }
 }
 
 pub fn system_connection(service: LegionControl) -> Result<Connection> {
@@ -143,8 +163,19 @@ fn to_plan_json(result: Result<WriteDryRunPlan, PlanningError>) -> fdo::Result<S
         Err(PlanningError::RegistryUnavailable) => Err(fdo::Error::Failed(
             "capability registry unavailable".to_owned(),
         )),
+        Err(PlanningError::PresetUnavailable(error)) => Err(fdo::Error::Failed(error)),
         Err(PlanningError::Validation(error)) => Err(fdo::Error::InvalidArgs(
             serde_json::to_string(&error).unwrap_or_else(|_| format!("{error:?}")),
         )),
     }
+}
+
+fn packaged_fan_presets() -> Result<Vec<FanPreset>, PlanningError> {
+    PACKAGED_FAN_PRESETS
+        .iter()
+        .map(|preset| {
+            toml::from_str::<FanPreset>(preset)
+                .map_err(|error| PlanningError::PresetUnavailable(error.to_string()))
+        })
+        .collect()
 }

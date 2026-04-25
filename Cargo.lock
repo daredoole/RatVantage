@@ -950,6 +950,7 @@ dependencies = [
  "ratvantage-test-support",
  "serde",
  "serde_json",
+ "toml",
  "zbus 4.4.0",
 ]
 

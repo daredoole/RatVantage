@@ -12,6 +12,7 @@ legion-common.workspace = true
 legion-probe.workspace = true
 serde.workspace = true
 serde_json.workspace = true
+toml.workspace = true
 zbus.workspace = true
 
 [dev-dependencies]

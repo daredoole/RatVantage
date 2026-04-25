@@ -13,6 +13,7 @@ The active daemon must continue to expose only:
 - `PlanPlatformProfileWrite`
 - `PlanBatteryChargeTypeWrite`
 - `PlanGpuModeWrite`
+- `PlanFanPresetWrite`
 
 ## Disabled Drafts
 
@@ -21,6 +22,7 @@ The active daemon must continue to expose only:
 | `SetPlatformProfile` | `platform_profile` | `org.ratvantage.LegionControl1.set-platform-profile` | `{"profile":"string"}` | reversible write |
 | `SetBatteryChargeType` | `battery_charge_type` | `org.ratvantage.LegionControl1.set-battery-charge-type` | `{"charge_type":"string"}` | reversible write |
 | `SetGpuMode` | `gpu` | `org.ratvantage.LegionControl1.set-gpu-mode` | `{"mode":"integrated|hybrid|nvidia"}` | experimental write, reboot required |
+| `ApplyFanPreset` | `fan_curves` | `org.ratvantage.LegionControl1.apply-fan-preset` | `{"preset_id":"string"}` | experimental write |
 
 The source of truth for draft metadata is
 `legion_common::WRITE_METHOD_CONTRACTS`.
@@ -33,9 +35,10 @@ The source of truth for draft metadata is
 - Use `validate_platform_profile_choice` and
   `validate_battery_charge_type_choice` before any future sysfs write.
 - Use `validate_gpu_mode_choice` before any future EnvyControl GPU mode write.
+- Use `validate_fan_preset_choice` before any future fan curve preset write.
 - Use `plan_platform_profile_write`, `plan_battery_charge_type_write`, and
-  `plan_gpu_mode_write` for validator-backed dry-run plans before any future
-  daemon write implementation.
+  `plan_gpu_mode_write`, and `plan_fan_preset_write` for validator-backed
+  dry-run plans before any future daemon write implementation.
 - Read back the changed sysfs value after each write.
 - Store previous values before writing.
 - Restore previous values on read-back failure when still safe and listed.
@@ -57,7 +60,10 @@ target path, rollback value, and execution steps before any write method exists.
 plans as JSON for CLI inspection. `legion-control-ui --plan-gpu-mode <mode>`
 prints the EnvyControl GPU mode plan and marks the future change as reboot
 required.
-The actual `Set*` methods must remain outside the zbus `#[interface]`
+`legion-control-ui --plan-fan-preset <preset_id>` prints the packaged fan preset
+plan only when the preset schema is valid and the detected fan curve exposes a
+complete 10-point writable shape.
+The actual write methods must remain outside the zbus `#[interface]`
 implementation until write support is deliberately enabled.
 
 ## Out Of Scope

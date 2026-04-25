@@ -95,6 +95,23 @@ pub struct FanCurveCapability {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct FanPreset {
+    pub schema_version: u8,
+    pub id: String,
+    pub label: String,
+    pub description: String,
+    pub target_profiles: Vec<String>,
+    pub safety_note: String,
+    pub points: Vec<FanPresetPoint>,
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+pub struct FanPresetPoint {
+    pub temperature_c: i16,
+    pub pwm: u16,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct LedCapability {
     pub name: String,
     pub path: String,
@@ -220,6 +237,34 @@ pub const WRITE_METHOD_CONTRACTS: &[WriteMethodContract] = &[
             "write method remains disabled; dry-run planning only",
         ],
     },
+    WriteMethodContract {
+        method: "ApplyFanPreset",
+        capability_id: "fan_curves",
+        polkit_action: "org.ratvantage.LegionControl1.apply-fan-preset",
+        request_type: r#"{"preset_id":"string"}"#,
+        risk: RiskLevel::ExperimentalWrite,
+        enabled: false,
+        reboot_required: false,
+        preconditions: &[
+            "fan_curves capability is detected",
+            "packaged preset schema is valid",
+            "detected fan curve exposes enough auto-point files for the preset",
+        ],
+        validators: &[
+            "requested preset exactly matches a packaged preset id",
+            "preset has exactly 10 ascending temperature points",
+            "preset PWM values are 0..255 and non-decreasing",
+            "post-write read-back matches the complete requested fan curve",
+        ],
+        rollback: &[
+            "store the complete previous fan curve before write",
+            "restore the complete previous fan curve if read-back fails",
+        ],
+        safety_notes: &[
+            "fan curve changes affect thermals and acoustics",
+            "write method remains disabled; dry-run planning only",
+        ],
+    },
 ];
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -323,6 +368,31 @@ pub fn validate_gpu_mode_choice(
     )
 }
 
+pub fn validate_fan_preset_choice(
+    fan_curves: &[FanCurveCapability],
+    presets: &[FanPreset],
+    requested: &str,
+) -> Result<(), ValidationError> {
+    if requested.is_empty() {
+        return Err(ValidationError::EmptyValue {
+            field: "preset_id".to_owned(),
+        });
+    }
+
+    let preset =
+        find_fan_preset(presets, requested).ok_or_else(|| ValidationError::UnsupportedChoice {
+            capability_id: "fan_preset".to_owned(),
+            requested: requested.to_owned(),
+            choices: presets.iter().map(|preset| preset.id.clone()).collect(),
+        })?;
+    validate_fan_preset_schema(preset)?;
+
+    let curve = select_fan_curve(fan_curves).ok_or_else(|| ValidationError::MissingCapability {
+        capability_id: "fan_curves".to_owned(),
+    })?;
+    validate_fan_curve_supports_preset(curve, preset)
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct WriteDryRunPlan {
     pub method: String,
@@ -400,6 +470,24 @@ pub fn plan_gpu_mode_write(
     )
 }
 
+pub fn plan_fan_preset_write(
+    fan_curves: &[FanCurveCapability],
+    presets: &[FanPreset],
+    requested: &str,
+) -> Result<WriteDryRunPlan, ValidationError> {
+    validate_fan_preset_choice(fan_curves, presets, requested)?;
+    let preset = find_fan_preset(presets, requested).expect("validated fan preset must exist");
+    let curve = select_fan_curve(fan_curves).expect("validated fan curve capability must exist");
+    let mut plan = plan_write(
+        write_contract("ApplyFanPreset"),
+        curve.path.as_deref().unwrap_or("fan_curves"),
+        "current fan curve snapshot",
+        &preset.id,
+    )?;
+    plan.safety_notes.push(preset.safety_note.clone());
+    Ok(plan)
+}
+
 fn write_contract(method: &str) -> &'static WriteMethodContract {
     WRITE_METHOD_CONTRACTS
         .iter()
@@ -450,6 +538,92 @@ fn require_current(capability_id: &str, current: Option<&str>) -> Result<(), Val
             capability_id: capability_id.to_owned(),
         }),
     }
+}
+
+fn find_fan_preset<'a>(presets: &'a [FanPreset], requested: &str) -> Option<&'a FanPreset> {
+    presets.iter().find(|preset| preset.id == requested)
+}
+
+fn select_fan_curve(fan_curves: &[FanCurveCapability]) -> Option<&FanCurveCapability> {
+    fan_curves.iter().find(|curve| {
+        curve.status == CapabilityStatus::ProbeOnly
+            && curve.path.as_deref().is_some_and(|path| !path.is_empty())
+    })
+}
+
+fn validate_fan_preset_schema(preset: &FanPreset) -> Result<(), ValidationError> {
+    if preset.schema_version != 1 {
+        return blocked_fan_preset(preset, "unsupported fan preset schema version");
+    }
+    if preset.id.is_empty()
+        || preset.label.is_empty()
+        || preset.description.is_empty()
+        || preset.safety_note.is_empty()
+        || preset.target_profiles.is_empty()
+        || preset
+            .target_profiles
+            .iter()
+            .any(|profile| profile.is_empty())
+    {
+        return blocked_fan_preset(preset, "fan preset metadata is incomplete");
+    }
+    if preset.points.len() != 10 {
+        return blocked_fan_preset(preset, "fan preset must contain exactly 10 points");
+    }
+
+    let mut previous_temperature = None;
+    let mut previous_pwm = None;
+    for point in &preset.points {
+        if previous_temperature.is_some_and(|previous| point.temperature_c <= previous) {
+            return blocked_fan_preset(preset, "fan preset temperatures must be ascending");
+        }
+        if point.pwm > 255 {
+            return blocked_fan_preset(preset, "fan preset PWM values must be 0..255");
+        }
+        if previous_pwm.is_some_and(|previous| point.pwm < previous) {
+            return blocked_fan_preset(preset, "fan preset PWM values must be non-decreasing");
+        }
+        previous_temperature = Some(point.temperature_c);
+        previous_pwm = Some(point.pwm);
+    }
+
+    Ok(())
+}
+
+fn validate_fan_curve_supports_preset(
+    curve: &FanCurveCapability,
+    preset: &FanPreset,
+) -> Result<(), ValidationError> {
+    let point_count = preset.points.len();
+    let has_required_last_temp = curve
+        .point_paths
+        .iter()
+        .any(|path| path.contains(&format!("_auto_point{point_count}_temp")));
+    let has_required_last_pwm = curve
+        .point_paths
+        .iter()
+        .any(|path| path.contains(&format!("_auto_point{point_count}_pwm")));
+    if curve.point_paths.len() < point_count * 2
+        || !has_required_last_temp
+        || !has_required_last_pwm
+    {
+        return Err(ValidationError::BlockedChoice {
+            capability_id: "fan_curves".to_owned(),
+            requested: preset.id.clone(),
+            reason: "detected fan curve does not expose a complete 10-point writable shape"
+                .to_owned(),
+        });
+    }
+
+    Ok(())
+}
+
+fn blocked_fan_preset<T>(preset: &FanPreset, reason: &str) -> Result<T, ValidationError> {
+    Err(ValidationError::BlockedChoice {
+        capability_id: "fan_preset".to_owned(),
+        requested: preset.id.clone(),
+        reason: reason.to_owned(),
+    })
 }
 
 fn validate_choice(
@@ -508,7 +682,12 @@ mod tests {
 
         assert_eq!(
             methods,
-            ["SetPlatformProfile", "SetBatteryChargeType", "SetGpuMode"]
+            [
+                "SetPlatformProfile",
+                "SetBatteryChargeType",
+                "SetGpuMode",
+                "ApplyFanPreset"
+            ]
         );
         assert!(WRITE_METHOD_CONTRACTS
             .iter()
@@ -820,6 +999,82 @@ mod tests {
     }
 
     #[test]
+    fn fan_preset_validator_accepts_packaged_shape_with_complete_curve() {
+        let preset = fan_preset("balanced-daily");
+        let curve = complete_fan_curve();
+
+        assert_eq!(
+            validate_fan_preset_choice(&[curve], &[preset], "balanced-daily"),
+            Ok(())
+        );
+    }
+
+    #[test]
+    fn fan_preset_validator_rejects_missing_invalid_and_incomplete_curve() {
+        let preset = fan_preset("balanced-daily");
+        let short_curve = FanCurveCapability {
+            point_paths: vec![
+                "/sys/class/hwmon/hwmon7/pwm1_auto_point1_temp".to_owned(),
+                "/sys/class/hwmon/hwmon7/pwm1_auto_point1_pwm".to_owned(),
+            ],
+            ..complete_fan_curve()
+        };
+        let bad_preset = FanPreset {
+            points: vec![FanPresetPoint {
+                temperature_c: 35,
+                pwm: 10,
+            }],
+            ..preset.clone()
+        };
+
+        assert!(matches!(
+            validate_fan_preset_choice(&[], std::slice::from_ref(&preset), "balanced-daily"),
+            Err(ValidationError::MissingCapability { .. })
+        ));
+        assert!(matches!(
+            validate_fan_preset_choice(
+                &[complete_fan_curve()],
+                std::slice::from_ref(&preset),
+                "unknown"
+            ),
+            Err(ValidationError::UnsupportedChoice { .. })
+        ));
+        assert!(matches!(
+            validate_fan_preset_choice(&[complete_fan_curve()], &[bad_preset], "balanced-daily"),
+            Err(ValidationError::BlockedChoice { .. })
+        ));
+        assert!(matches!(
+            validate_fan_preset_choice(&[short_curve], &[preset], "balanced-daily"),
+            Err(ValidationError::BlockedChoice { .. })
+        ));
+    }
+
+    #[test]
+    fn fan_preset_dry_run_plan_uses_validator_and_contract_metadata() {
+        let preset = fan_preset("balanced-daily");
+        let curve = complete_fan_curve();
+
+        let plan = plan_fan_preset_write(&[curve], &[preset], "balanced-daily").unwrap();
+
+        assert_eq!(plan.method, "ApplyFanPreset");
+        assert_eq!(plan.capability_id, "fan_curves");
+        assert_eq!(plan.path, "/sys/class/hwmon/hwmon9");
+        assert_eq!(plan.previous_value, "current fan curve snapshot");
+        assert_eq!(plan.requested_value, "balanced-daily");
+        assert_eq!(plan.rollback_value, "current fan curve snapshot");
+        assert!(plan.readback_required);
+        assert!(!plan.reboot_required);
+        assert_eq!(
+            plan.polkit_action,
+            "org.ratvantage.LegionControl1.apply-fan-preset"
+        );
+        assert!(plan
+            .safety_notes
+            .iter()
+            .any(|note| note.contains("Middle-ground fan ramp")));
+    }
+
+    #[test]
     fn dry_run_plans_reject_invalid_requests_before_planning() {
         let platform = PlatformProfileCapability {
             current: Some("balanced".to_owned()),
@@ -846,5 +1101,47 @@ mod tests {
             plan_gpu_mode_write(None, "hybrid"),
             Err(ValidationError::MissingCapability { .. })
         ));
+        assert!(matches!(
+            plan_fan_preset_write(&[], &[fan_preset("balanced-daily")], "balanced-daily"),
+            Err(ValidationError::MissingCapability { .. })
+        ));
+    }
+
+    fn fan_preset(id: &str) -> FanPreset {
+        FanPreset {
+            schema_version: 1,
+            id: id.to_owned(),
+            label: "Balanced daily".to_owned(),
+            description: "General-purpose curve".to_owned(),
+            target_profiles: vec!["balanced".to_owned()],
+            safety_note:
+                "Middle-ground fan ramp; daemon must write a complete validated curve only."
+                    .to_owned(),
+            points: (0..10)
+                .map(|index| FanPresetPoint {
+                    temperature_c: 35 + (index * 5),
+                    pwm: 10 + (index as u16 * 20),
+                })
+                .collect(),
+        }
+    }
+
+    fn complete_fan_curve() -> FanCurveCapability {
+        let mut point_paths = Vec::new();
+        for point in 1..=10 {
+            point_paths.push(format!(
+                "/sys/class/hwmon/hwmon9/pwm1_auto_point{point}_temp"
+            ));
+            point_paths.push(format!(
+                "/sys/class/hwmon/hwmon9/pwm1_auto_point{point}_pwm"
+            ));
+        }
+
+        FanCurveCapability {
+            id: "legion-hwmon".to_owned(),
+            status: CapabilityStatus::ProbeOnly,
+            path: Some("/sys/class/hwmon/hwmon9".to_owned()),
+            point_paths,
+        }
     }
 }

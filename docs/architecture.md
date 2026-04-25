@@ -121,6 +121,7 @@ GetRawProbeReport() -> s                          # JSON; no secrets
 PlanPlatformProfileWrite(s requested) -> s        # JSON dry-run plan
 PlanBatteryChargeTypeWrite(s requested) -> s      # JSON dry-run plan
 PlanGpuModeWrite(s requested) -> s                # JSON dry-run plan, reboot required
+PlanFanPresetWrite(s requested) -> s              # JSON dry-run plan
 ```
 
 Future write-capable methods must remain absent until their validators, polkit

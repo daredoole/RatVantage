@@ -23,11 +23,11 @@ Pre-alpha implementation scaffold exists:
 - Headless GTK smoke coverage for the optional shell.
 - Fedora packaging metadata and validation for systemd, D-Bus, polkit, desktop, AppStream, and RPM assets.
 - Read-only sysfs fixture capture workflow for adding more real hardware reports.
-- Packaged read-only fan preset TOML assets with CI schema validation.
-- Disabled write-method contract drafts for platform profile, battery charge type, and GPU mode.
-- Pure validators for platform profile, battery charge type, and EnvyControl GPU mode choices.
-- Validator-backed dry-run planning for platform profile, battery charge type, and GPU mode with reboot-required messaging.
-- Read-only D-Bus dry-run planning for platform profile, battery charge type, and GPU mode.
+- Packaged read-only fan preset TOML assets with CI schema validation and dry-run planning.
+- Disabled write-method contract drafts for platform profile, battery charge type, GPU mode, and fan presets.
+- Pure validators for platform profile, battery charge type, EnvyControl GPU mode, and packaged fan preset choices.
+- Validator-backed dry-run planning for platform profile, battery charge type, GPU mode, and fan presets.
+- Read-only D-Bus dry-run planning for platform profile, battery charge type, GPU mode, and fan presets.
 - Local CI script and GitHub Actions CI.
 
 No hardware write path exists yet. Write support must wait for validators, polkit policy, rollback behavior, and manual target-machine validation.
@@ -85,6 +85,7 @@ cargo run -p legion-control-ui -- --diagnostics --bus-address <dbus-address>
 cargo run -p legion-control-ui -- --plan-platform-profile performance --bus-address <dbus-address>
 cargo run -p legion-control-ui -- --plan-battery-charge-type Conservation --bus-address <dbus-address>
 cargo run -p legion-control-ui -- --plan-gpu-mode hybrid --bus-address <dbus-address>
+cargo run -p legion-control-ui -- --plan-fan-preset balanced-daily --bus-address <dbus-address>
 cargo run -p legion-control-tray -- --status --bus-address <dbus-address>
 cargo run -p legion-control-tray -- --tooltip --bus-address <dbus-address>
 cargo run -p legion-control-ui --features gtk-ui
@@ -112,12 +113,12 @@ Completed scaffold:
 - Fedora packaging metadata and validation.
 - Read-only fixture capture workflow.
 - Runtime-captured 82WM fixture coverage.
-- Packaged fan preset TOML assets.
+- Packaged fan preset TOML assets with runtime dry-run validation.
 - Disabled write-method contract drafts.
 - Pure platform profile, battery charge type, and EnvyControl GPU mode validators.
-- Pure dry-run planning for future platform profile, battery charge type, and GPU mode writes.
+- Pure dry-run planning for future platform profile, battery charge type, GPU mode, and fan preset writes.
 - Read-only daemon planning methods over D-Bus; no write methods are exposed.
-- UI CLI previews for platform profile, battery charge type, and GPU mode dry-run plans.
+- UI CLI previews for platform profile, battery charge type, GPU mode, and fan preset dry-run plans.
 - Read-only diagnostics JSON bundle with hardware summary, kernel version, detected sysfs paths, recent daemon log excerpts, and raw probe report.
 - Diagnostics include choice file paths for platform profiles and battery charge types.
 - Read-only GTK diagnostics tab with the same debug bundle and a Copy JSON action.

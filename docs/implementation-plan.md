@@ -6,13 +6,13 @@ The repository now has a working pre-alpha scaffold:
 
 - Rust workspace with `legion-common`, `legion-probe`, `legion-daemon`, `legion-ui`, and `ratvantage-test-support`.
 - Read-only probe that builds hardware summary, capability, telemetry, and raw report JSON.
-- Read-only daemon exposing hardware/capability/telemetry/raw-report methods plus dry-run planning methods for platform profile, battery charge type, and GPU mode.
+- Read-only daemon exposing hardware/capability/telemetry/raw-report methods plus dry-run planning methods for platform profile, battery charge type, GPU mode, and fan presets.
 - Private D-Bus contract tests that verify method introspection and JSON contracts.
-- UI status, overview, diagnostics, and dry-run planning clients with deterministic CLI output, including reboot-required GPU mode planning, plus optional GTK4/libadwaita shell with read-only Status, Profiles, Battery, and Diagnostics tabs behind `gtk-ui`.
-- Packaged read-only fan preset TOML assets with CI schema validation.
+- UI status, overview, diagnostics, and dry-run planning clients with deterministic CLI output, including reboot-required GPU mode planning and fan preset validation, plus optional GTK4/libadwaita shell with read-only Status, Profiles, Battery, and Diagnostics tabs behind `gtk-ui`.
+- Packaged read-only fan preset TOML assets with CI schema validation and runtime dry-run planning.
 - Local CI script, Fedora dependency installer, GitHub Actions CI, and pinned stable Rust toolchain.
 
-Next implementation work should add more captured fixtures when additional supported Legion machines are available, or continue with fan preset validation/planning. Hardware writes remain design-only until validators, polkit policy, rollback, and manual validation are complete.
+Next implementation work should add more captured fixtures when additional supported Legion machines are available, or continue with GTK read-only polish. Hardware writes remain design-only until validators, polkit policy, rollback, and manual validation are complete.
 
 ## Repo structure
 
@@ -368,6 +368,7 @@ GetRawProbeReport() -> s
 PlanPlatformProfileWrite(s requested) -> s
 PlanBatteryChargeTypeWrite(s requested) -> s
 PlanGpuModeWrite(s requested) -> s
+PlanFanPresetWrite(s requested) -> s
 ```
 
 Future write-capable methods are design-only until validators, polkit checks,

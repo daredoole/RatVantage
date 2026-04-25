@@ -17,9 +17,9 @@ Current pre-alpha code provides the safe read-only base:
 - Packaging metadata validation in local and GitHub CI.
 - Read-only sysfs fixture capture workflow for adding real hardware reports.
 - StatusNotifier tray smoke script and manual checklist.
-- Disabled draft write-method contracts for platform profile, battery charge type, and GPU mode.
-- Pure validators for platform profile, battery charge type, and EnvyControl GPU mode choices.
-- Validator-backed dry-run planning for platform profile, battery charge type, and GPU mode.
+- Disabled draft write-method contracts for platform profile, battery charge type, GPU mode, and fan presets.
+- Pure validators for platform profile, battery charge type, EnvyControl GPU mode, and packaged fan preset choices.
+- Validator-backed dry-run planning for platform profile, battery charge type, GPU mode, and fan presets.
 - Daemon-side Rust adapters for dry-run planning, without D-Bus write methods.
 - Runtime-captured 82WM fixture coverage, including bracketed battery `charge_types` current-value parsing.
 - Read-only battery telemetry for capacity, status, and health where `BAT0` exposes it.
@@ -27,18 +27,18 @@ Current pre-alpha code provides the safe read-only base:
 - Read-only UI `--overview` summary for platform profile, battery mode, fan RPM, temperatures, GPU mode, and battery telemetry.
 - Read-only UI `--diagnostics` JSON bundle with hardware summary, kernel version, detected sysfs paths, recent daemon log excerpts, and raw probe report.
 - Diagnostics include `platform_profile_choices` and `charge_types` source paths.
-- Read-only UI dry-run plan previews for platform profile, battery charge type, and GPU mode writes.
+- Read-only UI dry-run plan previews for platform profile, battery charge type, GPU mode, and fan preset writes.
 - UI status output includes per-capability status and risk labels.
 - Read-only GTK Profiles and Battery tabs show platform profile choices, battery charge choices, sysfs source paths, and battery telemetry from the diagnostics bundle.
 - Read-only GTK diagnostics tab for the same hardware/debug bundle, including Copy JSON.
-- Packaged read-only fan preset TOML assets with CI schema validation.
+- Packaged read-only fan preset TOML assets with CI schema validation and runtime dry-run planning.
 - Fixture tests, private-bus integration tests, clippy/fmt/test local CI, and GitHub CI.
 
 ## Next immediate work
 
 - Keep tray autostart disabled; GNOME AppIndicator extension path is untested.
 - Add more captured fixtures when additional supported Legion machines are available.
-- Continue with fan preset validation/planning or GTK read-only polish.
+- Continue with GTK read-only polish or add more captured hardware fixtures.
 - Keep progress docs current after each completed roadmap slice.
 - Keep GitHub CI as remote guard; run `./scripts/ci-local.sh` before pushing to reduce failed CI minutes.
 
@@ -91,11 +91,11 @@ Suggested labels:
 
 - Read detected fan curve capability.
 - Provide packaged presets:
-  - Quiet office [implemented as inert TOML asset]
-  - Balanced daily [implemented as inert TOML asset]
-  - Gaming [implemented as inert TOML asset]
-  - Max safe [implemented as inert TOML asset]
-- Apply full validated curve only.
+  - Quiet office [implemented as TOML asset and dry-run input]
+  - Balanced daily [implemented as TOML asset and dry-run input]
+  - Gaming [implemented as TOML asset and dry-run input]
+  - Max safe [implemented as TOML asset and dry-run input]
+- Apply full validated curve only. [implemented as dry-run validation only]
 - Restore safe/default action.
 - Store last-known-good fan curve.
 
