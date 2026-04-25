@@ -105,8 +105,8 @@ Completed scaffold:
 - Pure platform profile and battery charge type validators.
 - Pure dry-run planning for future platform profile and battery charge type writes.
 - Non-D-Bus daemon planning adapters.
-- Read-only diagnostics JSON bundle with hardware summary, kernel version, detected sysfs paths, and raw probe report.
-- Read-only GTK diagnostics tab for the same debug bundle.
+- Read-only diagnostics JSON bundle with hardware summary, kernel version, detected sysfs paths, recent daemon log excerpts, and raw probe report.
+- Read-only GTK diagnostics tab with the same debug bundle and a Copy JSON action.
 - Fixture, private-bus, unit, and contract tests.
 - Local and GitHub CI.
 

@@ -23,14 +23,13 @@ Current pre-alpha code provides the safe read-only base:
 - Read-only battery telemetry for capacity, status, and health where `BAT0` exposes it.
 - Read-only EnvyControl GPU mode query when `envycontrol --query` is available.
 - Read-only UI `--overview` summary for platform profile, battery mode, fan RPM, temperatures, GPU mode, and battery telemetry.
-- Read-only UI `--diagnostics` JSON bundle with hardware summary, kernel version, detected sysfs paths, and raw probe report.
-- Read-only GTK diagnostics tab for the same hardware/debug bundle.
+- Read-only UI `--diagnostics` JSON bundle with hardware summary, kernel version, detected sysfs paths, recent daemon log excerpts, and raw probe report.
+- Read-only GTK diagnostics tab for the same hardware/debug bundle, including Copy JSON.
 - Fixture tests, private-bus integration tests, clippy/fmt/test local CI, and GitHub CI.
 
 ## Next immediate work
 
 - Keep tray autostart disabled; GNOME AppIndicator extension path is untested.
-- Extend diagnostics with recent daemon log excerpts and richer viewer actions.
 - Add more captured fixtures when additional supported Legion machines are available.
 - Keep progress docs current after each completed roadmap slice.
 - Keep GitHub CI as remote guard; run `./scripts/ci-local.sh` before pushing to reduce failed CI minutes.
@@ -143,8 +142,9 @@ Expose only if present:
   - DMI model fields;
   - kernel version;
   - detected sysfs paths;
-  - capability JSON; [implemented in CLI JSON bundle]
-  - recent daemon log excerpt.
+  - capability JSON; [implemented in CLI and GTK diagnostics surfaces]
+  - recent daemon log excerpt. [implemented as best-effort `journalctl` read]
+- Copy diagnostics JSON from the GTK viewer. [implemented]
 
 ## Version 0.3
 

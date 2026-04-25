@@ -44,15 +44,25 @@ pub struct DiagnosticsBundle {
     pub hardware: HardwareSummary,
     pub kernel_version: Option<String>,
     pub detected_sysfs_paths: Vec<String>,
+    pub recent_daemon_logs: Vec<String>,
     pub raw_probe_report: CapabilityRegistry,
 }
 
 impl DiagnosticsBundle {
     pub fn from_report(report: CapabilityRegistry, kernel_version: Option<String>) -> Self {
+        Self::from_report_with_logs(report, kernel_version, Vec::new())
+    }
+
+    pub fn from_report_with_logs(
+        report: CapabilityRegistry,
+        kernel_version: Option<String>,
+        recent_daemon_logs: Vec<String>,
+    ) -> Self {
         Self {
             hardware: report.hardware.clone(),
             kernel_version,
             detected_sysfs_paths: detected_sysfs_paths(&report),
+            recent_daemon_logs,
             raw_probe_report: report,
         }
     }
@@ -270,6 +280,38 @@ fn kernel_version() -> Option<String> {
     }
 }
 
+fn recent_daemon_logs() -> Vec<String> {
+    let output = Command::new("journalctl")
+        .args([
+            "-u",
+            "legion-control-daemon.service",
+            "-n",
+            "40",
+            "--no-pager",
+            "--output=short-iso",
+        ])
+        .output();
+
+    let Ok(output) = output else {
+        return Vec::new();
+    };
+    if !output.status.success() {
+        return Vec::new();
+    }
+
+    String::from_utf8(output.stdout)
+        .ok()
+        .map(|stdout| {
+            stdout
+                .lines()
+                .map(str::trim)
+                .filter(|line| !line.is_empty())
+                .map(ToOwned::to_owned)
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
 impl LegionControlClient {
     pub fn system() -> Result<Self> {
         Ok(Self {
@@ -304,9 +346,10 @@ impl LegionControlClient {
     }
 
     pub fn diagnostics_bundle(&self) -> Result<DiagnosticsBundle> {
-        Ok(DiagnosticsBundle::from_report(
+        Ok(DiagnosticsBundle::from_report_with_logs(
             self.raw_probe_report()?,
             kernel_version(),
+            recent_daemon_logs(),
         ))
     }
 

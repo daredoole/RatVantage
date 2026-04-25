@@ -97,6 +97,7 @@ fn client_reads_daemon_contract_over_private_bus() {
     let bundle = DiagnosticsBundle::from_report(raw.clone(), Some("test-kernel".to_owned()));
     assert_eq!(bundle.hardware, hardware);
     assert_eq!(bundle.kernel_version.as_deref(), Some("test-kernel"));
+    assert!(bundle.recent_daemon_logs.is_empty());
     assert!(bundle
         .detected_sysfs_paths
         .iter()
@@ -113,11 +114,21 @@ fn client_reads_daemon_contract_over_private_bus() {
     let json: serde_json::Value =
         serde_json::from_str(&render_diagnostics_json(&bundle).unwrap()).unwrap();
     assert_eq!(json["kernel_version"], "test-kernel");
+    assert_eq!(json["recent_daemon_logs"], serde_json::json!([]));
     assert_eq!(json["hardware"]["product_name"], "82WM");
     assert_eq!(
         json["raw_probe_report"]["platform_profile"]["current"],
         "balanced"
     );
+
+    let bundle = DiagnosticsBundle::from_report_with_logs(
+        raw.clone(),
+        Some("test-kernel".to_owned()),
+        vec!["2026-04-25 daemon started".to_owned()],
+    );
+    let json: serde_json::Value =
+        serde_json::from_str(&render_diagnostics_json(&bundle).unwrap()).unwrap();
+    assert_eq!(json["recent_daemon_logs"][0], "2026-04-25 daemon started");
 
     let refreshed = client.refresh_capabilities().unwrap();
     assert_eq!(refreshed, capabilities);

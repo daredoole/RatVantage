@@ -13,7 +13,7 @@
   - `bb1de2f` (`Add read-only EnvyControl GPU query`)
   - `832a084` (`Refresh battery telemetry handoff`)
   - `1d23afd` (`Add battery overview telemetry`)
-- Latest known milestone: read-only pre-alpha scaffold with GTK smoke coverage, hardened packaging metadata, disabled write planning, runtime 82WM fixture coverage, read-only StatusNotifier tray backend, KDE StatusNotifier tooltip/menu/quit smoke evidence, documented GNOME untested path, read-only battery overview telemetry, read-only EnvyControl GPU query, UI `--overview` output, UI `--diagnostics` JSON bundle, and GTK diagnostics tab.
+- Latest known milestone: read-only pre-alpha scaffold with GTK smoke coverage, hardened packaging metadata, disabled write planning, runtime 82WM fixture coverage, read-only StatusNotifier tray backend, KDE StatusNotifier tooltip/menu/quit smoke evidence, documented GNOME untested path, read-only battery overview telemetry, read-only EnvyControl GPU query, UI `--overview` output, UI `--diagnostics` JSON bundle with best-effort daemon logs, and GTK diagnostics tab with Copy JSON.
 - Rust toolchain: pinned stable in `rust-toolchain.toml`; local stable installed because GTK stack requires rustc 1.92+.
 
 ## Implemented
@@ -24,8 +24,8 @@
 - Read-only `BAT0` telemetry for capacity percent, charging status, and health string when exposed.
 - Read-only EnvyControl GPU mode query when `envycontrol --query` is available; fixture-backed runs keep GPU capability missing for deterministic tests.
 - UI `--overview` command for platform profile, battery charge type, fan RPM, temperatures, GPU mode, and battery telemetry.
-- UI `--diagnostics` command for a read-only JSON debug bundle containing hardware summary, kernel version, detected sysfs paths, and raw probe report.
-- Optional GTK diagnostics tab for the same read-only hardware/debug bundle.
+- UI `--diagnostics` command for a read-only JSON debug bundle containing hardware summary, kernel version, detected sysfs paths, recent daemon log excerpts, and raw probe report.
+- Optional GTK diagnostics tab for the same read-only hardware/debug bundle, with Copy JSON.
 - Read-only D-Bus daemon methods:
   - `GetHardwareSummary`
   - `GetCapabilities`
@@ -79,8 +79,7 @@ Do not turn GitHub CI off completely yet. Use local CI before pushing, then keep
 
 ## Next tasks
 
-1. Extend diagnostics with recent daemon log excerpts and richer viewer actions.
-2. Add more captured fixtures when additional supported Legion machines are available.
+1. Add more captured fixtures when additional supported Legion machines are available.
 
 ## Working process
 

@@ -139,9 +139,25 @@ fn append_diagnostics(page: &gtk4::Box, bundle: &DiagnosticsBundle) {
         "Raw capabilities",
         &bundle.raw_probe_report.capabilities.len().to_string(),
     ));
+    group.add(&info_row(
+        "Daemon log lines",
+        &bundle.recent_daemon_logs.len().to_string(),
+    ));
     page.append(&group);
 
     let json = render_diagnostics_json(bundle).unwrap_or_else(|error| error.to_string());
+    let actions = gtk4::Box::new(gtk4::Orientation::Horizontal, 8);
+    let copy = gtk4::Button::with_label("Copy JSON");
+    copy.set_tooltip_text(Some("Copy diagnostics JSON"));
+    let json_for_clipboard = json.clone();
+    copy.connect_clicked(move |_| {
+        if let Some(display) = gtk4::gdk::Display::default() {
+            display.clipboard().set_text(&json_for_clipboard);
+        }
+    });
+    actions.append(&copy);
+    page.append(&actions);
+
     let text = gtk4::TextView::new();
     text.set_editable(false);
     text.set_cursor_visible(false);

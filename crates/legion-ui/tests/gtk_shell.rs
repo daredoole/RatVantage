@@ -26,7 +26,7 @@ fn status_and_error_pages_build_under_headless_display() {
 
     assert_eq!(page.orientation(), gtk4::Orientation::Vertical);
     assert_eq!(page.spacing(), 12);
-    assert_eq!(page.observe_children().n_items(), 3);
+    assert_eq!(page.observe_children().n_items(), 4);
 
     let page = gtk_shell::dashboard_page(Ok(sample_status()), Ok(sample_diagnostics()));
     let page = page
@@ -104,5 +104,9 @@ fn sample_diagnostics() -> DiagnosticsBundle {
         details: serde_json::Value::Null,
     }];
 
-    DiagnosticsBundle::from_report(report, Some("6.17.0-test".to_owned()))
+    DiagnosticsBundle::from_report_with_logs(
+        report,
+        Some("6.17.0-test".to_owned()),
+        vec!["2026-04-25T17:44:00 legion-control-daemon started".to_owned()],
+    )
 }
