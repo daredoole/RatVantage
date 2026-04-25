@@ -503,11 +503,12 @@ ErrorOccurred(s code, s message)
 5. [x] Implement daemon skeleton with zbus service and read-only hardware, capability, telemetry, refresh, and raw-report methods.
 6. [x] Add systemd, D-Bus, polkit, desktop, metainfo, and RPM packaging assets while keeping write methods absent.
 7. [x] Add a read-only sysfs fixture capture workflow for real hardware reports.
-8. [ ] Capture and add fixtures from additional supported Legion machines.
+8. [x] Capture and add a runtime fixture from the supported local 82WM machine.
 9. [x] Draft write-method D-Bus contracts without enabling writes.
 10. [x] Implement validators, pure dry-run planning, and non-D-Bus daemon planning adapters before any write methods.
 11. [x] Add read-only tray/status helper scaffold.
 12. [x] Add disabled tray autostart packaging placeholder.
+13. [x] Add bracketed battery `charge_types` parsing from the runtime fixture.
 
 ## Test strategy
 

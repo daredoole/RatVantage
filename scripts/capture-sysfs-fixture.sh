@@ -67,7 +67,7 @@ copy_one() {
 
   local dst="$output/$rel"
   mkdir -p "$(dirname "$dst")"
-  timeout 2s head -c 65536 "$src" >"$dst" || {
+  timeout 2s head -c 65536 "$src" >"$dst" 2>/dev/null || {
     rm -f "$dst"
     echo "skipped unreadable: $rel" >>"$manifest"
     return 0

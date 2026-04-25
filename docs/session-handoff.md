@@ -17,8 +17,9 @@
 
 ## Implemented
 
-- Workspace crates: `legion-common`, `legion-probe`, `legion-daemon`, `legion-ui`, `ratvantage-test-support`.
-- Probe fixture coverage for confirmed 82WM-style sysfs paths.
+- Workspace crates: `legion-common`, `legion-probe`, `legion-daemon`, `legion-ui`, `legion-tray`, `ratvantage-test-support`.
+- Probe fixture coverage for confirmed and runtime-captured 82WM-style sysfs paths.
+- Bracketed battery `charge_types` parsing, including inferred current value when `charge_type` is absent.
 - Read-only D-Bus daemon methods:
   - `GetHardwareSummary`
   - `GetCapabilities`
@@ -54,6 +55,7 @@ cargo run -p legion-control-daemon -- --dry-run
 cargo run -p legion-control-ui --features gtk-ui
 cargo run -p legion-control-tray -- --status --bus-address <dbus-address>
 cargo run -p legion-control-tray -- --tooltip --bus-address <dbus-address>
+cargo run -p legion-probe -- --json --sysfs-root tests/fixtures/sysfs-82wm-runtime-capture
 ```
 
 ## CI policy
@@ -62,7 +64,8 @@ Do not turn GitHub CI off completely yet. Use local CI before pushing, then keep
 
 ## Next tasks
 
-1. Capture and add fixtures from additional supported Legion machines.
+1. Choose and implement a real tray backend before enabling autostart.
+2. Add more captured fixtures when additional supported Legion machines are available.
 2. Choose and implement a real tray backend before enabling autostart.
 
 ## Working process

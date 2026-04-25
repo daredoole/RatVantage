@@ -87,7 +87,18 @@ pub fn probe(options: &ProbeOptions) -> CapabilityRegistry {
 }
 
 pub fn parse_choices(raw: &str) -> Vec<String> {
-    raw.split_whitespace().map(str::to_owned).collect()
+    raw.split_whitespace()
+        .map(|choice| choice.trim_matches(['[', ']']).to_owned())
+        .collect()
+}
+
+pub fn parse_marked_current_choice(raw: &str) -> Option<String> {
+    raw.split_whitespace().find_map(|choice| {
+        choice
+            .strip_prefix('[')?
+            .strip_suffix(']')
+            .map(str::to_owned)
+    })
 }
 
 fn push_capability(capabilities: &mut Vec<Capability>, id: &str, label: &str, detected: bool) {
@@ -135,8 +146,10 @@ fn detect_platform_profile(root: &Path) -> Option<PlatformProfileCapability> {
 fn detect_battery_charge_type(root: &Path) -> Option<BatteryChargeTypeCapability> {
     let path = root.join("sys/class/power_supply/BAT0/charge_type");
     let choices_path = root.join("sys/class/power_supply/BAT0/charge_types");
-    let current = read_trim(&path);
-    let choices = read_trim(&choices_path).map_or_else(Vec::new, |value| parse_choices(&value));
+    let choices_raw = read_trim(&choices_path);
+    let current =
+        read_trim(&path).or_else(|| choices_raw.as_deref().and_then(parse_marked_current_choice));
+    let choices = choices_raw.map_or_else(Vec::new, |value| parse_choices(&value));
 
     if current.is_none() && choices.is_empty() {
         return None;
@@ -369,6 +382,14 @@ mod tests {
             parse_choices("Standard Conservation Fast"),
             ["Standard", "Conservation", "Fast"]
         );
+        assert_eq!(
+            parse_choices("Fast Standard [Long_Life]"),
+            ["Fast", "Standard", "Long_Life"]
+        );
+        assert_eq!(
+            parse_marked_current_choice("Fast Standard [Long_Life]").as_deref(),
+            Some("Long_Life")
+        );
     }
 
     #[test]
@@ -415,6 +436,59 @@ mod tests {
     }
 
     #[test]
+    fn detects_runtime_fixture_with_bracketed_charge_type_current() {
+        let registry = probe(&ProbeOptions {
+            sysfs_root: runtime_fixture_root(),
+        });
+
+        assert_eq!(
+            registry
+                .platform_profile
+                .as_ref()
+                .and_then(|capability| capability.current.as_deref()),
+            Some("performance")
+        );
+        assert_eq!(
+            registry
+                .platform_profile
+                .as_ref()
+                .map(|capability| capability.choices.clone()),
+            Some(vec![
+                "quiet".to_owned(),
+                "balanced".to_owned(),
+                "balanced-performance".to_owned(),
+                "performance".to_owned()
+            ])
+        );
+        assert_eq!(
+            registry
+                .battery_charge_type
+                .as_ref()
+                .and_then(|capability| capability.current.as_deref()),
+            Some("Long_Life")
+        );
+        assert_eq!(
+            registry
+                .battery_charge_type
+                .as_ref()
+                .map(|capability| capability.choices.clone()),
+            Some(vec![
+                "Fast".to_owned(),
+                "Standard".to_owned(),
+                "Long_Life".to_owned()
+            ])
+        );
+        assert!(registry.hwmon_sensors.len() > 10);
+        assert!(registry.fan_curves.iter().any(|fan_curve| {
+            fan_curve.id == "legion_hwmon" && fan_curve.point_paths.len() >= 20
+        }));
+        assert!(registry
+            .leds
+            .iter()
+            .any(|led| led.name == "platform::ylogo"));
+    }
+
+    #[test]
     fn handles_missing_sysfs_paths_cleanly() {
         let root = std::env::temp_dir().join(format!(
             "legion-probe-empty-{}",
@@ -454,5 +528,11 @@ mod tests {
         PathBuf::from(env!("CARGO_MANIFEST_DIR"))
             .join("../..")
             .join("tests/fixtures/sysfs-82wm-confirmed")
+    }
+
+    fn runtime_fixture_root() -> PathBuf {
+        PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("../..")
+            .join("tests/fixtures/sysfs-82wm-runtime-capture")
     }
 }

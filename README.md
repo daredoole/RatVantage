@@ -11,11 +11,12 @@ This project targets the **Lenovo Legion Pro 5 16ARX8, product 82WM** first. Run
 Pre-alpha implementation scaffold exists:
 
 - Rust workspace with shared models, read-only probe, read-only daemon, UI client, and test support crates.
-- Probe fixture coverage for confirmed 82WM-style sysfs paths.
+- Probe fixture coverage for confirmed and runtime-captured 82WM-style sysfs paths.
 - Private D-Bus contract tests for read-only daemon methods.
 - UI `--status` model and optional GTK4/libadwaita shell behind `gtk-ui`.
 - Read-only tray/status helper scaffold.
 - Disabled tray autostart packaging placeholder.
+- Runtime-captured 82WM fixture coverage, including bracketed battery `charge_types` current-value parsing.
 - Headless GTK smoke coverage for the optional shell.
 - Fedora packaging metadata and validation for systemd, D-Bus, polkit, desktop, AppStream, and RPM assets.
 - Read-only sysfs fixture capture workflow for adding more real hardware reports.
@@ -93,6 +94,7 @@ Completed scaffold:
 - Headless GTK smoke coverage.
 - Fedora packaging metadata and validation.
 - Read-only fixture capture workflow.
+- Runtime-captured 82WM fixture coverage.
 - Disabled write-method contract drafts.
 - Pure platform profile and battery charge type validators.
 - Pure dry-run planning for future platform profile and battery charge type writes.
@@ -102,7 +104,7 @@ Completed scaffold:
 
 Next:
 
-- Add captured probe fixtures from additional supported Legion machines.
+- Real tray backend selection and AppIndicator/StatusNotifier implementation.
 - Real tray backend selection and AppIndicator/StatusNotifier implementation.
 
 See [docs/feature-roadmap.md](docs/feature-roadmap.md) and [docs/implementation-plan.md](docs/implementation-plan.md).
