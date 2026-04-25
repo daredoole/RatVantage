@@ -12,4 +12,4 @@ legion-common.workspace = true
 legion-probe.workspace = true
 serde.workspace = true
 serde_json.workspace = true
-zbus = { version = "4", features = ["blocking"] }
+zbus.workspace = true

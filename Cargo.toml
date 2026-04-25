@@ -19,3 +19,4 @@ legion-common = { path = "crates/legion-common" }
 legion-probe = { path = "crates/legion-probe" }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
+zbus = { version = "4", features = ["blocking"] }
