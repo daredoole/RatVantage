@@ -6,13 +6,13 @@
 - Visibility: private for now.
 - Branch: `main`
 - Latest local commits:
+  - `1d23afd` (`Add battery overview telemetry`)
+  - `e87a348` (`Mark GNOME tray path untested`)
   - `266b066` (`Record GNOME smoke blocker`)
   - `e57c91b` (`Refresh KDE smoke handoff`)
   - `bc6c5ef` (`Record KDE StatusNotifier smoke result`)
   - `96e561d` (`Refresh smoke support handoff`)
-  - `e709ee9` (`Add daemon session smoke support`)
-  - `05e8454` (`Add StatusNotifier tray smoke workflow`)
-- Latest known milestone: read-only pre-alpha scaffold with GTK smoke coverage, hardened packaging metadata, disabled write planning, runtime 82WM fixture coverage, read-only StatusNotifier tray backend, KDE StatusNotifier tooltip/menu/quit smoke evidence, and documented GNOME smoke blocker.
+- Latest known milestone: read-only pre-alpha scaffold with GTK smoke coverage, hardened packaging metadata, disabled write planning, runtime 82WM fixture coverage, read-only StatusNotifier tray backend, KDE StatusNotifier tooltip/menu/quit smoke evidence, documented GNOME untested path, and read-only battery overview telemetry.
 - Rust toolchain: pinned stable in `rust-toolchain.toml`; local stable installed because GTK stack requires rustc 1.92+.
 
 ## Implemented
