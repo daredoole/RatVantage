@@ -153,7 +153,10 @@ fn load_summary(bus_address: Option<&str>) -> Result<TraySummary> {
         Some(address) => LegionControlClient::address(address)?,
         None => LegionControlClient::system()?,
     };
-    Ok(TraySummary::from_status(&client.status()?))
+    Ok(TraySummary::from_status_and_report(
+        &client.status()?,
+        &client.raw_probe_report()?,
+    ))
 }
 
 fn dashboard_command_args(bus_address: Option<&str>) -> Vec<String> {

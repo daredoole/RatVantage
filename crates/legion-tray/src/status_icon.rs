@@ -1,4 +1,4 @@
-use legion_common::CapabilityStatus;
+use legion_common::{CapabilityRegistry, CapabilityStatus, HwmonSensor};
 use legion_control_ui::UiStatus;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -9,6 +9,8 @@ pub struct TraySummary {
     pub available_capability_count: usize,
     pub missing_capability_count: usize,
     pub capability_ids: Vec<String>,
+    pub platform_profile: Option<String>,
+    pub fan_rpm: Option<String>,
 }
 
 impl TraySummary {
@@ -32,16 +34,38 @@ impl TraySummary {
                 &status.hardware.product_version,
                 available_capability_count,
                 missing_capability_count,
+                None,
+                None,
             ),
             capability_count: status.capability_count(),
             available_capability_count,
             missing_capability_count,
             capability_ids,
+            platform_profile: None,
+            fan_rpm: None,
         }
     }
 
+    pub fn from_status_and_report(status: &UiStatus, report: &CapabilityRegistry) -> Self {
+        let mut summary = Self::from_status(status);
+        summary.platform_profile = report
+            .platform_profile
+            .as_ref()
+            .and_then(|profile| profile.current.clone());
+        summary.fan_rpm = fan_rpm_label(&report.telemetry.sensors);
+        summary.tooltip = capability_tooltip(
+            &status.hardware.product_name,
+            &status.hardware.product_version,
+            summary.available_capability_count,
+            summary.missing_capability_count,
+            summary.platform_profile.as_deref(),
+            summary.fan_rpm.as_deref(),
+        );
+        summary
+    }
+
     pub fn render_lines(&self) -> Vec<String> {
-        vec![
+        let mut lines = vec![
             "Legion Control tray status".to_owned(),
             format!("title={}", self.title),
             format!("tooltip={}", self.tooltip),
@@ -52,7 +76,14 @@ impl TraySummary {
             ),
             format!("missing_capability_count={}", self.missing_capability_count),
             format!("capabilities={}", self.capability_ids.join(",")),
-        ]
+        ];
+        if let Some(profile) = &self.platform_profile {
+            lines.push(format!("platform_profile={profile}"));
+        }
+        if let Some(fan_rpm) = &self.fan_rpm {
+            lines.push(format!("fan_rpm={fan_rpm}"));
+        }
+        lines
     }
 }
 
@@ -61,19 +92,47 @@ fn capability_tooltip(
     product_version: &str,
     available_count: usize,
     missing_count: usize,
+    platform_profile: Option<&str>,
+    fan_rpm: Option<&str>,
 ) -> String {
+    let telemetry = match (platform_profile, fan_rpm) {
+        (Some(profile), Some(fan_rpm)) => format!("profile {profile}, fan {fan_rpm}, "),
+        (Some(profile), None) => format!("profile {profile}, "),
+        (None, Some(fan_rpm)) => format!("fan {fan_rpm}, "),
+        (None, None) => String::new(),
+    };
     if missing_count == 0 {
-        format!("{product_name} {product_version}: {available_count} available capabilities")
+        format!(
+            "{product_name} {product_version}: {telemetry}{available_count} available capabilities"
+        )
     } else {
         format!(
-            "{product_name} {product_version}: {available_count} available capabilities, {missing_count} missing"
+            "{product_name} {product_version}: {telemetry}{available_count} available capabilities, {missing_count} missing"
         )
+    }
+}
+
+fn fan_rpm_label(sensors: &[HwmonSensor]) -> Option<String> {
+    let values = sensors
+        .iter()
+        .filter(|sensor| sensor.kind == "fan")
+        .filter_map(|sensor| sensor.value)
+        .map(|value| value.to_string())
+        .collect::<Vec<_>>();
+
+    if values.is_empty() {
+        None
+    } else {
+        Some(format!("{} RPM", values.join("/")))
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use legion_common::{Capability, CapabilityStatus, HardwareSummary, RiskLevel};
+    use legion_common::{
+        Capability, CapabilityRegistry, CapabilityStatus, HardwareSummary, HwmonSensor,
+        PlatformProfileCapability, RiskLevel,
+    };
     use legion_control_ui::UiStatus;
 
     use super::*;
@@ -145,6 +204,58 @@ mod tests {
             summary.tooltip,
             "82WM Legion Pro 5 16ARX8: 1 available capabilities, 1 missing"
         );
+    }
+
+    #[test]
+    fn tray_summary_tooltip_includes_profile_and_fan_rpm_when_available() {
+        let status = UiStatus::from_parts(
+            HardwareSummary {
+                sysfs_root: "/tmp/fixture".to_owned(),
+                vendor: Some("LENOVO".to_owned()),
+                product_name: Some("82WM".to_owned()),
+                product_version: Some("Legion Pro 5 16ARX8".to_owned()),
+                product_sku: None,
+            },
+            vec![
+                capability("platform_profile", "Platform profiles"),
+                missing_capability("gpu", "GPU mode"),
+            ],
+        )
+        .unwrap();
+        let report = CapabilityRegistry {
+            platform_profile: Some(PlatformProfileCapability {
+                current: Some("balanced".to_owned()),
+                choices: vec!["balanced".to_owned(), "performance".to_owned()],
+                path: "/sys/firmware/acpi/platform_profile".to_owned(),
+                choices_path: "/sys/firmware/acpi/platform_profile_choices".to_owned(),
+            }),
+            telemetry: legion_common::TelemetrySnapshot {
+                sensors: vec![HwmonSensor {
+                    hwmon_name: Some("legion".to_owned()),
+                    label: Some("CPU Fan".to_owned()),
+                    kind: "fan".to_owned(),
+                    input_path: "/sys/class/hwmon/hwmon7/fan1_input".to_owned(),
+                    value: Some(2410),
+                }],
+                battery: None,
+            },
+            ..Default::default()
+        };
+
+        let summary = TraySummary::from_status_and_report(&status, &report);
+
+        assert_eq!(
+            summary.tooltip,
+            "82WM Legion Pro 5 16ARX8: profile balanced, fan 2410 RPM, 1 available capabilities, 1 missing"
+        );
+        assert_eq!(summary.platform_profile.as_deref(), Some("balanced"));
+        assert_eq!(summary.fan_rpm.as_deref(), Some("2410 RPM"));
+        assert!(summary
+            .render_lines()
+            .contains(&"platform_profile=balanced".to_owned()));
+        assert!(summary
+            .render_lines()
+            .contains(&"fan_rpm=2410 RPM".to_owned()));
     }
 
     fn capability(id: &str, label: &str) -> Capability {

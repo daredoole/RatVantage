@@ -29,7 +29,7 @@ The script verifies that `org.kde.StatusNotifierWatcher` exists, the tray can re
 Manual checks during the hold window:
 
 - tray icon appears in the desktop panel;
-- tooltip shows the Legion Control hardware/capability summary;
+- tooltip shows the Legion Control hardware, platform profile, fan RPM, and capability summary;
 - menu exposes dashboard, refresh, and quit;
 - write actions remain disabled;
 - quit removes the tray item;

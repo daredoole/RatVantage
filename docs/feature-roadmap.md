@@ -10,7 +10,7 @@ Current pre-alpha code provides the safe read-only base:
 - Read-only tray/status helper scaffold.
 - Read-only StatusNotifier tray backend with dashboard, refresh, quit, and disabled write actions.
 - StatusNotifier dashboard launch forwards custom D-Bus addresses for private/session-bus workflows.
-- Tray tooltip separates available and missing capabilities.
+- Tray tooltip reports platform profile, fan RPM, and available/missing capabilities.
 - Disabled tray autostart packaging placeholder.
 - Headless GTK smoke coverage for the optional shell.
 - Fedora packaging assets for systemd, D-Bus, polkit, desktop metadata, AppStream metadata, and RPM spec.
@@ -127,7 +127,7 @@ Goal: make the confirmed controls more complete and user-friendly.
 
 ### Tray polish
 
-- Better tooltip with fan RPM and profile.
+- Better tooltip with fan RPM and profile. [implemented]
 - Quick fan preset selector.
 - Quick battery charge type selector.
 - Pending reboot indicator for GPU mode.

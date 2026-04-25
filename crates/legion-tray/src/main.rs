@@ -25,7 +25,8 @@ fn main() -> Result<()> {
             Some(address) => LegionControlClient::address(&address)?,
             None => LegionControlClient::system()?,
         };
-        let summary = TraySummary::from_status(&client.status()?);
+        let summary =
+            TraySummary::from_status_and_report(&client.status()?, &client.raw_probe_report()?);
         if args.tooltip {
             println!("{}", summary.tooltip);
             return Ok(());

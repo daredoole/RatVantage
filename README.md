@@ -107,7 +107,7 @@ Completed scaffold:
 - Read-only tray/status helper scaffold.
 - Read-only StatusNotifier tray backend with disabled write actions.
 - StatusNotifier dashboard launch keeps `--bus-address` when the tray uses a private bus.
-- Tray tooltip reports available and missing capability counts separately.
+- Tray tooltip reports platform profile, fan RPM, and available/missing capability counts.
 - Disabled tray autostart packaging placeholder.
 - Headless GTK smoke coverage.
 - Fedora packaging metadata and validation.
