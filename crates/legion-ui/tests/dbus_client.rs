@@ -1,8 +1,8 @@
 use std::process::Command;
 
-use legion_common::{CapabilityStatus, RiskLevel};
+use legion_common::{Capability, CapabilityStatus, HardwareSummary, RiskLevel};
 use legion_control_daemon::{LegionControl, DBUS_INTERFACE, DBUS_PATH};
-use legion_control_ui::LegionControlClient;
+use legion_control_ui::{LegionControlClient, UiStatus};
 use legion_probe::ProbeOptions;
 use ratvantage_test_support::{fixture_root, PrivateBus};
 use zbus::blocking::ConnectionBuilder;
@@ -68,6 +68,50 @@ fn client_reads_daemon_contract_over_private_bus() {
 }
 
 #[test]
+fn status_model_normalizes_daemon_data_for_ui() {
+    let (_bus, _service_connection, address) = fixture_service();
+    let client = LegionControlClient::address(&address).unwrap();
+    let status = client.status().unwrap();
+
+    assert_eq!(status.hardware.vendor, "LENOVO");
+    assert_eq!(status.hardware.product_name, "82WM");
+    assert_eq!(status.hardware.product_version, "Legion Pro 5 16ARX8");
+    assert_eq!(
+        status.hardware.product_sku.as_deref(),
+        Some("LENOVO_MT_82WM_BU_idea_FM_Legion Pro 5 16ARX8")
+    );
+    assert_eq!(status.capability_count(), 7);
+    assert_eq!(
+        status.capability_ids(),
+        [
+            "battery_charge_type",
+            "fan_curves",
+            "firmware_attributes",
+            "hwmon",
+            "ideapad_toggles",
+            "leds",
+            "platform_profile"
+        ]
+    );
+    assert!(status.capabilities.iter().all(|capability| {
+        !capability.label.is_empty()
+            && capability.risk == RiskLevel::ReadOnly
+            && capability.status == CapabilityStatus::ProbeOnly
+    }));
+    assert_eq!(
+        status.render_lines(),
+        [
+            "Legion Control status",
+            "vendor=LENOVO",
+            "product_name=82WM",
+            "product_version=Legion Pro 5 16ARX8",
+            "capability_count=7",
+            "capabilities=battery_charge_type,fan_curves,firmware_attributes,hwmon,ideapad_toggles,leds,platform_profile",
+        ]
+    );
+}
+
+#[test]
 fn status_cli_prints_hardware_and_capability_summary() {
     let (_bus, _service_connection, address) = fixture_service();
     let output = Command::new(env!("CARGO_BIN_EXE_legion-control-ui"))
@@ -89,6 +133,66 @@ fn status_cli_prints_hardware_and_capability_summary() {
             "capabilities=battery_charge_type,fan_curves,firmware_attributes,hwmon,ideapad_toggles,leds,platform_profile\n",
         )
     );
+}
+
+#[test]
+fn status_model_uses_unknown_for_missing_hardware_fields() {
+    let status = UiStatus::from_parts(Default::default(), Vec::new()).unwrap();
+
+    assert_eq!(status.hardware.vendor, "unknown");
+    assert_eq!(status.hardware.product_name, "unknown");
+    assert_eq!(status.hardware.product_version, "unknown");
+    assert!(status.hardware.product_sku.is_none());
+    assert_eq!(status.capability_count(), 0);
+    assert!(status.capability_ids().is_empty());
+}
+
+#[test]
+fn status_model_preserves_capability_badge_fields() {
+    let status = UiStatus::from_parts(
+        HardwareSummary {
+            vendor: Some("LENOVO".to_owned()),
+            product_name: Some("82WM".to_owned()),
+            product_version: Some("Legion Pro 5 16ARX8".to_owned()),
+            product_sku: Some("SKU".to_owned()),
+            sysfs_root: "/fixture".to_owned(),
+        },
+        vec![
+            capability(
+                "z_last",
+                "Last",
+                CapabilityStatus::Missing,
+                RiskLevel::Unsupported,
+            ),
+            capability(
+                "a_first",
+                "First",
+                CapabilityStatus::Detected,
+                RiskLevel::ReadOnly,
+            ),
+        ],
+    )
+    .unwrap();
+
+    assert_eq!(status.hardware.product_sku.as_deref(), Some("SKU"));
+    assert_eq!(status.capability_ids(), ["a_first", "z_last"]);
+    assert_eq!(status.capabilities[0].label, "First");
+    assert_eq!(status.capabilities[0].status, CapabilityStatus::Detected);
+    assert_eq!(status.capabilities[0].risk, RiskLevel::ReadOnly);
+    assert_eq!(status.capabilities[1].label, "Last");
+    assert_eq!(status.capabilities[1].status, CapabilityStatus::Missing);
+    assert_eq!(status.capabilities[1].risk, RiskLevel::Unsupported);
+}
+
+fn capability(id: &str, label: &str, status: CapabilityStatus, risk: RiskLevel) -> Capability {
+    Capability {
+        id: id.to_owned(),
+        label: label.to_owned(),
+        status,
+        risk,
+        evidence: Vec::new(),
+        details: serde_json::Value::Null,
+    }
 }
 
 fn fixture_service() -> (PrivateBus, zbus::blocking::Connection, String) {
