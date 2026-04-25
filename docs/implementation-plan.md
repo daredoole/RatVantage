@@ -515,6 +515,7 @@ ErrorOccurred(s code, s message)
 15. [x] Add repeatable StatusNotifier tray smoke workflow before enabling autostart.
 16. [x] Add read-only daemon session-bus dev mode and record automated KDE StatusNotifier registration smoke.
 17. [x] Record KDE Plasma Wayland StatusNotifier tooltip/menu/quit smoke evidence.
+18. [x] Record GNOME-with-extension smoke blocker from the current KDE session.
 
 ## Test strategy
 

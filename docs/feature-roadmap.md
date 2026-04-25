@@ -24,7 +24,7 @@ Current pre-alpha code provides the safe read-only base:
 
 ## Next immediate work
 
-- Complete GNOME-with-extension StatusNotifier smoke before enabling autostart.
+- Log into GNOME with AppIndicator/KStatusNotifier enabled and run StatusNotifier smoke before enabling autostart.
 - Add more captured fixtures when additional supported Legion machines are available.
 - Keep progress docs current after each completed roadmap slice.
 - Keep GitHub CI as remote guard; run `./scripts/ci-local.sh` before pushing to reduce failed CI minutes.
