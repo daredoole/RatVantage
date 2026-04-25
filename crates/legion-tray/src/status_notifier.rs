@@ -55,7 +55,9 @@ impl StatusNotifierTray {
     }
 
     fn open_dashboard(&mut self) {
-        if let Err(error) = Command::new("legion-control-ui").spawn() {
+        let mut command = Command::new("legion-control-ui");
+        command.args(dashboard_command_args(self.bus_address.as_deref()));
+        if let Err(error) = command.spawn() {
             self.last_error = Some(format!("failed to open dashboard: {error}"));
         }
     }
@@ -154,6 +156,13 @@ fn load_summary(bus_address: Option<&str>) -> Result<TraySummary> {
     Ok(TraySummary::from_status(&client.status()?))
 }
 
+fn dashboard_command_args(bus_address: Option<&str>) -> Vec<String> {
+    match bus_address {
+        Some(address) => vec!["--bus-address".to_owned(), address.to_owned()],
+        None => Vec::new(),
+    }
+}
+
 fn menu_item(item: TrayMenuItem) -> MenuItem<StatusNotifierTray> {
     let TrayMenuItem {
         label,
@@ -221,6 +230,18 @@ mod tests {
         assert!(menu_has_disabled_item(&menu, "Set battery charge type"));
         assert!(menu_has_disabled_item(&menu, "Apply fan preset"));
         assert!(menu_has_disabled_item(&menu, "Toggle logo LED"));
+    }
+
+    #[test]
+    fn dashboard_command_forwards_private_bus_address() {
+        assert!(dashboard_command_args(None).is_empty());
+        assert_eq!(
+            dashboard_command_args(Some("unix:path=/tmp/test-bus")),
+            vec![
+                "--bus-address".to_owned(),
+                "unix:path=/tmp/test-bus".to_owned()
+            ]
+        );
     }
 
     fn summary() -> TraySummary {

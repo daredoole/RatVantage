@@ -9,6 +9,7 @@ Current pre-alpha code provides the safe read-only base:
 - UI status client and optional GTK4/libadwaita shell with a read-only diagnostics tab.
 - Read-only tray/status helper scaffold.
 - Read-only StatusNotifier tray backend with dashboard, refresh, quit, and disabled write actions.
+- StatusNotifier dashboard launch forwards custom D-Bus addresses for private/session-bus workflows.
 - Disabled tray autostart packaging placeholder.
 - Headless GTK smoke coverage for the optional shell.
 - Fedora packaging assets for systemd, D-Bus, polkit, desktop metadata, AppStream metadata, and RPM spec.
