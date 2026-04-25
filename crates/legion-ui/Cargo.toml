@@ -16,3 +16,4 @@ zbus.workspace = true
 [dev-dependencies]
 legion-control-daemon = { path = "../legion-daemon" }
 legion-probe.workspace = true
+ratvantage-test-support.workspace = true

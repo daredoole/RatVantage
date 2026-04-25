@@ -1,11 +1,10 @@
-use std::io::{BufRead, BufReader};
-use std::path::PathBuf;
-use std::process::{Child, Command, Stdio};
+use std::process::Command;
 
 use legion_common::{CapabilityStatus, RiskLevel};
 use legion_control_daemon::{LegionControl, DBUS_INTERFACE, DBUS_PATH};
 use legion_control_ui::LegionControlClient;
 use legion_probe::ProbeOptions;
+use ratvantage_test_support::{fixture_root, PrivateBus};
 use zbus::blocking::ConnectionBuilder;
 
 #[test]
@@ -92,12 +91,12 @@ fn status_cli_prints_hardware_and_capability_summary() {
     );
 }
 
-fn fixture_service() -> (TestBus, zbus::blocking::Connection, String) {
-    let bus = TestBus::start();
+fn fixture_service() -> (PrivateBus, zbus::blocking::Connection, String) {
+    let bus = PrivateBus::start();
     let service = LegionControl::new(ProbeOptions {
         sysfs_root: fixture_root(),
     });
-    let service_connection = ConnectionBuilder::address(bus.address.as_str())
+    let service_connection = ConnectionBuilder::address(bus.address())
         .unwrap()
         .name(DBUS_INTERFACE)
         .unwrap()
@@ -105,41 +104,7 @@ fn fixture_service() -> (TestBus, zbus::blocking::Connection, String) {
         .unwrap()
         .build()
         .unwrap();
-    let address = bus.address.clone();
+    let address = bus.address().to_owned();
 
     (bus, service_connection, address)
-}
-
-fn fixture_root() -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("../..")
-        .join("tests/fixtures/sysfs-82wm-confirmed")
-}
-
-struct TestBus {
-    address: String,
-    child: Child,
-}
-
-impl TestBus {
-    fn start() -> Self {
-        let mut child = Command::new("dbus-daemon")
-            .args(["--session", "--print-address=1", "--nofork"])
-            .stdout(Stdio::piped())
-            .stderr(Stdio::null())
-            .spawn()
-            .expect("dbus-daemon must be available for D-Bus integration tests");
-        let stdout = child.stdout.take().unwrap();
-        let mut lines = BufReader::new(stdout).lines();
-        let address = lines.next().unwrap().unwrap();
-
-        Self { address, child }
-    }
-}
-
-impl Drop for TestBus {
-    fn drop(&mut self) {
-        let _ = self.child.kill();
-        let _ = self.child.wait();
-    }
 }

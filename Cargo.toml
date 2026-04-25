@@ -4,6 +4,7 @@ members = [
     "crates/legion-probe",
     "crates/legion-daemon",
     "crates/legion-ui",
+    "crates/test-support",
 ]
 resolver = "2"
 
@@ -17,6 +18,7 @@ anyhow = "1"
 clap = { version = "4", features = ["derive"] }
 legion-common = { path = "crates/legion-common" }
 legion-probe = { path = "crates/legion-probe" }
+ratvantage-test-support = { path = "crates/test-support" }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 zbus = { version = "4", features = ["blocking"] }
