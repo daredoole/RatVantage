@@ -1,4 +1,6 @@
-use legion_common::{Capability, CapabilityRegistry, HardwareSummary, TelemetrySnapshot};
+use legion_common::{
+    Capability, CapabilityRegistry, HardwareSummary, TelemetrySnapshot, WriteDryRunPlan,
+};
 use legion_control_daemon::{LegionControl, DBUS_INTERFACE, DBUS_PATH};
 use legion_probe::ProbeOptions;
 use ratvantage_test_support::{call_json, fixture_root, introspected_methods, PrivateBus};
@@ -62,6 +64,22 @@ fn read_only_methods_return_expected_json_contracts() {
 
     let refreshed: Vec<Capability> = call_json(&proxy, "RefreshCapabilities");
     assert_eq!(refreshed, capabilities);
+
+    let payload: String = proxy
+        .call("PlanPlatformProfileWrite", &("performance",))
+        .unwrap();
+    let platform_plan: WriteDryRunPlan = serde_json::from_str(&payload).unwrap();
+    assert_eq!(platform_plan.method, "SetPlatformProfile");
+    assert_eq!(platform_plan.requested_value, "performance");
+    assert_eq!(platform_plan.previous_value, "balanced");
+
+    let payload: String = proxy
+        .call("PlanBatteryChargeTypeWrite", &("Conservation",))
+        .unwrap();
+    let battery_plan: WriteDryRunPlan = serde_json::from_str(&payload).unwrap();
+    assert_eq!(battery_plan.method, "SetBatteryChargeType");
+    assert_eq!(battery_plan.requested_value, "Conservation");
+    assert_eq!(battery_plan.previous_value, "Standard");
 }
 
 #[test]
@@ -78,6 +96,8 @@ fn introspection_exposes_only_read_only_legion_methods() {
             "GetHardwareSummary",
             "GetRawProbeReport",
             "GetTelemetry",
+            "PlanBatteryChargeTypeWrite",
+            "PlanPlatformProfileWrite",
             "RefreshCapabilities"
         ]
     );

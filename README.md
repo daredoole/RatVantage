@@ -25,7 +25,7 @@ Pre-alpha implementation scaffold exists:
 - Disabled write-method contract drafts for platform profile and battery charge type.
 - Pure validators for platform profile and battery charge type choices.
 - Validator-backed dry-run planning for platform profile and battery charge type.
-- Daemon-side dry-run planning adapters that are not exposed over D-Bus.
+- Read-only D-Bus dry-run planning for platform profile and battery charge type.
 - Local CI script and GitHub Actions CI.
 
 No hardware write path exists yet. Write support must wait for validators, polkit policy, rollback behavior, and manual target-machine validation.
@@ -108,7 +108,7 @@ Completed scaffold:
 - Disabled write-method contract drafts.
 - Pure platform profile and battery charge type validators.
 - Pure dry-run planning for future platform profile and battery charge type writes.
-- Non-D-Bus daemon planning adapters.
+- Read-only daemon planning methods over D-Bus; no write methods are exposed.
 - Read-only diagnostics JSON bundle with hardware summary, kernel version, detected sysfs paths, recent daemon log excerpts, and raw probe report.
 - Read-only GTK diagnostics tab with the same debug bundle and a Copy JSON action.
 - Fixture, private-bus, unit, and contract tests.

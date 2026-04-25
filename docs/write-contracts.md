@@ -10,6 +10,8 @@ The active daemon must continue to expose only:
 - `RefreshCapabilities`
 - `GetTelemetry`
 - `GetRawProbeReport`
+- `PlanPlatformProfileWrite`
+- `PlanBatteryChargeTypeWrite`
 
 ## Disabled Drafts
 
@@ -42,10 +44,11 @@ Dry-run planning is pure shared logic in `legion-common`. It returns the future
 method name, capability ID, polkit action, sysfs path, previous value, requested
 value, read-back requirement, rollback value, and ordered execution step IDs.
 
-The plan functions do not write sysfs and are not exposed through D-Bus.
-The daemon may call them through non-D-Bus Rust adapters for tests and future
-internal orchestration, but those adapters must remain outside the zbus
-`#[interface]` implementation until write support is deliberately enabled.
+The plan functions do not write sysfs. The daemon exposes them as read-only
+D-Bus planning methods so clients can preview validation, future polkit action,
+target path, rollback value, and execution steps before any write method exists.
+The actual `Set*` methods must remain outside the zbus `#[interface]`
+implementation until write support is deliberately enabled.
 
 ## Out Of Scope
 

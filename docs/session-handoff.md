@@ -33,6 +33,8 @@
   - `RefreshCapabilities`
   - `GetTelemetry`
   - `GetRawProbeReport`
+  - `PlanPlatformProfileWrite`
+  - `PlanBatteryChargeTypeWrite`
 - UI `--status` command and optional GTK4/libadwaita shell behind `gtk-ui`.
 - Read-only `legion-control-tray --status` scaffold.
 - Read-only `legion-control-tray` StatusNotifier backend with dashboard, refresh, quit, and disabled write actions.
@@ -48,8 +50,8 @@
 - Read-only sysfs fixture capture workflow, validated against the existing 82WM fixture in local CI.
 - Disabled draft write-method contracts for platform profile and battery charge type.
 - Pure validators for platform profile and battery charge type choices; no write methods are enabled.
-- Validator-backed dry-run planning for platform profile and battery charge type; still no D-Bus write methods.
-- Daemon-side Rust adapters for dry-run planning, tested directly while D-Bus introspection remains read-only.
+- Validator-backed dry-run planning for platform profile and battery charge type; read-only D-Bus planning methods are exposed, but no write methods are enabled.
+- Daemon-side Rust adapters for dry-run planning, tested directly and through private-bus contract tests.
 - Local CI and GitHub CI.
 - `docs/implementation-plan.md` intentionally has both layouts:
   - `Current scaffold` shows what exists today.

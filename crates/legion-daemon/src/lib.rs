@@ -12,8 +12,7 @@ use zbus::{blocking::Connection, blocking::ConnectionBuilder, fdo, interface};
 
 pub const DBUS_INTERFACE: &str = "org.ratvantage.LegionControl1";
 pub const DBUS_PATH: &str = "/org/ratvantage/LegionControl1";
-pub const READ_ONLY_METHODS: &str =
-    "GetHardwareSummary,GetCapabilities,RefreshCapabilities,GetTelemetry,GetRawProbeReport";
+pub const READ_ONLY_METHODS: &str = "GetHardwareSummary,GetCapabilities,RefreshCapabilities,GetTelemetry,GetRawProbeReport,PlanPlatformProfileWrite,PlanBatteryChargeTypeWrite";
 
 pub struct LegionControl {
     options: ProbeOptions,
@@ -101,6 +100,14 @@ impl LegionControl {
     fn GetRawProbeReport(&self) -> fdo::Result<String> {
         to_json(&self.snapshot()?)
     }
+
+    fn PlanPlatformProfileWrite(&self, requested: &str) -> fdo::Result<String> {
+        to_plan_json(self.plan_platform_profile_write(requested))
+    }
+
+    fn PlanBatteryChargeTypeWrite(&self, requested: &str) -> fdo::Result<String> {
+        to_plan_json(self.plan_battery_charge_type_write(requested))
+    }
 }
 
 pub fn system_connection(service: LegionControl) -> Result<Connection> {
@@ -119,4 +126,16 @@ pub fn session_connection(service: LegionControl) -> Result<Connection> {
 
 fn to_json<T: Serialize>(value: &T) -> fdo::Result<String> {
     serde_json::to_string(value).map_err(|error| fdo::Error::Failed(error.to_string()))
+}
+
+fn to_plan_json(result: Result<WriteDryRunPlan, PlanningError>) -> fdo::Result<String> {
+    match result {
+        Ok(plan) => to_json(&plan),
+        Err(PlanningError::RegistryUnavailable) => Err(fdo::Error::Failed(
+            "capability registry unavailable".to_owned(),
+        )),
+        Err(PlanningError::Validation(error)) => Err(fdo::Error::InvalidArgs(
+            serde_json::to_string(&error).unwrap_or_else(|_| format!("{error:?}")),
+        )),
+    }
 }

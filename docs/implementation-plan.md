@@ -6,7 +6,7 @@ The repository now has a working pre-alpha scaffold:
 
 - Rust workspace with `legion-common`, `legion-probe`, `legion-daemon`, `legion-ui`, and `ratvantage-test-support`.
 - Read-only probe that builds hardware summary, capability, telemetry, and raw report JSON.
-- Read-only daemon exposing `GetHardwareSummary`, `GetCapabilities`, `RefreshCapabilities`, `GetTelemetry`, and `GetRawProbeReport`.
+- Read-only daemon exposing hardware/capability/telemetry/raw-report methods plus dry-run planning methods for platform profile and battery charge type.
 - Private D-Bus contract tests that verify method introspection and JSON contracts.
 - UI status, overview, and diagnostics clients with deterministic CLI output, plus optional GTK4/libadwaita shell with diagnostics tab and Copy JSON action behind `gtk-ui`.
 - Packaged read-only fan preset TOML assets with CI schema validation.
@@ -365,6 +365,8 @@ GetCapabilities() -> s
 RefreshCapabilities() -> s
 GetTelemetry() -> s
 GetRawProbeReport() -> s
+PlanPlatformProfileWrite(s requested) -> s
+PlanBatteryChargeTypeWrite(s requested) -> s
 ```
 
 Future write-capable methods are design-only until validators, polkit checks,
@@ -508,7 +510,7 @@ ErrorOccurred(s code, s message)
 7. [x] Add a read-only sysfs fixture capture workflow for real hardware reports.
 8. [x] Capture and add a runtime fixture from the supported local 82WM machine.
 9. [x] Draft write-method D-Bus contracts without enabling writes.
-10. [x] Implement validators, pure dry-run planning, and non-D-Bus daemon planning adapters before any write methods.
+10. [x] Implement validators, pure dry-run planning, and read-only daemon planning methods before any write methods.
 11. [x] Add read-only tray/status helper scaffold.
 12. [x] Add disabled tray autostart packaging placeholder.
 13. [x] Add bracketed battery `charge_types` parsing from the runtime fixture.
