@@ -22,6 +22,16 @@ command -v xvfb-run >/dev/null 2>&1 || {
   exit 1
 }
 
+command -v desktop-file-validate >/dev/null 2>&1 || {
+  echo "missing desktop-file-validate; run: scripts/install-dev-deps-fedora.sh" >&2
+  exit 1
+}
+
+command -v appstreamcli >/dev/null 2>&1 || {
+  echo "missing appstreamcli; run: scripts/install-dev-deps-fedora.sh" >&2
+  exit 1
+}
+
 rust_minor="$(rustc --version | awk '{print $2}' | cut -d. -f2)"
 if (( rust_minor < 92 )); then
   echo "rustc 1.92+ required for gtk-rs; current: $(rustc --version)" >&2
@@ -36,6 +46,7 @@ cargo fmt --all --check
 cargo test --workspace
 xvfb-run -a cargo test -p legion-control-ui --features gtk-ui --test gtk_shell
 cargo clippy --all-targets --all-features -- -D warnings
+scripts/validate-packaging.sh
 cargo run -p legion-probe -- --json --sysfs-root tests/fixtures/sysfs-82wm-confirmed >/tmp/ratvantage-probe.json
 cargo run -p legion-control-daemon -- --dry-run >/tmp/ratvantage-daemon.txt
 

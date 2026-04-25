@@ -5,4 +5,5 @@ Comment=Probe Lenovo Legion hardware capabilities on Fedora
 Exec=legion-control-ui
 Icon=org.ratvantage.LegionControl
 Terminal=false
-Categories=System;Settings;
+Categories=Settings;HardwareSettings;
+Keywords=Legion;Lenovo;Fan;Battery;Power;Hardware;

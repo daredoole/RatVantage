@@ -1,11 +1,20 @@
 [Unit]
-Description=Legion Control daemon
-After=dbus.service
+Description=Legion Control hardware daemon
+Documentation=https://github.com/daredoole/RatVantage
+After=dbus.service multi-user.target
 
 [Service]
-Type=simple
-ExecStart=/usr/libexec/legion-control-daemon --dry-run
+Type=dbus
+BusName=org.ratvantage.LegionControl1
+ExecStart=/usr/libexec/legion-control/legion-control-daemon
 Restart=on-failure
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+NoNewPrivileges=true
+MemoryDenyWriteExecute=true
+RestrictAddressFamilies=AF_UNIX
+SystemCallArchitectures=native
 
 [Install]
 WantedBy=multi-user.target

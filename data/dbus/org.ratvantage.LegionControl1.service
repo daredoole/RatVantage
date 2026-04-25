@@ -1,4 +1,5 @@
 [D-BUS Service]
 Name=org.ratvantage.LegionControl1
-Exec=/usr/libexec/legion-control-daemon --dry-run
+Exec=/usr/libexec/legion-control/legion-control-daemon
 User=root
+SystemdService=legion-control-daemon.service

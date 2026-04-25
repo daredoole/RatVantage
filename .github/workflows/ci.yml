@@ -37,6 +37,9 @@ jobs:
       - name: Run clippy
         run: cargo clippy --all-targets --all-features -- -D warnings
 
+      - name: Validate packaging metadata
+        run: scripts/validate-packaging.sh
+
       - name: Probe fixture smoke test
         run: cargo run -p legion-probe -- --json --sysfs-root tests/fixtures/sysfs-82wm-confirmed
 
