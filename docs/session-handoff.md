@@ -6,13 +6,13 @@
 - Visibility: private for now.
 - Branch: `main`
 - Latest local commits:
+  - `f0d7b14` (`Add runtime 82WM probe fixture`)
   - `431f457` (`Clarify disabled tray autostart docs`)
   - `d10599e` (`Package disabled tray autostart placeholder`)
   - `e0ff36c` (`Add read-only tray scaffold`)
   - `22c0820` (`Add daemon dry-run planning adapters`)
   - `29407b7` (`Add pure write dry-run planning`)
-  - `c7a8757` (`Add pure choice validators`)
-- Latest known milestone: read-only pre-alpha scaffold with GTK smoke coverage, hardened packaging metadata, disabled write planning, and read-only tray scaffold.
+- Latest known milestone: read-only pre-alpha scaffold with GTK smoke coverage, hardened packaging metadata, disabled write planning, read-only tray scaffold, and runtime 82WM fixture coverage.
 - Rust toolchain: pinned stable in `rust-toolchain.toml`; local stable installed because GTK stack requires rustc 1.92+.
 
 ## Implemented

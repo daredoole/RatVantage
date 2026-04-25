@@ -61,7 +61,8 @@ RatVantage/
 │   └── rpm/
 ├── tests/
 │   └── fixtures/
-│       └── sysfs-82wm-confirmed/
+│       ├── sysfs-82wm-confirmed/
+│       └── sysfs-82wm-runtime-capture/
 └── target/
 ```
 
@@ -119,7 +120,8 @@ RatVantage/
 │       └── legion-control.spec
 ├── tests/
 │   ├── fixtures/
-│   │   └── sysfs-82wm-confirmed/
+│   │   ├── sysfs-82wm-confirmed/
+│   │   └── sysfs-82wm-runtime-capture/
 │   └── integration/
 └── xtask/
     └── src/main.rs
@@ -539,6 +541,7 @@ tests/fixtures/sysfs-82wm-confirmed/
 Test cases:
 
 - confirmed 82WM layout;
+- runtime-captured 82WM layout with bracketed `charge_types` current value;
 - missing battery charge type;
 - missing fan curve;
 - firmware attributes present with valid metadata;
