@@ -315,24 +315,30 @@ DBusActivatable=true
 X-GNOME-UsesNotifications=true
 ```
 
-Optional tray autostart file:
+Optional tray autostart placeholder:
 
 ```text
 /etc/xdg/autostart/org.ratvantage.LegionControl.Tray.desktop
 ```
 
-Example:
+Current disabled placeholder:
 
 ```ini
 [Desktop Entry]
 Type=Application
 Name=Legion Control Tray
-Exec=legion-control-tray --background
+Comment=Read-only Legion Control tray/status scaffold
+Exec=legion-control-tray
 Icon=org.ratvantage.LegionControl
 Terminal=false
 NoDisplay=true
-X-GNOME-Autostart-enabled=true
+Hidden=true
+X-GNOME-Autostart-enabled=false
 ```
+
+Do not enable tray autostart until a real AppIndicator/StatusNotifier backend is
+implemented and tested. The current helper provides read-only `--status` and
+`--tooltip` output only.
 
 For a polished Fedora app, also ship:
 
