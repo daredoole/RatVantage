@@ -15,7 +15,7 @@
   - `5d3f1c0` (`Expose read-only dry-run planning`)
   - `e32dde0` (`Forward tray dashboard bus address`)
   - `15cdf63` (`Add packaged fan presets`)
-- Latest known milestone: read-only pre-alpha scaffold with GTK smoke coverage, hardened packaging metadata, disabled write planning, runtime 82WM fixture coverage, diagnostics log excerpts and compact summary counts, packaged fan preset assets with dry-run planning, read-only StatusNotifier tray backend, tray dashboard bus-address forwarding, tray tooltip profile/fan/count details, disabled quick fan preset and battery charge tray entries, GNOME tray extension guidance, KDE StatusNotifier tooltip/menu/quit smoke evidence, documented GNOME untested path, read-only battery overview telemetry, read-only EnvyControl GPU query, UI status/overview/diagnostics/dry-run output, GPU dry-run planning with reboot-required messaging, diagnostics choice-source paths, per-capability status labels, and GTK read-only Status, Profiles, Battery, Fans, and Diagnostics tabs.
+- Latest known milestone: read-only pre-alpha scaffold with GTK smoke coverage, hardened packaging metadata, disabled write planning, runtime 82WM fixture coverage, diagnostics log excerpts and compact summary counts, packaged fan preset assets with dry-run planning, read-only StatusNotifier tray backend, tray dashboard bus-address forwarding, tray tooltip profile/fan/count details, disabled quick fan preset and battery charge tray entries, GNOME tray extension guidance, KDE StatusNotifier tooltip/menu/quit smoke evidence, documented GNOME untested path, read-only battery overview telemetry, read-only EnvyControl GPU query, UI status/overview/diagnostics/dry-run output, GPU dry-run planning with reboot-required messaging, diagnostics choice-source paths, per-capability status labels, and GTK read-only Status, Profiles, Battery, Fans, Appearance, and Diagnostics tabs.
 - Rust toolchain: pinned stable in `rust-toolchain.toml`; local stable installed because GTK stack requires rustc 1.92+.
 
 ## Implemented
@@ -32,6 +32,7 @@
 - UI status output includes per-capability status and risk labels.
 - Optional GTK read-only Profiles and Battery tabs render the same diagnostics bundle data without write controls.
 - Optional GTK read-only Fans tab renders fan telemetry, fan curve paths, and packaged preset IDs without write controls.
+- Optional GTK read-only Appearance tab renders LED brightness and firmware toggle values without write controls.
 - Optional GTK diagnostics tab for the same read-only hardware/debug bundle, with compact counts and Copy JSON.
 - Packaged read-only fan preset TOML assets in `data/presets/`, validated by `scripts/validate-packaging.sh`, installed by the RPM spec, and validated at runtime for dry-run fan preset planning.
 - Read-only D-Bus daemon methods:

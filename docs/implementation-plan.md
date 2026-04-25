@@ -8,7 +8,7 @@ The repository now has a working pre-alpha scaffold:
 - Read-only probe that builds hardware summary, capability, telemetry, and raw report JSON.
 - Read-only daemon exposing hardware/capability/telemetry/raw-report methods plus dry-run planning methods for platform profile, battery charge type, GPU mode, and fan presets.
 - Private D-Bus contract tests that verify method introspection and JSON contracts.
-- UI status, overview, diagnostics, and dry-run planning clients with deterministic CLI output, including reboot-required GPU mode planning and fan preset validation, plus optional GTK4/libadwaita shell with read-only Status, Profiles, Battery, Fans, and Diagnostics tabs behind `gtk-ui`.
+- UI status, overview, diagnostics, and dry-run planning clients with deterministic CLI output, including reboot-required GPU mode planning and fan preset validation, plus optional GTK4/libadwaita shell with read-only Status, Profiles, Battery, Fans, Appearance, and Diagnostics tabs behind `gtk-ui`.
 - Packaged read-only fan preset TOML assets with CI schema validation and runtime dry-run planning.
 - Local CI script, Fedora dependency installer, GitHub Actions CI, and pinned stable Rust toolchain.
 

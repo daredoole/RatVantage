@@ -36,8 +36,9 @@ pub fn dashboard_page(
     status: Result<UiStatus>,
     diagnostics: Result<DiagnosticsBundle>,
 ) -> gtk4::Widget {
-    let (profiles, battery, fans, diagnostics) = match diagnostics {
+    let (profiles, battery, fans, appearance, diagnostics) = match diagnostics {
         Ok(bundle) => (
+            Ok(bundle.clone()),
             Ok(bundle.clone()),
             Ok(bundle.clone()),
             Ok(bundle.clone()),
@@ -46,6 +47,7 @@ pub fn dashboard_page(
         Err(error) => {
             let message = error.to_string();
             (
+                Err(anyhow!(message.clone())),
                 Err(anyhow!(message.clone())),
                 Err(anyhow!(message.clone())),
                 Err(anyhow!(message.clone())),
@@ -60,6 +62,11 @@ pub fn dashboard_page(
     stack.add_titled(&profiles_page(profiles), Some("profiles"), "Profiles");
     stack.add_titled(&battery_page(battery), Some("battery"), "Battery");
     stack.add_titled(&fans_page(fans), Some("fans"), "Fans");
+    stack.add_titled(
+        &appearance_page(appearance),
+        Some("appearance"),
+        "Appearance",
+    );
     stack.add_titled(
         &diagnostics_page(diagnostics),
         Some("diagnostics"),
@@ -133,6 +140,21 @@ pub fn fans_page(diagnostics: Result<DiagnosticsBundle>) -> gtk4::Widget {
 
     match diagnostics {
         Ok(bundle) => append_fans(&page, &bundle),
+        Err(error) => append_error(&page, &error),
+    }
+
+    page.upcast()
+}
+
+pub fn appearance_page(diagnostics: Result<DiagnosticsBundle>) -> gtk4::Widget {
+    let page = gtk4::Box::new(gtk4::Orientation::Vertical, 12);
+    page.set_margin_top(24);
+    page.set_margin_bottom(24);
+    page.set_margin_start(24);
+    page.set_margin_end(24);
+
+    match diagnostics {
+        Ok(bundle) => append_appearance(&page, &bundle),
         Err(error) => append_error(&page, &error),
     }
 
@@ -322,6 +344,48 @@ fn append_fans(page: &gtk4::Box, bundle: &DiagnosticsBundle) {
         presets.add(&info_row(preset.1, preset.0));
     }
     page.append(&presets);
+}
+
+fn append_appearance(page: &gtk4::Box, bundle: &DiagnosticsBundle) {
+    let title = gtk4::Label::new(Some("Appearance"));
+    title.add_css_class("title-2");
+    title.set_xalign(0.0);
+    page.append(&title);
+
+    let leds = adw::PreferencesGroup::new();
+    leds.set_title("LEDs");
+    if bundle.raw_probe_report.leds.is_empty() {
+        leds.add(&info_row("LEDs", "unavailable"));
+    } else {
+        for led in &bundle.raw_probe_report.leds {
+            let brightness = led
+                .brightness
+                .map(|brightness| brightness.to_string())
+                .unwrap_or_else(|| "unknown".to_owned());
+            let max = led
+                .max_brightness
+                .map(|max| max.to_string())
+                .unwrap_or_else(|| "unknown".to_owned());
+            leds.add(&info_row(
+                &led.name,
+                &format!("brightness {brightness} / max {max} - {}", led.path),
+            ));
+        }
+    }
+    page.append(&leds);
+
+    let toggles = adw::PreferencesGroup::new();
+    toggles.set_title("Firmware Toggles");
+    if bundle.raw_probe_report.ideapad_toggles.is_empty() {
+        toggles.add(&info_row("Firmware toggles", "unavailable"));
+    } else {
+        for toggle in &bundle.raw_probe_report.ideapad_toggles {
+            let value = toggle.current_value.as_deref().unwrap_or("unknown");
+            let path = toggle.path.as_deref().unwrap_or("unknown");
+            toggles.add(&info_row(&toggle.name, &format!("{value} - {path}")));
+        }
+    }
+    page.append(&toggles);
 }
 
 fn append_diagnostics(page: &gtk4::Box, bundle: &DiagnosticsBundle) {

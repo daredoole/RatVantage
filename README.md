@@ -13,7 +13,7 @@ Pre-alpha implementation scaffold exists:
 - Rust workspace with shared models, read-only probe, read-only daemon, UI client, and test support crates.
 - Probe fixture coverage for confirmed and runtime-captured 82WM-style sysfs paths.
 - Private D-Bus contract tests for read-only daemon methods.
-- UI `--status`, `--overview`, and `--diagnostics` commands plus optional GTK4/libadwaita shell with read-only Status, Profiles, Battery, Fans, and Diagnostics tabs behind `gtk-ui`.
+- UI `--status`, `--overview`, and `--diagnostics` commands plus optional GTK4/libadwaita shell with read-only Status, Profiles, Battery, Fans, Appearance, and Diagnostics tabs behind `gtk-ui`.
 - Read-only tray/status helper scaffold.
 - Tray dashboard launch forwards custom D-Bus addresses for private/session-bus smoke workflows.
 - Tray status separates available and missing capabilities in tooltips.
@@ -103,7 +103,7 @@ Completed scaffold:
 
 - Read-only probe and capability model.
 - Read-only daemon D-Bus methods.
-- UI status, overview, diagnostics clients, and optional GTK shell with read-only Profiles, Battery, Fans, and Diagnostics tabs.
+- UI status, overview, diagnostics clients, and optional GTK shell with read-only Profiles, Battery, Fans, Appearance, and Diagnostics tabs.
 - Read-only tray/status helper scaffold.
 - Read-only StatusNotifier tray backend with disabled write actions.
 - StatusNotifier dashboard launch keeps `--bus-address` when the tray uses a private bus.

@@ -3,8 +3,8 @@
 use adw::prelude::*;
 use legion_common::{
     BatteryChargeTypeCapability, BatteryTelemetry, Capability, CapabilityRegistry,
-    CapabilityStatus, FanCurveCapability, HardwareSummary, HwmonSensor, PlatformProfileCapability,
-    RiskLevel,
+    CapabilityStatus, FanCurveCapability, HardwareSummary, HwmonSensor, IdeapadToggleCapability,
+    LedCapability, PlatformProfileCapability, RiskLevel,
 };
 use legion_control_ui::{gtk_shell, DiagnosticsBundle, UiStatus};
 
@@ -31,6 +31,15 @@ fn status_and_error_pages_build_under_headless_display() {
     assert_eq!(page.orientation(), gtk4::Orientation::Vertical);
     assert_eq!(page.spacing(), 12);
     assert_eq!(page.observe_children().n_items(), 4);
+
+    let page = gtk_shell::appearance_page(Ok(sample_diagnostics()));
+    let page = page
+        .downcast::<gtk4::Box>()
+        .expect("appearance page should be a vertical box");
+
+    assert_eq!(page.orientation(), gtk4::Orientation::Vertical);
+    assert_eq!(page.spacing(), 12);
+    assert_eq!(page.observe_children().n_items(), 3);
 
     let page = gtk_shell::diagnostics_page(Ok(sample_diagnostics()));
     let page = page
@@ -79,6 +88,14 @@ fn status_and_error_pages_build_under_headless_display() {
     let page = page
         .downcast::<gtk4::Box>()
         .expect("fans error page should be a vertical box");
+
+    assert_eq!(page.orientation(), gtk4::Orientation::Vertical);
+    assert_eq!(page.observe_children().n_items(), 2);
+
+    let page = gtk_shell::appearance_page(Err(anyhow::anyhow!("daemon unavailable")));
+    let page = page
+        .downcast::<gtk4::Box>()
+        .expect("appearance error page should be a vertical box");
 
     assert_eq!(page.orientation(), gtk4::Orientation::Vertical);
     assert_eq!(page.observe_children().n_items(), 2);
@@ -200,6 +217,20 @@ fn sample_diagnostics() -> DiagnosticsBundle {
             "/tmp/fixture/sys/class/hwmon/hwmon7/pwm1_auto_point1_temp".to_owned(),
             "/tmp/fixture/sys/class/hwmon/hwmon7/pwm1_auto_point1_pwm".to_owned(),
         ],
+    }];
+    report.leds = vec![LedCapability {
+        name: "platform::ylogo".to_owned(),
+        path: "/tmp/fixture/sys/class/leds/platform::ylogo/brightness".to_owned(),
+        brightness: Some(0),
+        max_brightness: Some(1),
+    }];
+    report.ideapad_toggles = vec![IdeapadToggleCapability {
+        name: "fn_lock".to_owned(),
+        status: CapabilityStatus::ProbeOnly,
+        path: Some(
+            "/tmp/fixture/sys/bus/platform/drivers/ideapad_acpi/VPC2004:00/fn_lock".to_owned(),
+        ),
+        current_value: Some("1".to_owned()),
     }];
 
     DiagnosticsBundle::from_report_with_logs(
