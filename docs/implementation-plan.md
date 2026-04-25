@@ -34,7 +34,8 @@ RatVantage/
 │   ├── implementation-plan.md
 │   ├── research-summary.md
 │   ├── safety-model.md
-│   └── session-handoff.md
+│   ├── session-handoff.md
+│   └── write-contracts.md
 ├── prompts/
 │   └── codex-build-kickoff.md
 ├── scripts/
@@ -352,7 +353,7 @@ Use interface:
 org.ratvantage.LegionControl1
 ```
 
-Methods:
+Current read-only methods:
 
 ```text
 GetHardwareSummary() -> s
@@ -360,6 +361,16 @@ GetCapabilities() -> s
 RefreshCapabilities() -> s
 GetTelemetry() -> s
 GetRawProbeReport() -> s
+```
+
+Future write-capable methods are design-only until validators, polkit checks,
+rollback, and manual validation exist. Disabled first drafts live in
+[write-contracts.md](write-contracts.md) and
+`legion_common::WRITE_METHOD_CONTRACTS`.
+
+Future candidate methods:
+
+```text
 
 GetPlatformProfiles() -> as
 GetPlatformProfile() -> s
@@ -492,7 +503,7 @@ ErrorOccurred(s code, s message)
 6. [x] Add systemd, D-Bus, polkit, desktop, metainfo, and RPM packaging assets while keeping write methods absent.
 7. [x] Add a read-only sysfs fixture capture workflow for real hardware reports.
 8. [ ] Capture and add fixtures from additional supported Legion machines.
-9. [ ] Draft write-method D-Bus contracts without enabling writes.
+9. [x] Draft write-method D-Bus contracts without enabling writes.
 10. [ ] Implement validators for platform profile and battery charge type before any write methods.
 
 ## Test strategy

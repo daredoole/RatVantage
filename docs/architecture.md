@@ -109,7 +109,7 @@ Suggested object path:
 /org/ratvantage/LegionControl1
 ```
 
-Core methods:
+Current read-only methods:
 
 ```text
 GetHardwareSummary() -> s                         # JSON
@@ -117,7 +117,16 @@ GetCapabilities() -> s                            # JSON
 RefreshCapabilities() -> s                        # JSON
 GetTelemetry() -> s                               # JSON
 GetRawProbeReport() -> s                          # JSON; no secrets
+```
 
+Future write-capable methods must remain absent until their validators, polkit
+checks, rollback behavior, and manual validation exist. Disabled draft contracts
+live in [write-contracts.md](write-contracts.md) and
+`legion_common::WRITE_METHOD_CONTRACTS`.
+
+Future candidate methods:
+
+```text
 GetPlatformProfiles() -> as
 GetPlatformProfile() -> s
 SetPlatformProfile(s profile) -> ()

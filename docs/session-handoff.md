@@ -27,6 +27,7 @@
 - Fedora packaging assets for systemd, D-Bus, polkit, desktop metadata, AppStream metadata, and RPM spec.
 - Packaging metadata validation script wired into local and GitHub CI.
 - Read-only sysfs fixture capture workflow, validated against the existing 82WM fixture in local CI.
+- Disabled draft write-method contracts for platform profile and battery charge type.
 - Local CI and GitHub CI.
 - `docs/implementation-plan.md` intentionally has both layouts:
   - `Current scaffold` shows what exists today.
@@ -51,7 +52,7 @@ Do not turn GitHub CI off completely yet. Use local CI before pushing, then keep
 ## Next tasks
 
 1. Capture and add fixtures from additional supported Legion machines.
-2. Draft but do not enable write-method contracts.
+2. Implement validators for platform profile and battery charge type, without enabling writes.
 3. Add placeholder tray/autostart packaging only after a tray crate exists.
 
 ## Working process

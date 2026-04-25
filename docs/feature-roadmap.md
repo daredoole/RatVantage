@@ -11,12 +11,13 @@ Current pre-alpha code provides the safe read-only base:
 - Fedora packaging assets for systemd, D-Bus, polkit, desktop metadata, AppStream metadata, and RPM spec.
 - Packaging metadata validation in local and GitHub CI.
 - Read-only sysfs fixture capture workflow for adding real hardware reports.
+- Disabled draft write-method contracts for platform profile and battery charge type.
 - Fixture tests, private-bus integration tests, clippy/fmt/test local CI, and GitHub CI.
 
 ## Next immediate work
 
 - Use the capture workflow to add fixtures from additional supported Legion machines.
-- Draft write-method contracts without enabling writes.
+- Implement validators for platform profile and battery charge type without enabling writes.
 - Keep progress docs current after each completed roadmap slice.
 - Keep GitHub CI as remote guard; run `./scripts/ci-local.sh` before pushing to reduce failed CI minutes.
 
