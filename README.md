@@ -1,18 +1,24 @@
-# Legion Control for Fedora
+# RatVantage for Fedora
 
-> Project name placeholder: **Legion Control**
+> Working product name in older docs: **Legion Control**
 
-A Fedora-native dashboard and tray/status tool for controlling Lenovo Legion laptop power, fan, battery, GPU, and lighting features through safe Linux interfaces.
+A Fedora-native dashboard and tray/status tool for Lenovo Legion laptop power, fan, battery, GPU, and lighting features through safe Linux interfaces.
 
-This project is designed first for the **Lenovo Legion Pro 5 16ARX8, product 82WM**, with a strict probe-driven hardware model. It does not assume every Legion exposes the same paths.
+This project targets the **Lenovo Legion Pro 5 16ARX8, product 82WM** first. Runtime probing decides what is shown; the app must not assume every Legion exposes the same paths.
 
-## Current status
+## Current Status
 
-Early planning / pre-alpha.
+Pre-alpha implementation scaffold exists:
 
-The documentation package defines the architecture, safety model, packaging plan, and first implementation tasks. Code should start with read-only probing before any write path is implemented.
+- Rust workspace with shared models, read-only probe, read-only daemon, UI client, and test support crates.
+- Probe fixture coverage for confirmed 82WM-style sysfs paths.
+- Private D-Bus contract tests for read-only daemon methods.
+- UI `--status` model and optional GTK4/libadwaita shell behind `gtk-ui`.
+- Local CI script and GitHub Actions CI.
 
-## Supported hardware
+No hardware write path exists yet. Write support must wait for validators, polkit policy, rollback behavior, and manual target-machine validation.
+
+## Supported Hardware
 
 Initial target:
 
@@ -21,144 +27,81 @@ Initial target:
 - Fedora 43
 - Modern Linux kernel with Lenovo platform profile / WMI support
 
-Expected confirmed controls on the target machine:
+Expected confirmed controls include platform profile, battery charge type, hwmon fan/temperature telemetry, Legion fan curve nodes, Y-logo LED, and EnvyControl GPU mode when installed.
 
-- platform profile through `/sys/firmware/acpi/platform_profile`;
-- battery charge type through `/sys/class/power_supply/BAT0/charge_types`;
-- fan and temperature telemetry through hwmon;
-- 10-point fan curve controls through Legion hwmon nodes;
-- Y-logo LED through LED sysfs;
-- NVIDIA mode query/switch flow through EnvyControl when installed.
+## Safety Warning
 
-Other Lenovo Legion models may work only where the runtime probe finds compatible controls.
+This project controls real hardware behavior. Fan curves, firmware power limits, GPU switching, and battery charging modes can affect thermals, stability, battery wear, and boot behavior.
 
-## Features
+The GUI must never run as root. Hardware writes will go through a narrow, validated, polkit-gated daemon API. Raw WMI calls, raw EC writes, arbitrary sysfs writes, and overclocking controls stay out of scope.
 
-Planned MVP:
-
-- Fedora-native GTK4/libadwaita dashboard.
-- Optional tray/status menu.
-- Root system daemon with D-Bus API.
-- polkit authorization for hardware writes.
-- Runtime hardware capability probing.
-- Platform profile switching.
-- Battery charge mode switching.
-- Fan RPM and temperature overview.
-- Safe fan presets.
-- Y-logo LED toggle.
-- EnvyControl GPU mode flow with reboot-required banner.
-- Probe report for debugging.
-
-Planned later:
-
-- Manual fan curve editor.
-- Per-profile fan presets.
-- Peripheral toggles when VPC2004 paths exist.
-- Advanced firmware PPT controls when `lenovo-wmi-other` attributes are actually present.
-
-## Safety warning
-
-This project controls real hardware behavior.
-
-Fan curves, firmware power limits, GPU switching, and battery charging modes can affect thermals, stability, battery wear, and boot behavior. The app intentionally avoids raw WMI calls, raw EC writes, arbitrary sysfs writes, and overclocking controls.
-
-The GUI must never run as root. Hardware writes go through a narrow, validated, polkit-gated daemon API.
-
-## Install from source
-
-Placeholder for development builds:
+## Install From Source
 
 ```bash
-git clone https://github.com/OWNER/legion-control.git
-cd legion-control
-cargo build --workspace
+git clone https://github.com/daredoole/RatVantage.git
+cd RatVantage
+rustup toolchain install stable
+./scripts/install-dev-deps-fedora.sh
+./scripts/ci-local.sh
 ```
 
-Runtime installation is not defined yet. The intended release format is a Fedora RPM with separate daemon and UI subpackages.
+Runtime installation is not defined yet. Intended release format is Fedora RPMs with separate daemon and UI packages.
 
-## Development workflow
+## Development Workflow
 
-Start read-only:
+Run local CI before pushing:
 
 ```bash
-cargo run -p legion-probe -- --json
+./scripts/ci-local.sh
+```
+
+Useful read-only commands:
+
+```bash
+cargo run -p legion-probe -- --json --sysfs-root tests/fixtures/sysfs-82wm-confirmed
 cargo run -p legion-control-daemon -- --dry-run
-cargo run -p legion-control-ui
+cargo run -p legion-control-ui -- --status --bus-address <dbus-address>
+cargo run -p legion-control-ui --features gtk-ui
 ```
 
-Write support should be added only after:
+Keep GitHub CI enabled as the clean-checkout and remote-runner guard. Local CI prevents wasted failed pushes; GitHub CI catches missing packages, toolchain drift, and workflow breakage.
 
-- the probe layer can identify all required paths;
-- validators exist;
-- polkit actions exist;
-- rollback behavior is implemented;
-- manual validation has been completed on the target machine.
+## Roadmap Summary
 
-## Screenshots
+Completed scaffold:
 
-Screenshots placeholder:
+- Read-only probe and capability model.
+- Read-only daemon D-Bus methods.
+- UI status client and optional GTK shell.
+- Fixture, private-bus, unit, and contract tests.
+- Local and GitHub CI.
 
-```text
-docs/assets/screenshots/overview.png
-docs/assets/screenshots/fan-curves.png
-docs/assets/screenshots/gpu-mode.png
-```
+Next:
 
-## Roadmap summary
+- GUI smoke tests under a headless display.
+- Fedora packaging files, systemd unit, D-Bus policy, and desktop metadata.
+- Expanded probe fixtures from real hardware reports.
+- First write-method design, still disabled until safety checks exist.
 
-MVP:
-
-- D-Bus daemon.
-- GTK dashboard.
-- Hardware probe report.
-- Platform profile, battery charge type, fan telemetry, fan presets, Y-logo LED, GPU mode workflow.
-
-Version 0.2:
-
-- Fan curve editor.
-- Better tray integration.
-- Functional Fn-lock / USB charging probes if present.
-- Debug bundle export.
-
-Version 0.3:
-
-- Camera/touchpad/USB peripheral toggles if present.
-- PowerProfiles D-Bus conflict handling.
-- Local automation rules.
-
-Advanced:
-
-- PPT/SPL/SPPT/FPPT firmware attributes only when probed and validated.
-
-Not planned:
-
-- Raw WMI methods.
-- Raw EC writes.
-- Arbitrary sysfs writer.
-- CPU/GPU overclocking.
-- Native keyboard RGB payload writer.
+See [docs/feature-roadmap.md](docs/feature-roadmap.md) and [docs/implementation-plan.md](docs/implementation-plan.md).
 
 ## Contributing
 
 Useful contributions:
 
-- probe reports from Lenovo Legion machines;
-- Fedora packaging fixes;
-- GTK/libadwaita UI work;
-- safe Rust hardware adapter code;
-- tests using fake sysfs layouts;
-- documentation for recovery and validation.
+- Probe reports from Lenovo Legion machines.
+- Fedora packaging fixes.
+- GTK/libadwaita UI work.
+- Safe Rust hardware adapter code.
+- Tests using fake sysfs layouts.
 
 Contribution rules:
 
 - Do not add a raw sysfs write API.
 - Do not hardcode `hwmonN`.
-- Do not add a feature without a probe path and safe fallback.
+- Do not expose unsupported controls.
 - Do not add raw WMI/EC writes.
-- Keep unsupported controls hidden, not half-enabled.
 
 ## License
 
-License placeholder: `GPL-3.0-or-later` recommended for the app and daemon.
-
-Confirm final licensing before importing third-party code or icons.
+License placeholder: `GPL-3.0-or-later` recommended. Confirm final licensing before importing third-party code or icons.

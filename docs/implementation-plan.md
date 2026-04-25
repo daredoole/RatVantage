@@ -1,12 +1,28 @@
 # Implementation Plan
 
+## Implemented baseline
+
+The repository now has a working pre-alpha scaffold:
+
+- Rust workspace with `legion-common`, `legion-probe`, `legion-daemon`, `legion-ui`, and `ratvantage-test-support`.
+- Read-only probe that builds hardware summary, capability, telemetry, and raw report JSON.
+- Read-only daemon exposing `GetHardwareSummary`, `GetCapabilities`, `RefreshCapabilities`, `GetTelemetry`, and `GetRawProbeReport`.
+- Private D-Bus contract tests that verify method introspection and JSON contracts.
+- UI status client, deterministic `--status` output, and optional GTK4/libadwaita shell behind `gtk-ui`.
+- Local CI script, Fedora dependency installer, GitHub Actions CI, and pinned stable Rust toolchain.
+
+Next implementation work should keep the read-only boundary intact while packaging, GUI smoke testing, and additional fixture coverage land. Hardware writes remain design-only until validators, polkit policy, rollback, and manual validation are complete.
+
 ## Repo structure
 
 ```text
-legion-control/
+RatVantage/
 ├── Cargo.toml
+├── Cargo.lock
 ├── README.md
 ├── BRAND.md
+├── AGENTS.md
+├── rust-toolchain.toml
 ├── docs/
 │   ├── architecture.md
 │   ├── fedora-packaging.md
@@ -14,45 +30,26 @@ legion-control/
 │   ├── hardware-control-matrix.md
 │   ├── implementation-plan.md
 │   ├── research-summary.md
-│   └── safety-model.md
+│   ├── safety-model.md
+│   └── session-handoff.md
 ├── prompts/
 │   └── codex-build-kickoff.md
+├── scripts/
+│   ├── ci-local.sh
+│   └── install-dev-deps-fedora.sh
 ├── crates/
 │   ├── legion-common/
 │   ├── legion-daemon/
 │   ├── legion-ui/
-│   ├── legion-tray/
-│   └── legion-probe/
-├── data/
-│   ├── dbus/
-│   │   ├── org.ratvantage.LegionControl1.conf
-│   │   └── org.ratvantage.LegionControl1.service
-│   ├── systemd/
-│   │   └── legion-control-daemon.service
-│   ├── polkit/
-│   │   └── org.ratvantage.LegionControl1.policy
-│   ├── desktop/
-│   │   ├── org.ratvantage.LegionControl.desktop
-│   │   └── org.ratvantage.LegionControl.Tray.desktop
-│   ├── metainfo/
-│   │   └── org.ratvantage.LegionControl.metainfo.xml
-│   ├── icons/
-│   │   └── hicolor/
-│   └── presets/
-│       ├── quiet-office.toml
-│       ├── balanced-daily.toml
-│       ├── gaming.toml
-│       └── max-safe.toml
-├── packaging/
-│   └── rpm/
-│       └── legion-control.spec
+│   ├── legion-probe/
+│   └── test-support/
 ├── tests/
-│   ├── fixtures/
-│   │   └── sysfs-82wm-confirmed/
-│   └── integration/
-└── xtask/
-    └── src/main.rs
+│   └── fixtures/
+│       └── sysfs-82wm-confirmed/
+└── target/
 ```
+
+Planned packaging directories (`data/`, `packaging/`, `xtask/`, and tray-specific code) are not present yet.
 
 ## Rust crate layout
 

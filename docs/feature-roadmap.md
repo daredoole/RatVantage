@@ -1,5 +1,22 @@
 # Feature Roadmap
 
+## Completed scaffold
+
+Current pre-alpha code provides the safe read-only base:
+
+- Runtime probe for hardware summary, capabilities, telemetry, and raw probe report.
+- Root-capable daemon shape with read-only D-Bus API only.
+- UI status client and optional GTK4/libadwaita shell.
+- Fixture tests, private-bus integration tests, clippy/fmt/test local CI, and GitHub CI.
+
+## Next immediate work
+
+- Add headless GUI smoke coverage for the optional GTK shell.
+- Add Fedora packaging assets: systemd unit, D-Bus policy, polkit policy, desktop file, metainfo, and RPM spec.
+- Expand fixtures using real probe reports from supported Legion machines.
+- Draft write-method contracts without enabling writes.
+- Keep GitHub CI as remote guard; run `./scripts/ci-local.sh` before pushing to reduce failed CI minutes.
+
 ## MVP
 
 Goal: safe, useful daily controls using only confirmed interfaces and conservative wrappers.
