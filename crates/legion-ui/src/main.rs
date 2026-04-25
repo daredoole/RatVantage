@@ -4,9 +4,6 @@ use clap::Parser;
 use legion_control_ui::DBUS_INTERFACE;
 use legion_control_ui::{LegionControlClient, UiStatus};
 
-#[cfg(feature = "gtk-ui")]
-mod gtk_shell;
-
 #[derive(Debug, Parser)]
 struct Args {
     #[arg(long)]
@@ -30,7 +27,7 @@ fn main() -> Result<()> {
 
     #[cfg(feature = "gtk-ui")]
     {
-        gtk_shell::run()
+        legion_control_ui::gtk_shell::run()
     }
 
     #[cfg(not(feature = "gtk-ui"))]

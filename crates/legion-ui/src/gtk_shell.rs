@@ -1,6 +1,6 @@
+use crate::{LegionControlClient, UiStatus};
 use adw::prelude::*;
 use anyhow::Result;
-use legion_control_ui::{LegionControlClient, UiStatus};
 
 pub fn run() -> Result<()> {
     let app = adw::Application::builder()
@@ -27,7 +27,7 @@ pub fn run() -> Result<()> {
     Ok(())
 }
 
-fn status_page(status: Result<UiStatus>) -> gtk4::Widget {
+pub fn status_page(status: Result<UiStatus>) -> gtk4::Widget {
     let page = gtk4::Box::new(gtk4::Orientation::Vertical, 12);
     page.set_margin_top(24);
     page.set_margin_bottom(24);

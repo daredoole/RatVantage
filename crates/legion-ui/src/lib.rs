@@ -5,6 +5,9 @@ use legion_common::{
 use serde::de::DeserializeOwned;
 use zbus::blocking::{Connection, ConnectionBuilder, Proxy};
 
+#[cfg(feature = "gtk-ui")]
+pub mod gtk_shell;
+
 pub const DBUS_INTERFACE: &str = "org.ratvantage.LegionControl1";
 pub const DBUS_PATH: &str = "/org/ratvantage/LegionControl1";
 

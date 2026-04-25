@@ -20,4 +20,5 @@ sudo dnf install -y \
   rust \
   cargo \
   systemd-devel \
-  systemd-rpm-macros
+  systemd-rpm-macros \
+  xorg-x11-server-Xvfb

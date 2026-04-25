@@ -23,13 +23,16 @@ jobs:
       - name: Install system test dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y dbus libgtk-4-dev libadwaita-1-dev pkg-config
+          sudo apt-get install -y dbus libgtk-4-dev libadwaita-1-dev pkg-config xvfb
 
       - name: Check formatting
         run: cargo fmt --all --check
 
       - name: Run tests
         run: cargo test --workspace
+
+      - name: Run GTK smoke test
+        run: xvfb-run -a cargo test -p legion-control-ui --features gtk-ui --test gtk_shell
 
       - name: Run clippy
         run: cargo clippy --all-targets --all-features -- -D warnings
