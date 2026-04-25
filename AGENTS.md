@@ -21,6 +21,8 @@ Use Cargo once the workspace is initialized:
 - `cargo run -p legion-probe -- --json` runs read-only capability detection.
 - `cargo run -p legion-control-daemon -- --dry-run` starts the daemon without writes.
 - `cargo run -p legion-control-ui` launches the UI.
+- `scripts/install-dev-deps-fedora.sh` installs local GTK, D-Bus, and pkg-config dependencies on Fedora.
+- `scripts/ci-local.sh` mirrors GitHub CI and should pass before pushing.
 - `cargo test` runs unit and fixture-based tests.
 - `cargo fmt` formats Rust code.
 - `cargo clippy --all-targets --all-features` checks lint issues across crates.
