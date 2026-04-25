@@ -3,7 +3,8 @@
 use adw::prelude::*;
 use legion_common::{
     BatteryChargeTypeCapability, BatteryTelemetry, Capability, CapabilityRegistry,
-    CapabilityStatus, HardwareSummary, PlatformProfileCapability, RiskLevel,
+    CapabilityStatus, FanCurveCapability, HardwareSummary, HwmonSensor, PlatformProfileCapability,
+    RiskLevel,
 };
 use legion_control_ui::{gtk_shell, DiagnosticsBundle, UiStatus};
 
@@ -21,6 +22,15 @@ fn status_and_error_pages_build_under_headless_display() {
     assert_eq!(page.orientation(), gtk4::Orientation::Vertical);
     assert_eq!(page.spacing(), 12);
     assert_eq!(page.observe_children().n_items(), 3);
+
+    let page = gtk_shell::fans_page(Ok(sample_diagnostics()));
+    let page = page
+        .downcast::<gtk4::Box>()
+        .expect("fans page should be a vertical box");
+
+    assert_eq!(page.orientation(), gtk4::Orientation::Vertical);
+    assert_eq!(page.spacing(), 12);
+    assert_eq!(page.observe_children().n_items(), 4);
 
     let page = gtk_shell::diagnostics_page(Ok(sample_diagnostics()));
     let page = page
@@ -61,6 +71,14 @@ fn status_and_error_pages_build_under_headless_display() {
     let page = page
         .downcast::<gtk4::Box>()
         .expect("error page should be a vertical box");
+
+    assert_eq!(page.orientation(), gtk4::Orientation::Vertical);
+    assert_eq!(page.observe_children().n_items(), 2);
+
+    let page = gtk_shell::fans_page(Err(anyhow::anyhow!("daemon unavailable")));
+    let page = page
+        .downcast::<gtk4::Box>()
+        .expect("fans error page should be a vertical box");
 
     assert_eq!(page.orientation(), gtk4::Orientation::Vertical);
     assert_eq!(page.observe_children().n_items(), 2);
@@ -167,6 +185,22 @@ fn sample_diagnostics() -> DiagnosticsBundle {
         status: Some("Charging".to_owned()),
         health: Some("Good".to_owned()),
     });
+    report.telemetry.sensors = vec![HwmonSensor {
+        hwmon_name: Some("legion".to_owned()),
+        label: Some("CPU Fan".to_owned()),
+        kind: "fan".to_owned(),
+        input_path: "/tmp/fixture/sys/class/hwmon/hwmon7/fan1_input".to_owned(),
+        value: Some(2840),
+    }];
+    report.fan_curves = vec![FanCurveCapability {
+        id: "legion-hwmon".to_owned(),
+        status: CapabilityStatus::ProbeOnly,
+        path: Some("/tmp/fixture/sys/class/hwmon/hwmon7".to_owned()),
+        point_paths: vec![
+            "/tmp/fixture/sys/class/hwmon/hwmon7/pwm1_auto_point1_temp".to_owned(),
+            "/tmp/fixture/sys/class/hwmon/hwmon7/pwm1_auto_point1_pwm".to_owned(),
+        ],
+    }];
 
     DiagnosticsBundle::from_report_with_logs(
         report,

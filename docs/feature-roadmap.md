@@ -6,7 +6,7 @@ Current pre-alpha code provides the safe read-only base:
 
 - Runtime probe for hardware summary, capabilities, telemetry, and raw probe report.
 - Root-capable daemon shape with read-only D-Bus API only.
-- UI status client and optional GTK4/libadwaita shell with read-only Status, Profiles, Battery, and Diagnostics tabs.
+- UI status client and optional GTK4/libadwaita shell with read-only Status, Profiles, Battery, Fans, and Diagnostics tabs.
 - Read-only tray/status helper scaffold.
 - Read-only StatusNotifier tray backend with dashboard, refresh, quit, and disabled write actions.
 - StatusNotifier dashboard launch forwards custom D-Bus addresses for private/session-bus workflows.
@@ -29,7 +29,7 @@ Current pre-alpha code provides the safe read-only base:
 - Diagnostics include `platform_profile_choices` and `charge_types` source paths.
 - Read-only UI dry-run plan previews for platform profile, battery charge type, GPU mode, and fan preset writes.
 - UI status output includes per-capability status and risk labels.
-- Read-only GTK Profiles and Battery tabs show platform profile choices, battery charge choices, sysfs source paths, and battery telemetry from the diagnostics bundle.
+- Read-only GTK Profiles, Battery, and Fans tabs show platform profile choices, battery charge choices, fan telemetry, fan curve paths, packaged preset IDs, sysfs source paths, and battery telemetry from the diagnostics bundle.
 - Read-only GTK diagnostics tab for the same hardware/debug bundle, including Copy JSON.
 - Packaged read-only fan preset TOML assets with CI schema validation and runtime dry-run planning.
 - Fixture tests, private-bus integration tests, clippy/fmt/test local CI, and GitHub CI.
@@ -38,7 +38,7 @@ Current pre-alpha code provides the safe read-only base:
 
 - Keep tray autostart disabled; GNOME AppIndicator extension path is untested.
 - Add more captured fixtures when additional supported Legion machines are available.
-- Continue with GTK read-only polish or add more captured hardware fixtures.
+- Add more captured hardware fixtures when available; otherwise continue with diagnostics polish.
 - Keep progress docs current after each completed roadmap slice.
 - Keep GitHub CI as remote guard; run `./scripts/ci-local.sh` before pushing to reduce failed CI minutes.
 

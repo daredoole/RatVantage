@@ -36,11 +36,17 @@ pub fn dashboard_page(
     status: Result<UiStatus>,
     diagnostics: Result<DiagnosticsBundle>,
 ) -> gtk4::Widget {
-    let (profiles, battery, diagnostics) = match diagnostics {
-        Ok(bundle) => (Ok(bundle.clone()), Ok(bundle.clone()), Ok(bundle)),
+    let (profiles, battery, fans, diagnostics) = match diagnostics {
+        Ok(bundle) => (
+            Ok(bundle.clone()),
+            Ok(bundle.clone()),
+            Ok(bundle.clone()),
+            Ok(bundle),
+        ),
         Err(error) => {
             let message = error.to_string();
             (
+                Err(anyhow!(message.clone())),
                 Err(anyhow!(message.clone())),
                 Err(anyhow!(message.clone())),
                 Err(anyhow!(message)),
@@ -53,6 +59,7 @@ pub fn dashboard_page(
     stack.add_titled(&status_page(status), Some("status"), "Status");
     stack.add_titled(&profiles_page(profiles), Some("profiles"), "Profiles");
     stack.add_titled(&battery_page(battery), Some("battery"), "Battery");
+    stack.add_titled(&fans_page(fans), Some("fans"), "Fans");
     stack.add_titled(
         &diagnostics_page(diagnostics),
         Some("diagnostics"),
@@ -111,6 +118,21 @@ pub fn battery_page(diagnostics: Result<DiagnosticsBundle>) -> gtk4::Widget {
 
     match diagnostics {
         Ok(bundle) => append_battery(&page, &bundle),
+        Err(error) => append_error(&page, &error),
+    }
+
+    page.upcast()
+}
+
+pub fn fans_page(diagnostics: Result<DiagnosticsBundle>) -> gtk4::Widget {
+    let page = gtk4::Box::new(gtk4::Orientation::Vertical, 12);
+    page.set_margin_top(24);
+    page.set_margin_bottom(24);
+    page.set_margin_start(24);
+    page.set_margin_end(24);
+
+    match diagnostics {
+        Ok(bundle) => append_fans(&page, &bundle),
         Err(error) => append_error(&page, &error),
     }
 
@@ -243,6 +265,63 @@ fn append_battery(page: &gtk4::Box, bundle: &DiagnosticsBundle) {
         telemetry.add(&info_row("Battery telemetry", "unavailable"));
     }
     page.append(&telemetry);
+}
+
+fn append_fans(page: &gtk4::Box, bundle: &DiagnosticsBundle) {
+    let title = gtk4::Label::new(Some("Fans"));
+    title.add_css_class("title-2");
+    title.set_xalign(0.0);
+    page.append(&title);
+
+    let telemetry = adw::PreferencesGroup::new();
+    telemetry.set_title("Telemetry");
+    let fan_sensors = bundle
+        .raw_probe_report
+        .telemetry
+        .sensors
+        .iter()
+        .filter(|sensor| sensor.kind == "fan")
+        .collect::<Vec<_>>();
+    if fan_sensors.is_empty() {
+        telemetry.add(&info_row("Fan telemetry", "unavailable"));
+    } else {
+        for sensor in fan_sensors {
+            let title = sensor.label.as_deref().unwrap_or("Fan");
+            let value = sensor
+                .value
+                .map(|value| format!("{value} RPM"))
+                .unwrap_or_else(|| "unknown".to_owned());
+            telemetry.add(&info_row(title, &value));
+        }
+    }
+    page.append(&telemetry);
+
+    let curves = adw::PreferencesGroup::new();
+    curves.set_title("Fan Curves");
+    if bundle.raw_probe_report.fan_curves.is_empty() {
+        curves.add(&info_row("Fan curves", "unavailable"));
+    } else {
+        for curve in &bundle.raw_probe_report.fan_curves {
+            let path = curve.path.as_deref().unwrap_or("unknown");
+            curves.add(&info_row(
+                &curve.id,
+                &format!("{} point files - {path}", curve.point_paths.len()),
+            ));
+        }
+    }
+    page.append(&curves);
+
+    let presets = adw::PreferencesGroup::new();
+    presets.set_title("Packaged Presets");
+    for preset in [
+        ("quiet-office", "Quiet office"),
+        ("balanced-daily", "Balanced daily"),
+        ("gaming", "Gaming"),
+        ("max-safe", "Max safe"),
+    ] {
+        presets.add(&info_row(preset.1, preset.0));
+    }
+    page.append(&presets);
 }
 
 fn append_diagnostics(page: &gtk4::Box, bundle: &DiagnosticsBundle) {

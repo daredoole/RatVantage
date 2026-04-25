@@ -103,7 +103,7 @@ Completed scaffold:
 
 - Read-only probe and capability model.
 - Read-only daemon D-Bus methods.
-- UI status, overview, diagnostics clients, and optional GTK shell with read-only Profiles, Battery, and Diagnostics tabs.
+- UI status, overview, diagnostics clients, and optional GTK shell with read-only Profiles, Battery, Fans, and Diagnostics tabs.
 - Read-only tray/status helper scaffold.
 - Read-only StatusNotifier tray backend with disabled write actions.
 - StatusNotifier dashboard launch keeps `--bus-address` when the tray uses a private bus.
@@ -121,6 +121,7 @@ Completed scaffold:
 - UI CLI previews for platform profile, battery charge type, GPU mode, and fan preset dry-run plans.
 - Read-only diagnostics JSON bundle with hardware summary, kernel version, detected sysfs paths, recent daemon log excerpts, and raw probe report.
 - Diagnostics include choice file paths for platform profiles and battery charge types.
+- Read-only GTK Fans tab for fan telemetry, detected fan curve paths, and packaged preset IDs.
 - Read-only GTK diagnostics tab with the same debug bundle and a Copy JSON action.
 - Fixture, private-bus, unit, and contract tests.
 - Local and GitHub CI.
