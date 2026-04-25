@@ -20,6 +20,11 @@ jobs:
         with:
           components: rustfmt, clippy
 
+      - name: Install D-Bus test dependency
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y dbus
+
       - name: Check formatting
         run: cargo fmt --all --check
 
