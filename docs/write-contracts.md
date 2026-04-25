@@ -47,6 +47,9 @@ value, read-back requirement, rollback value, and ordered execution step IDs.
 The plan functions do not write sysfs. The daemon exposes them as read-only
 D-Bus planning methods so clients can preview validation, future polkit action,
 target path, rollback value, and execution steps before any write method exists.
+`legion-control-ui --plan-platform-profile <profile>` and
+`legion-control-ui --plan-battery-charge-type <charge_type>` print those plans
+as JSON for CLI inspection.
 The actual `Set*` methods must remain outside the zbus `#[interface]`
 implementation until write support is deliberately enabled.
 

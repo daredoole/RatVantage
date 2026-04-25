@@ -35,7 +35,7 @@
   - `GetRawProbeReport`
   - `PlanPlatformProfileWrite`
   - `PlanBatteryChargeTypeWrite`
-- UI `--status` command and optional GTK4/libadwaita shell behind `gtk-ui`.
+- UI `--status`, `--plan-platform-profile`, and `--plan-battery-charge-type` commands, plus optional GTK4/libadwaita shell behind `gtk-ui`.
 - Read-only `legion-control-tray --status` scaffold.
 - Read-only `legion-control-tray` StatusNotifier backend with dashboard, refresh, quit, and disabled write actions.
 - StatusNotifier tray dashboard launch forwards `--bus-address` when the tray runs against a private/session bus.
@@ -70,6 +70,8 @@ cargo run -p legion-control-daemon -- --session --sysfs-root tests/fixtures/sysf
 cargo run -p legion-control-ui --features gtk-ui
 cargo run -p legion-control-ui -- --overview --bus-address <dbus-address>
 cargo run -p legion-control-ui -- --diagnostics --bus-address <dbus-address>
+cargo run -p legion-control-ui -- --plan-platform-profile performance --bus-address <dbus-address>
+cargo run -p legion-control-ui -- --plan-battery-charge-type Conservation --bus-address <dbus-address>
 cargo run -p legion-control-tray -- --bus-address <dbus-address>
 cargo run -p legion-control-tray -- --status --bus-address <dbus-address>
 cargo run -p legion-control-tray -- --tooltip --bus-address <dbus-address>

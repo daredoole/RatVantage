@@ -2,7 +2,8 @@ use std::process::Command;
 
 use anyhow::Result;
 use legion_common::{
-    Capability, CapabilityRegistry, CapabilityStatus, HardwareSummary, RiskLevel, TelemetrySnapshot,
+    Capability, CapabilityRegistry, CapabilityStatus, HardwareSummary, RiskLevel,
+    TelemetrySnapshot, WriteDryRunPlan,
 };
 use serde::{de::DeserializeOwned, Serialize};
 use zbus::blocking::{Connection, ConnectionBuilder, Proxy};
@@ -216,6 +217,10 @@ pub fn render_diagnostics_json(bundle: &DiagnosticsBundle) -> Result<String> {
     Ok(serde_json::to_string_pretty(bundle)?)
 }
 
+pub fn render_write_plan_json(plan: &WriteDryRunPlan) -> Result<String> {
+    Ok(serde_json::to_string_pretty(plan)?)
+}
+
 fn detected_sysfs_paths(report: &CapabilityRegistry) -> Vec<String> {
     let mut paths = Vec::new();
     push_path(&mut paths, &report.hardware.sysfs_root);
@@ -353,6 +358,14 @@ impl LegionControlClient {
         ))
     }
 
+    pub fn plan_platform_profile_write(&self, requested: &str) -> Result<WriteDryRunPlan> {
+        self.call_json_arg("PlanPlatformProfileWrite", requested)
+    }
+
+    pub fn plan_battery_charge_type_write(&self, requested: &str) -> Result<WriteDryRunPlan> {
+        self.call_json_arg("PlanBatteryChargeTypeWrite", requested)
+    }
+
     pub fn status(&self) -> Result<UiStatus> {
         UiStatus::from_client(self)
     }
@@ -363,6 +376,15 @@ impl LegionControlClient {
     {
         let proxy = Proxy::new(&self.connection, DBUS_INTERFACE, DBUS_PATH, DBUS_INTERFACE)?;
         let payload: String = proxy.call(method, &())?;
+        Ok(serde_json::from_str(&payload)?)
+    }
+
+    fn call_json_arg<T>(&self, method: &str, arg: &str) -> Result<T>
+    where
+        T: DeserializeOwned,
+    {
+        let proxy = Proxy::new(&self.connection, DBUS_INTERFACE, DBUS_PATH, DBUS_INTERFACE)?;
+        let payload: String = proxy.call(method, &(arg,))?;
         Ok(serde_json::from_str(&payload)?)
     }
 }

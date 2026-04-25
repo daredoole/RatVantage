@@ -132,6 +132,18 @@ fn client_reads_daemon_contract_over_private_bus() {
 
     let refreshed = client.refresh_capabilities().unwrap();
     assert_eq!(refreshed, capabilities);
+
+    let platform_plan = client.plan_platform_profile_write("performance").unwrap();
+    assert_eq!(platform_plan.method, "SetPlatformProfile");
+    assert_eq!(platform_plan.previous_value, "balanced");
+    assert_eq!(platform_plan.requested_value, "performance");
+
+    let battery_plan = client
+        .plan_battery_charge_type_write("Conservation")
+        .unwrap();
+    assert_eq!(battery_plan.method, "SetBatteryChargeType");
+    assert_eq!(battery_plan.previous_value, "Standard");
+    assert_eq!(battery_plan.requested_value, "Conservation");
 }
 
 #[test]
@@ -262,6 +274,45 @@ fn diagnostics_cli_prints_read_only_debug_bundle_json() {
             .as_str()
             .unwrap()
             .ends_with("sys/firmware/acpi/platform_profile")));
+}
+
+#[test]
+fn plan_cli_prints_read_only_write_preview_json() {
+    let (_bus, _service_connection, address) = fixture_service();
+    let output = Command::new(env!("CARGO_BIN_EXE_legion-control-ui"))
+        .args([
+            "--plan-platform-profile",
+            "performance",
+            "--bus-address",
+            &address,
+        ])
+        .output()
+        .unwrap();
+
+    assert!(output.status.success());
+    assert!(output.stderr.is_empty());
+    let json: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(json["method"], "SetPlatformProfile");
+    assert_eq!(json["previous_value"], "balanced");
+    assert_eq!(json["requested_value"], "performance");
+    assert_eq!(json["readback_required"], true);
+
+    let output = Command::new(env!("CARGO_BIN_EXE_legion-control-ui"))
+        .args([
+            "--plan-battery-charge-type",
+            "Conservation",
+            "--bus-address",
+            &address,
+        ])
+        .output()
+        .unwrap();
+
+    assert!(output.status.success());
+    assert!(output.stderr.is_empty());
+    let json: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(json["method"], "SetBatteryChargeType");
+    assert_eq!(json["previous_value"], "Standard");
+    assert_eq!(json["requested_value"], "Conservation");
 }
 
 #[test]

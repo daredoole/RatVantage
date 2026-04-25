@@ -78,6 +78,8 @@ cargo run -p legion-control-daemon -- --session --sysfs-root tests/fixtures/sysf
 cargo run -p legion-control-ui -- --status --bus-address <dbus-address>
 cargo run -p legion-control-ui -- --overview --bus-address <dbus-address>
 cargo run -p legion-control-ui -- --diagnostics --bus-address <dbus-address>
+cargo run -p legion-control-ui -- --plan-platform-profile performance --bus-address <dbus-address>
+cargo run -p legion-control-ui -- --plan-battery-charge-type Conservation --bus-address <dbus-address>
 cargo run -p legion-control-tray -- --status --bus-address <dbus-address>
 cargo run -p legion-control-tray -- --tooltip --bus-address <dbus-address>
 cargo run -p legion-control-ui --features gtk-ui
@@ -109,6 +111,7 @@ Completed scaffold:
 - Pure platform profile and battery charge type validators.
 - Pure dry-run planning for future platform profile and battery charge type writes.
 - Read-only daemon planning methods over D-Bus; no write methods are exposed.
+- UI CLI previews for platform profile and battery charge type dry-run plans.
 - Read-only diagnostics JSON bundle with hardware summary, kernel version, detected sysfs paths, recent daemon log excerpts, and raw probe report.
 - Read-only GTK diagnostics tab with the same debug bundle and a Copy JSON action.
 - Fixture, private-bus, unit, and contract tests.

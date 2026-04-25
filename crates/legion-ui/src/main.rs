@@ -1,10 +1,10 @@
-use anyhow::Result;
+use anyhow::{bail, Result};
 use clap::Parser;
 #[cfg(not(feature = "gtk-ui"))]
 use legion_control_ui::DBUS_INTERFACE;
 use legion_control_ui::{
-    render_diagnostics_json, render_overview_lines, DiagnosticsBundle, LegionControlClient,
-    UiStatus,
+    render_diagnostics_json, render_overview_lines, render_write_plan_json, DiagnosticsBundle,
+    LegionControlClient, UiStatus,
 };
 
 #[derive(Debug, Parser)]
@@ -18,6 +18,12 @@ struct Args {
     #[arg(long)]
     diagnostics: bool,
 
+    #[arg(long, value_name = "PROFILE")]
+    plan_platform_profile: Option<String>,
+
+    #[arg(long, value_name = "CHARGE_TYPE")]
+    plan_battery_charge_type: Option<String>,
+
     #[arg(long)]
     bus_address: Option<String>,
 }
@@ -25,12 +31,30 @@ struct Args {
 fn main() -> Result<()> {
     let args = Args::parse();
 
-    if args.status || args.overview || args.diagnostics {
+    let action_count = [
+        args.status,
+        args.overview,
+        args.diagnostics,
+        args.plan_platform_profile.is_some(),
+        args.plan_battery_charge_type.is_some(),
+    ]
+    .into_iter()
+    .filter(|enabled| *enabled)
+    .count();
+    if action_count > 1 {
+        bail!("choose exactly one read-only UI command");
+    }
+
+    if action_count == 1 {
         let client = match args.bus_address {
             Some(address) => LegionControlClient::address(&address)?,
             None => LegionControlClient::system()?,
         };
-        if args.diagnostics {
+        if let Some(profile) = args.plan_platform_profile {
+            print_write_plan(&client.plan_platform_profile_write(&profile)?)?;
+        } else if let Some(charge_type) = args.plan_battery_charge_type {
+            print_write_plan(&client.plan_battery_charge_type_write(&charge_type)?)?;
+        } else if args.diagnostics {
             print_diagnostics(&client.diagnostics_bundle()?)?;
         } else if args.overview {
             print_overview(&client.raw_probe_report()?);
@@ -69,5 +93,10 @@ fn print_overview(report: &legion_common::CapabilityRegistry) {
 
 fn print_diagnostics(bundle: &DiagnosticsBundle) -> Result<()> {
     println!("{}", render_diagnostics_json(bundle)?);
+    Ok(())
+}
+
+fn print_write_plan(plan: &legion_common::WriteDryRunPlan) -> Result<()> {
+    println!("{}", render_write_plan_json(plan)?);
     Ok(())
 }
