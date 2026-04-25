@@ -918,6 +918,21 @@ dependencies = [
 ]
 
 [[package]]
+name = "legion-control-tray"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "clap",
+ "legion-common",
+ "legion-control-daemon",
+ "legion-control-ui",
+ "legion-probe",
+ "ratvantage-test-support",
+ "serde_json",
+ "zbus",
+]
+
+[[package]]
 name = "legion-control-ui"
 version = "0.1.0"
 dependencies = [

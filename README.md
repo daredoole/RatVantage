@@ -14,6 +14,7 @@ Pre-alpha implementation scaffold exists:
 - Probe fixture coverage for confirmed 82WM-style sysfs paths.
 - Private D-Bus contract tests for read-only daemon methods.
 - UI `--status` model and optional GTK4/libadwaita shell behind `gtk-ui`.
+- Read-only tray/status helper scaffold.
 - Headless GTK smoke coverage for the optional shell.
 - Fedora packaging metadata and validation for systemd, D-Bus, polkit, desktop, AppStream, and RPM assets.
 - Read-only sysfs fixture capture workflow for adding more real hardware reports.
@@ -69,6 +70,8 @@ Useful read-only commands:
 cargo run -p legion-probe -- --json --sysfs-root tests/fixtures/sysfs-82wm-confirmed
 cargo run -p legion-control-daemon -- --dry-run
 cargo run -p legion-control-ui -- --status --bus-address <dbus-address>
+cargo run -p legion-control-tray -- --status --bus-address <dbus-address>
+cargo run -p legion-control-tray -- --tooltip --bus-address <dbus-address>
 cargo run -p legion-control-ui --features gtk-ui
 ```
 
@@ -84,6 +87,7 @@ Completed scaffold:
 - Read-only probe and capability model.
 - Read-only daemon D-Bus methods.
 - UI status client and optional GTK shell.
+- Read-only tray/status helper scaffold.
 - Headless GTK smoke coverage.
 - Fedora packaging metadata and validation.
 - Read-only fixture capture workflow.
@@ -97,7 +101,7 @@ Completed scaffold:
 Next:
 
 - Add captured probe fixtures from additional supported Legion machines.
-- Tray/autostart packaging only after a tray crate exists.
+- Tray/autostart packaging for the existing tray scaffold.
 
 See [docs/feature-roadmap.md](docs/feature-roadmap.md) and [docs/implementation-plan.md](docs/implementation-plan.md).
 

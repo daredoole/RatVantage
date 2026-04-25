@@ -46,6 +46,7 @@ RatVantage/
 │   ├── legion-common/
 │   ├── legion-daemon/
 │   ├── legion-ui/
+│   ├── legion-tray/
 │   ├── legion-probe/
 │   └── test-support/
 ├── data/
@@ -505,6 +506,7 @@ ErrorOccurred(s code, s message)
 8. [ ] Capture and add fixtures from additional supported Legion machines.
 9. [x] Draft write-method D-Bus contracts without enabling writes.
 10. [x] Implement validators, pure dry-run planning, and non-D-Bus daemon planning adapters before any write methods.
+11. [x] Add read-only tray/status helper scaffold.
 
 ## Test strategy
 

@@ -22,6 +22,7 @@
   - `GetTelemetry`
   - `GetRawProbeReport`
 - UI `--status` command and optional GTK4/libadwaita shell behind `gtk-ui`.
+- Read-only `legion-control-tray --status` scaffold.
 - Headless GTK smoke test for the optional shell, run through Xvfb in local and GitHub CI.
 - Private-bus contract tests and shared test support.
 - Fedora packaging assets for systemd, D-Bus, polkit, desktop metadata, AppStream metadata, and RPM spec.
@@ -46,6 +47,8 @@ scripts/capture-sysfs-fixture.sh --output tests/fixtures/sysfs-<model>-<note>
 cargo run -p legion-probe -- --json --sysfs-root tests/fixtures/sysfs-82wm-confirmed
 cargo run -p legion-control-daemon -- --dry-run
 cargo run -p legion-control-ui --features gtk-ui
+cargo run -p legion-control-tray -- --status --bus-address <dbus-address>
+cargo run -p legion-control-tray -- --tooltip --bus-address <dbus-address>
 ```
 
 ## CI policy
@@ -55,7 +58,7 @@ Do not turn GitHub CI off completely yet. Use local CI before pushing, then keep
 ## Next tasks
 
 1. Capture and add fixtures from additional supported Legion machines.
-2. Add placeholder tray/autostart packaging only after a tray crate exists.
+2. Add placeholder tray/autostart packaging for the existing tray scaffold.
 
 ## Working process
 

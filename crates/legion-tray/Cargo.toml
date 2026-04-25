@@ -1,0 +1,19 @@
+[package]
+name = "legion-control-tray"
+version = "0.1.0"
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+anyhow.workspace = true
+clap.workspace = true
+legion-control-ui.workspace = true
+
+[dev-dependencies]
+legion-common.workspace = true
+legion-control-daemon = { path = "../legion-daemon" }
+legion-probe.workspace = true
+ratvantage-test-support.workspace = true
+serde_json.workspace = true
+zbus.workspace = true
