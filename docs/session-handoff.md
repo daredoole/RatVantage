@@ -6,12 +6,12 @@
 - Visibility: private for now.
 - Branch: `main`
 - Latest local commits:
+  - `3ddc3e9` (`Add read-only StatusNotifier tray backend`)
   - `29b174f` (`Refresh runtime fixture progress docs`)
   - `f0d7b14` (`Add runtime 82WM probe fixture`)
   - `431f457` (`Clarify disabled tray autostart docs`)
   - `d10599e` (`Package disabled tray autostart placeholder`)
   - `e0ff36c` (`Add read-only tray scaffold`)
-  - `22c0820` (`Add daemon dry-run planning adapters`)
 - Latest known milestone: read-only pre-alpha scaffold with GTK smoke coverage, hardened packaging metadata, disabled write planning, runtime 82WM fixture coverage, and a read-only StatusNotifier tray backend.
 - Rust toolchain: pinned stable in `rust-toolchain.toml`; local stable installed because GTK stack requires rustc 1.92+.
 
