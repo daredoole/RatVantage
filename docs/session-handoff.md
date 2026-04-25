@@ -5,13 +5,14 @@
 - Repository: `https://github.com/daredoole/RatVantage`
 - Visibility: private for now.
 - Branch: `main`
+- Global Codex config: GitHub MCP is disabled, not removed, in `/home/darrian/.codex/config.toml`. New sessions should not rely on GitHub MCP unless the user explicitly re-enables it.
 - Latest local commits:
+  - `0f93663` (`Refresh overview handoff`)
   - `cb8983e` (`Add read-only UI overview command`)
   - `000029c` (`Refresh EnvyControl handoff`)
   - `bb1de2f` (`Add read-only EnvyControl GPU query`)
   - `832a084` (`Refresh battery telemetry handoff`)
   - `1d23afd` (`Add battery overview telemetry`)
-  - `e87a348` (`Mark GNOME tray path untested`)
 - Latest known milestone: read-only pre-alpha scaffold with GTK smoke coverage, hardened packaging metadata, disabled write planning, runtime 82WM fixture coverage, read-only StatusNotifier tray backend, KDE StatusNotifier tooltip/menu/quit smoke evidence, documented GNOME untested path, read-only battery overview telemetry, read-only EnvyControl GPU query, and UI `--overview` output.
 - Rust toolchain: pinned stable in `rust-toolchain.toml`; local stable installed because GTK stack requires rustc 1.92+.
 
@@ -75,23 +76,32 @@ Do not turn GitHub CI off completely yet. Use local CI before pushing, then keep
 
 ## Next tasks
 
-1. Continue MVP diagnostics work using read-only daemon data.
+1. Start MVP diagnostics work using read-only daemon data:
+   - add a CLI-visible raw capability/debug bundle path from the UI client;
+   - include hardware summary, kernel version, detected sysfs paths/capability JSON where already available;
+   - keep all diagnostics read-only and fixture-backed.
 2. Add more captured fixtures when additional supported Legion machines are available.
 
 ## Working process
 
+- Read `AGENTS.md`, this handoff, and current `git status` before editing.
+- Keep responses under 500 words when possible and put long artifacts in files.
+- Follow context-mode routing from `AGENTS.md`: no `curl`, no `wget`, no inline HTTP fetches, and route large command/search/file-analysis output through context-mode.
+- Use `rg`/`rg --files` for local search, and use parallel reads where useful.
+- Use `apply_patch` for manual file edits.
 - Treat each roadmap slice as one implementation unit.
 - Validate with focused checks plus `./scripts/ci-local.sh` before committing.
 - Update `README.md`, `docs/feature-roadmap.md`, `docs/implementation-plan.md`, and this handoff when progress or next tasks change.
 - Commit each completed slice separately with a short imperative message.
-- Use parallel agents for bounded audits or implementation slices when their work can run independently.
+- Use multiple agents for bounded, independent roadmap slices or audits. Give each agent a clear write scope, remind it not to revert others' edits, then integrate and review before committing.
+- Do not end a slice half-finished: implement, validate, update progress docs, and commit.
 
 ## New session prompt
 
 Start with:
 
 ```text
-Read AGENTS.md and docs/session-handoff.md first. Then inspect current git status and continue from the next task without changing safety constraints.
+Read AGENTS.md and docs/session-handoff.md first. Then inspect current git status and continue from the next task without changing safety constraints. Work one roadmap slice at a time, validate it, update docs, and commit before starting the next slice. Use multiple agents for independent subtasks when useful.
 ```
 
 ## Safety constraints

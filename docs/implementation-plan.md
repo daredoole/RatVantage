@@ -11,7 +11,7 @@ The repository now has a working pre-alpha scaffold:
 - UI status client, deterministic `--status` output, and optional GTK4/libadwaita shell behind `gtk-ui`.
 - Local CI script, Fedora dependency installer, GitHub Actions CI, and pinned stable Rust toolchain.
 
-Next implementation work should keep the read-only boundary intact while additional fixture coverage lands and write contracts are drafted but disabled. Hardware writes remain design-only until validators, polkit policy, rollback, and manual validation are complete.
+Next implementation work should start the MVP diagnostics surface using the existing read-only daemon data. The first useful slice is a CLI-visible raw capability/debug bundle path from `legion-control-ui`, backed by fixture tests and docs. Hardware writes remain design-only until validators, polkit policy, rollback, and manual validation are complete.
 
 ## Repo structure
 

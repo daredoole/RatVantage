@@ -28,7 +28,10 @@ Current pre-alpha code provides the safe read-only base:
 ## Next immediate work
 
 - Keep tray autostart disabled; GNOME AppIndicator extension path is untested.
-- Continue MVP diagnostics work using read-only daemon data.
+- Start MVP diagnostics work using read-only daemon data:
+  - expose a CLI-visible raw capability/debug bundle path;
+  - include hardware summary, kernel version, detected sysfs paths/capability JSON where already available;
+  - keep the first slice fixture-backed and read-only.
 - Add more captured fixtures when additional supported Legion machines are available.
 - Keep progress docs current after each completed roadmap slice.
 - Keep GitHub CI as remote guard; run `./scripts/ci-local.sh` before pushing to reduce failed CI minutes.
