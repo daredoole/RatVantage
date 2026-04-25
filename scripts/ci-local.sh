@@ -17,6 +17,13 @@ command -v dbus-daemon >/dev/null 2>&1 || {
   exit 1
 }
 
+rust_minor="$(rustc --version | awk '{print $2}' | cut -d. -f2)"
+if (( rust_minor < 92 )); then
+  echo "rustc 1.92+ required for gtk-rs; current: $(rustc --version)" >&2
+  echo "run: rustup toolchain install stable" >&2
+  exit 1
+fi
+
 need_pkg_config gtk4 "scripts/install-dev-deps-fedora.sh"
 need_pkg_config libadwaita-1 "scripts/install-dev-deps-fedora.sh"
 
