@@ -245,6 +245,95 @@ pub fn validate_battery_charge_type_choice(
     )
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct WriteDryRunPlan {
+    pub method: String,
+    pub capability_id: String,
+    pub polkit_action: String,
+    pub path: String,
+    pub previous_value: String,
+    pub requested_value: String,
+    pub readback_required: bool,
+    pub rollback_value: String,
+    pub steps: Vec<WritePlanStep>,
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum WritePlanStep {
+    AuthorizeCaller,
+    StorePreviousValue,
+    WriteRequestedValue,
+    ReadBackValue,
+    RestorePreviousOnReadbackFailure,
+}
+
+pub fn plan_platform_profile_write(
+    capability: Option<&PlatformProfileCapability>,
+    requested: &str,
+) -> Result<WriteDryRunPlan, ValidationError> {
+    validate_platform_profile_choice(capability, requested)?;
+    let capability = capability.expect("validated platform profile capability must exist");
+    plan_write(
+        write_contract("SetPlatformProfile"),
+        &capability.path,
+        capability
+            .current
+            .as_deref()
+            .expect("validated platform profile current value must exist"),
+        requested,
+    )
+}
+
+pub fn plan_battery_charge_type_write(
+    capability: Option<&BatteryChargeTypeCapability>,
+    requested: &str,
+) -> Result<WriteDryRunPlan, ValidationError> {
+    validate_battery_charge_type_choice(capability, requested)?;
+    let capability = capability.expect("validated battery charge type capability must exist");
+    plan_write(
+        write_contract("SetBatteryChargeType"),
+        &capability.path,
+        capability
+            .current
+            .as_deref()
+            .expect("validated battery charge type current value must exist"),
+        requested,
+    )
+}
+
+fn write_contract(method: &str) -> &'static WriteMethodContract {
+    WRITE_METHOD_CONTRACTS
+        .iter()
+        .find(|contract| contract.method == method)
+        .expect("write contract must exist")
+}
+
+fn plan_write(
+    contract: &WriteMethodContract,
+    path: &str,
+    previous_value: &str,
+    requested_value: &str,
+) -> Result<WriteDryRunPlan, ValidationError> {
+    Ok(WriteDryRunPlan {
+        method: contract.method.to_owned(),
+        capability_id: contract.capability_id.to_owned(),
+        polkit_action: contract.polkit_action.to_owned(),
+        path: path.to_owned(),
+        previous_value: previous_value.to_owned(),
+        requested_value: requested_value.to_owned(),
+        readback_required: true,
+        rollback_value: previous_value.to_owned(),
+        steps: vec![
+            WritePlanStep::AuthorizeCaller,
+            WritePlanStep::StorePreviousValue,
+            WritePlanStep::WriteRequestedValue,
+            WritePlanStep::ReadBackValue,
+            WritePlanStep::RestorePreviousOnReadbackFailure,
+        ],
+    })
+}
+
 fn require_current(capability_id: &str, current: Option<&str>) -> Result<(), ValidationError> {
     match current {
         Some(value) if !value.is_empty() => Ok(()),
@@ -453,6 +542,78 @@ mod tests {
         ));
         assert!(matches!(
             validate_battery_charge_type_choice(Some(&capability), "standard"),
+            Err(ValidationError::UnsupportedChoice { .. })
+        ));
+    }
+
+    #[test]
+    fn platform_profile_dry_run_plan_uses_validator_and_contract_metadata() {
+        let capability = PlatformProfileCapability {
+            current: Some("balanced".to_owned()),
+            choices: vec!["quiet".to_owned(), "balanced".to_owned()],
+            path: "/sys/firmware/acpi/platform_profile".to_owned(),
+        };
+
+        let plan = plan_platform_profile_write(Some(&capability), "quiet").unwrap();
+
+        assert_eq!(plan.method, "SetPlatformProfile");
+        assert_eq!(plan.capability_id, "platform_profile");
+        assert_eq!(
+            plan.polkit_action,
+            "org.ratvantage.LegionControl1.set-platform-profile"
+        );
+        assert_eq!(plan.previous_value, "balanced");
+        assert_eq!(plan.requested_value, "quiet");
+        assert_eq!(plan.rollback_value, "balanced");
+        assert!(plan.readback_required);
+        assert!(plan.steps.contains(&WritePlanStep::AuthorizeCaller));
+        assert!(plan.steps.contains(&WritePlanStep::ReadBackValue));
+        assert!(plan
+            .steps
+            .contains(&WritePlanStep::RestorePreviousOnReadbackFailure));
+    }
+
+    #[test]
+    fn battery_charge_type_dry_run_plan_uses_validator_and_contract_metadata() {
+        let capability = BatteryChargeTypeCapability {
+            current: Some("Standard".to_owned()),
+            choices: vec!["Standard".to_owned(), "Conservation".to_owned()],
+            path: "/sys/class/power_supply/BAT0/charge_type".to_owned(),
+        };
+
+        let plan = plan_battery_charge_type_write(Some(&capability), "Conservation").unwrap();
+
+        assert_eq!(plan.method, "SetBatteryChargeType");
+        assert_eq!(plan.capability_id, "battery_charge_type");
+        assert_eq!(
+            plan.polkit_action,
+            "org.ratvantage.LegionControl1.set-battery-charge-type"
+        );
+        assert_eq!(plan.previous_value, "Standard");
+        assert_eq!(plan.requested_value, "Conservation");
+        assert_eq!(plan.rollback_value, "Standard");
+        assert!(plan.readback_required);
+    }
+
+    #[test]
+    fn dry_run_plans_reject_invalid_requests_before_planning() {
+        let platform = PlatformProfileCapability {
+            current: Some("balanced".to_owned()),
+            choices: vec!["balanced".to_owned(), "custom".to_owned()],
+            path: "/sys/firmware/acpi/platform_profile".to_owned(),
+        };
+        let battery = BatteryChargeTypeCapability {
+            current: Some("Standard".to_owned()),
+            choices: vec!["Standard".to_owned()],
+            path: "/sys/class/power_supply/BAT0/charge_type".to_owned(),
+        };
+
+        assert!(matches!(
+            plan_platform_profile_write(Some(&platform), "custom"),
+            Err(ValidationError::BlockedChoice { .. })
+        ));
+        assert!(matches!(
+            plan_battery_charge_type_write(Some(&battery), "Fast"),
             Err(ValidationError::UnsupportedChoice { .. })
         ));
     }
