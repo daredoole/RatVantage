@@ -7,3 +7,11 @@ repository.workspace = true
 
 [dependencies]
 anyhow.workspace = true
+legion-common.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+zbus = { version = "4", features = ["blocking"] }
+
+[dev-dependencies]
+legion-control-daemon = { path = "../legion-daemon" }
+legion-probe.workspace = true
