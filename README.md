@@ -13,7 +13,7 @@ Pre-alpha implementation scaffold exists:
 - Rust workspace with shared models, read-only probe, read-only daemon, UI client, and test support crates.
 - Probe fixture coverage for confirmed and runtime-captured 82WM-style sysfs paths.
 - Private D-Bus contract tests for read-only daemon methods.
-- UI `--status`, `--overview`, and `--diagnostics` commands plus optional GTK4/libadwaita shell behind `gtk-ui`.
+- UI `--status`, `--overview`, and `--diagnostics` commands plus optional GTK4/libadwaita shell with a read-only diagnostics tab behind `gtk-ui`.
 - Read-only tray/status helper scaffold.
 - Disabled tray autostart packaging placeholder.
 - Runtime-captured 82WM fixture coverage, including bracketed battery `charge_types` current-value parsing.
@@ -93,7 +93,7 @@ Completed scaffold:
 
 - Read-only probe and capability model.
 - Read-only daemon D-Bus methods.
-- UI status, overview, diagnostics clients, and optional GTK shell.
+- UI status, overview, diagnostics clients, and optional GTK shell with diagnostics tab.
 - Read-only tray/status helper scaffold.
 - Read-only StatusNotifier tray backend with disabled write actions.
 - Disabled tray autostart packaging placeholder.
@@ -106,6 +106,7 @@ Completed scaffold:
 - Pure dry-run planning for future platform profile and battery charge type writes.
 - Non-D-Bus daemon planning adapters.
 - Read-only diagnostics JSON bundle with hardware summary, kernel version, detected sysfs paths, and raw probe report.
+- Read-only GTK diagnostics tab for the same debug bundle.
 - Fixture, private-bus, unit, and contract tests.
 - Local and GitHub CI.
 

@@ -8,10 +8,10 @@ The repository now has a working pre-alpha scaffold:
 - Read-only probe that builds hardware summary, capability, telemetry, and raw report JSON.
 - Read-only daemon exposing `GetHardwareSummary`, `GetCapabilities`, `RefreshCapabilities`, `GetTelemetry`, and `GetRawProbeReport`.
 - Private D-Bus contract tests that verify method introspection and JSON contracts.
-- UI status, overview, and diagnostics clients with deterministic CLI output, plus optional GTK4/libadwaita shell behind `gtk-ui`.
+- UI status, overview, and diagnostics clients with deterministic CLI output, plus optional GTK4/libadwaita shell with diagnostics tab behind `gtk-ui`.
 - Local CI script, Fedora dependency installer, GitHub Actions CI, and pinned stable Rust toolchain.
 
-Next implementation work should extend the MVP diagnostics surface from the read-only `legion-control-ui --diagnostics` JSON bundle into the dashboard/viewer surface. Hardware writes remain design-only until validators, polkit policy, rollback, and manual validation are complete.
+Next implementation work should extend diagnostics with recent daemon log excerpts and richer viewer actions. Hardware writes remain design-only until validators, polkit policy, rollback, and manual validation are complete.
 
 ## Repo structure
 
