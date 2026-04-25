@@ -1,3 +1,4 @@
+use adw::prelude::*;
 use anyhow::Result;
 use gtk4::prelude::*;
 use legion_control_ui::{LegionControlClient, UiStatus};
