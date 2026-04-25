@@ -24,6 +24,9 @@ struct Args {
     #[arg(long, value_name = "CHARGE_TYPE")]
     plan_battery_charge_type: Option<String>,
 
+    #[arg(long, value_name = "MODE")]
+    plan_gpu_mode: Option<String>,
+
     #[arg(long)]
     bus_address: Option<String>,
 }
@@ -37,6 +40,7 @@ fn main() -> Result<()> {
         args.diagnostics,
         args.plan_platform_profile.is_some(),
         args.plan_battery_charge_type.is_some(),
+        args.plan_gpu_mode.is_some(),
     ]
     .into_iter()
     .filter(|enabled| *enabled)
@@ -54,6 +58,8 @@ fn main() -> Result<()> {
             print_write_plan(&client.plan_platform_profile_write(&profile)?)?;
         } else if let Some(charge_type) = args.plan_battery_charge_type {
             print_write_plan(&client.plan_battery_charge_type_write(&charge_type)?)?;
+        } else if let Some(mode) = args.plan_gpu_mode {
+            print_write_plan(&client.plan_gpu_mode_write(&mode)?)?;
         } else if args.diagnostics {
             print_diagnostics(&client.diagnostics_bundle()?)?;
         } else if args.overview {

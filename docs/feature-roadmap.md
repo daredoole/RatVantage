@@ -17,9 +17,9 @@ Current pre-alpha code provides the safe read-only base:
 - Packaging metadata validation in local and GitHub CI.
 - Read-only sysfs fixture capture workflow for adding real hardware reports.
 - StatusNotifier tray smoke script and manual checklist.
-- Disabled draft write-method contracts for platform profile and battery charge type.
-- Pure validators for platform profile and battery charge type choices.
-- Validator-backed dry-run planning for platform profile and battery charge type.
+- Disabled draft write-method contracts for platform profile, battery charge type, and GPU mode.
+- Pure validators for platform profile, battery charge type, and EnvyControl GPU mode choices.
+- Validator-backed dry-run planning for platform profile, battery charge type, and GPU mode.
 - Daemon-side Rust adapters for dry-run planning, without D-Bus write methods.
 - Runtime-captured 82WM fixture coverage, including bracketed battery `charge_types` current-value parsing.
 - Read-only battery telemetry for capacity, status, and health where `BAT0` exposes it.
@@ -27,7 +27,7 @@ Current pre-alpha code provides the safe read-only base:
 - Read-only UI `--overview` summary for platform profile, battery mode, fan RPM, temperatures, GPU mode, and battery telemetry.
 - Read-only UI `--diagnostics` JSON bundle with hardware summary, kernel version, detected sysfs paths, recent daemon log excerpts, and raw probe report.
 - Diagnostics include `platform_profile_choices` and `charge_types` source paths.
-- Read-only UI dry-run plan previews for platform profile and battery charge type writes.
+- Read-only UI dry-run plan previews for platform profile, battery charge type, and GPU mode writes.
 - UI status output includes per-capability status and risk labels.
 - Read-only GTK Profiles and Battery tabs show platform profile choices, battery charge choices, sysfs source paths, and battery telemetry from the diagnostics bundle.
 - Read-only GTK diagnostics tab for the same hardware/debug bundle, including Copy JSON.
@@ -38,6 +38,7 @@ Current pre-alpha code provides the safe read-only base:
 
 - Keep tray autostart disabled; GNOME AppIndicator extension path is untested.
 - Add more captured fixtures when additional supported Legion machines are available.
+- Continue with fan preset validation/planning or GTK read-only polish.
 - Keep progress docs current after each completed roadmap slice.
 - Keep GitHub CI as remote guard; run `./scripts/ci-local.sh` before pushing to reduce failed CI minutes.
 
@@ -101,8 +102,8 @@ Suggested labels:
 ### GPU
 
 - Read `envycontrol --query` when available. [implemented]
-- Offer guided switch to `integrated`, `hybrid`, or `nvidia` only if EnvyControl is installed and daemon validation passes.
-- Mark changes as pending reboot.
+- Offer guided switch to `integrated`, `hybrid`, or `nvidia` only if EnvyControl is installed and daemon validation passes. [implemented as dry-run planning only]
+- Mark changes as pending reboot. [implemented in dry-run plan JSON]
 - Provide clear rollback instructions.
 
 ### Appearance

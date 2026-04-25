@@ -24,10 +24,10 @@ Pre-alpha implementation scaffold exists:
 - Fedora packaging metadata and validation for systemd, D-Bus, polkit, desktop, AppStream, and RPM assets.
 - Read-only sysfs fixture capture workflow for adding more real hardware reports.
 - Packaged read-only fan preset TOML assets with CI schema validation.
-- Disabled write-method contract drafts for platform profile and battery charge type.
-- Pure validators for platform profile and battery charge type choices.
-- Validator-backed dry-run planning for platform profile and battery charge type.
-- Read-only D-Bus dry-run planning for platform profile and battery charge type.
+- Disabled write-method contract drafts for platform profile, battery charge type, and GPU mode.
+- Pure validators for platform profile, battery charge type, and EnvyControl GPU mode choices.
+- Validator-backed dry-run planning for platform profile, battery charge type, and GPU mode with reboot-required messaging.
+- Read-only D-Bus dry-run planning for platform profile, battery charge type, and GPU mode.
 - Local CI script and GitHub Actions CI.
 
 No hardware write path exists yet. Write support must wait for validators, polkit policy, rollback behavior, and manual target-machine validation.
@@ -84,6 +84,7 @@ cargo run -p legion-control-ui -- --overview --bus-address <dbus-address>
 cargo run -p legion-control-ui -- --diagnostics --bus-address <dbus-address>
 cargo run -p legion-control-ui -- --plan-platform-profile performance --bus-address <dbus-address>
 cargo run -p legion-control-ui -- --plan-battery-charge-type Conservation --bus-address <dbus-address>
+cargo run -p legion-control-ui -- --plan-gpu-mode hybrid --bus-address <dbus-address>
 cargo run -p legion-control-tray -- --status --bus-address <dbus-address>
 cargo run -p legion-control-tray -- --tooltip --bus-address <dbus-address>
 cargo run -p legion-control-ui --features gtk-ui
@@ -113,10 +114,10 @@ Completed scaffold:
 - Runtime-captured 82WM fixture coverage.
 - Packaged fan preset TOML assets.
 - Disabled write-method contract drafts.
-- Pure platform profile and battery charge type validators.
-- Pure dry-run planning for future platform profile and battery charge type writes.
+- Pure platform profile, battery charge type, and EnvyControl GPU mode validators.
+- Pure dry-run planning for future platform profile, battery charge type, and GPU mode writes.
 - Read-only daemon planning methods over D-Bus; no write methods are exposed.
-- UI CLI previews for platform profile and battery charge type dry-run plans.
+- UI CLI previews for platform profile, battery charge type, and GPU mode dry-run plans.
 - Read-only diagnostics JSON bundle with hardware summary, kernel version, detected sysfs paths, recent daemon log excerpts, and raw probe report.
 - Diagnostics include choice file paths for platform profiles and battery charge types.
 - Read-only GTK diagnostics tab with the same debug bundle and a Copy JSON action.

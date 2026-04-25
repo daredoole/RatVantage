@@ -97,6 +97,7 @@ fn introspection_exposes_only_read_only_legion_methods() {
             "GetRawProbeReport",
             "GetTelemetry",
             "PlanBatteryChargeTypeWrite",
+            "PlanGpuModeWrite",
             "PlanPlatformProfileWrite",
             "RefreshCapabilities"
         ]
@@ -132,6 +133,7 @@ fn daemon_builds_dry_run_plans_without_dbus_write_methods() {
 
     assert!(service.plan_platform_profile_write("custom").is_err());
     assert!(service.plan_battery_charge_type_write("Invalid").is_err());
+    assert!(service.plan_gpu_mode_write("hybrid").is_err());
 }
 
 fn test_proxy() -> (PrivateBus, zbus::blocking::Connection, Proxy<'static>) {

@@ -15,7 +15,7 @@
   - `5d3f1c0` (`Expose read-only dry-run planning`)
   - `e32dde0` (`Forward tray dashboard bus address`)
   - `15cdf63` (`Add packaged fan presets`)
-- Latest known milestone: read-only pre-alpha scaffold with GTK smoke coverage, hardened packaging metadata, disabled write planning, runtime 82WM fixture coverage, diagnostics log excerpts, packaged fan preset assets, read-only StatusNotifier tray backend, tray dashboard bus-address forwarding, tray available/missing capability counts, KDE StatusNotifier tooltip/menu/quit smoke evidence, documented GNOME untested path, read-only battery overview telemetry, read-only EnvyControl GPU query, UI status/overview/diagnostics/dry-run output, diagnostics choice-source paths, per-capability status labels, and GTK read-only Status, Profiles, Battery, and Diagnostics tabs.
+- Latest known milestone: read-only pre-alpha scaffold with GTK smoke coverage, hardened packaging metadata, disabled write planning, runtime 82WM fixture coverage, diagnostics log excerpts, packaged fan preset assets, read-only StatusNotifier tray backend, tray dashboard bus-address forwarding, tray available/missing capability counts, KDE StatusNotifier tooltip/menu/quit smoke evidence, documented GNOME untested path, read-only battery overview telemetry, read-only EnvyControl GPU query, UI status/overview/diagnostics/dry-run output, GPU dry-run planning with reboot-required messaging, diagnostics choice-source paths, per-capability status labels, and GTK read-only Status, Profiles, Battery, and Diagnostics tabs.
 - Rust toolchain: pinned stable in `rust-toolchain.toml`; local stable installed because GTK stack requires rustc 1.92+.
 
 ## Implemented
@@ -25,6 +25,7 @@
 - Bracketed battery `charge_types` parsing, including inferred current value when `charge_type` is absent.
 - Read-only `BAT0` telemetry for capacity percent, charging status, and health string when exposed.
 - Read-only EnvyControl GPU mode query when `envycontrol --query` is available; fixture-backed runs keep GPU capability missing for deterministic tests.
+- EnvyControl GPU mode dry-run planning for `integrated`, `hybrid`, and `nvidia`, with write execution disabled and reboot-required metadata in the plan.
 - UI `--overview` command for platform profile, battery charge type, fan RPM, temperatures, GPU mode, and battery telemetry.
 - UI `--diagnostics` command for a read-only JSON debug bundle containing hardware summary, kernel version, detected sysfs paths, recent daemon log excerpts, and raw probe report.
 - Platform profile and battery charge type models include both current-value paths and choice-list paths for diagnostics.
@@ -40,7 +41,8 @@
   - `GetRawProbeReport`
   - `PlanPlatformProfileWrite`
   - `PlanBatteryChargeTypeWrite`
-- UI `--status`, `--plan-platform-profile`, and `--plan-battery-charge-type` commands, plus optional GTK4/libadwaita shell behind `gtk-ui`.
+  - `PlanGpuModeWrite`
+- UI `--status`, `--plan-platform-profile`, `--plan-battery-charge-type`, and `--plan-gpu-mode` commands, plus optional GTK4/libadwaita shell behind `gtk-ui`.
 - Read-only `legion-control-tray --status` scaffold.
 - Read-only `legion-control-tray` StatusNotifier backend with dashboard, refresh, quit, and disabled write actions.
 - StatusNotifier tray dashboard launch forwards `--bus-address` when the tray runs against a private/session bus.
@@ -54,9 +56,9 @@
 - Fedora packaging assets for systemd, D-Bus, polkit, desktop metadata, AppStream metadata, and RPM spec.
 - Packaging metadata validation script wired into local and GitHub CI.
 - Read-only sysfs fixture capture workflow, validated against the existing 82WM fixture in local CI.
-- Disabled draft write-method contracts for platform profile and battery charge type.
-- Pure validators for platform profile and battery charge type choices; no write methods are enabled.
-- Validator-backed dry-run planning for platform profile and battery charge type; read-only D-Bus planning methods are exposed, but no write methods are enabled.
+- Disabled draft write-method contracts for platform profile, battery charge type, and GPU mode.
+- Pure validators for platform profile, battery charge type, and EnvyControl GPU mode choices; no write methods are enabled.
+- Validator-backed dry-run planning for platform profile, battery charge type, and GPU mode; read-only D-Bus planning methods are exposed, but no write methods are enabled.
 - Daemon-side Rust adapters for dry-run planning, tested directly and through private-bus contract tests.
 - Local CI and GitHub CI.
 - `docs/implementation-plan.md` intentionally has both layouts:
@@ -78,6 +80,7 @@ cargo run -p legion-control-ui -- --overview --bus-address <dbus-address>
 cargo run -p legion-control-ui -- --diagnostics --bus-address <dbus-address>
 cargo run -p legion-control-ui -- --plan-platform-profile performance --bus-address <dbus-address>
 cargo run -p legion-control-ui -- --plan-battery-charge-type Conservation --bus-address <dbus-address>
+cargo run -p legion-control-ui -- --plan-gpu-mode hybrid --bus-address <dbus-address>
 cargo run -p legion-control-tray -- --bus-address <dbus-address>
 cargo run -p legion-control-tray -- --status --bus-address <dbus-address>
 cargo run -p legion-control-tray -- --tooltip --bus-address <dbus-address>
@@ -92,8 +95,8 @@ Do not turn GitHub CI off completely yet. Use local CI before pushing, then keep
 ## Next tasks
 
 1. If another supported Legion machine is available, add a captured fixture with `scripts/capture-sysfs-fixture.sh`, validate probe behavior, update docs, and commit.
-2. If no new hardware fixture is available, pick the next safe planning-only slice from the roadmap. Best current candidate: EnvyControl GPU switch dry-run planning with validation and reboot-required messaging, but no execution.
-3. After that, continue with fan preset validation/planning or GTK read-only polish. Keep all hardware mutation disabled until the safety checklist below is satisfied.
+2. If no new hardware fixture is available, continue with fan preset validation/planning or GTK read-only polish.
+3. Keep all hardware mutation disabled until the safety checklist below is satisfied.
 
 ## Working process
 

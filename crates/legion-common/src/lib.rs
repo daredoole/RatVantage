@@ -139,9 +139,11 @@ pub struct WriteMethodContract {
     pub request_type: &'static str,
     pub risk: RiskLevel,
     pub enabled: bool,
+    pub reboot_required: bool,
     pub preconditions: &'static [&'static str],
     pub validators: &'static [&'static str],
     pub rollback: &'static [&'static str],
+    pub safety_notes: &'static [&'static str],
 }
 
 pub const WRITE_METHOD_CONTRACTS: &[WriteMethodContract] = &[
@@ -152,6 +154,7 @@ pub const WRITE_METHOD_CONTRACTS: &[WriteMethodContract] = &[
         request_type: r#"{"profile":"string"}"#,
         risk: RiskLevel::ReversibleWrite,
         enabled: false,
+        reboot_required: false,
         preconditions: &[
             "platform_profile capability is detected",
             "daemon has read current profile and platform_profile_choices",
@@ -165,6 +168,7 @@ pub const WRITE_METHOD_CONTRACTS: &[WriteMethodContract] = &[
             "store previous profile before write",
             "restore previous profile if read-back fails and previous value is still listed",
         ],
+        safety_notes: &["write method remains disabled; dry-run planning only"],
     },
     WriteMethodContract {
         method: "SetBatteryChargeType",
@@ -173,6 +177,7 @@ pub const WRITE_METHOD_CONTRACTS: &[WriteMethodContract] = &[
         request_type: r#"{"charge_type":"string"}"#,
         risk: RiskLevel::ReversibleWrite,
         enabled: false,
+        reboot_required: false,
         preconditions: &[
             "battery_charge_type capability is detected",
             "daemon has read current charge_type and charge_types choices",
@@ -185,6 +190,34 @@ pub const WRITE_METHOD_CONTRACTS: &[WriteMethodContract] = &[
         rollback: &[
             "store previous charge type before write",
             "restore previous charge type if read-back fails and previous value is still listed",
+        ],
+        safety_notes: &["write method remains disabled; dry-run planning only"],
+    },
+    WriteMethodContract {
+        method: "SetGpuMode",
+        capability_id: "gpu",
+        polkit_action: "org.ratvantage.LegionControl1.set-gpu-mode",
+        request_type: r#"{"mode":"integrated|hybrid|nvidia"}"#,
+        risk: RiskLevel::ExperimentalWrite,
+        enabled: false,
+        reboot_required: true,
+        preconditions: &[
+            "gpu capability is detected through EnvyControl",
+            "daemon has read the current EnvyControl GPU mode",
+        ],
+        validators: &[
+            "requested mode exactly matches integrated, hybrid, or nvidia",
+            "GPU mode changes require reboot-required user messaging",
+            "post-reboot read-back matches requested GPU mode",
+            "execution remains disabled until rollback and manual validation exist",
+        ],
+        rollback: &[
+            "store previous GPU mode before execution",
+            "restore previous GPU mode through EnvyControl and require another reboot if validation fails",
+        ],
+        safety_notes: &[
+            "EnvyControl changes can affect display availability after reboot",
+            "write method remains disabled; dry-run planning only",
         ],
     },
 ];
@@ -257,6 +290,39 @@ pub fn validate_battery_charge_type_choice(
     )
 }
 
+pub fn validate_gpu_mode_choice(
+    capability: Option<&GpuCapability>,
+    requested: &str,
+) -> Result<(), ValidationError> {
+    let capability = capability.ok_or_else(|| ValidationError::MissingCapability {
+        capability_id: "gpu".to_owned(),
+    })?;
+    if capability.provider != "envycontrol" {
+        return Err(ValidationError::BlockedChoice {
+            capability_id: "gpu".to_owned(),
+            requested: requested.to_owned(),
+            reason: "GPU mode planning is only supported for EnvyControl".to_owned(),
+        });
+    }
+    if capability.status != CapabilityStatus::ProbeOnly {
+        return Err(ValidationError::MissingCapability {
+            capability_id: "gpu".to_owned(),
+        });
+    }
+    require_current("gpu", capability.mode.as_deref())?;
+    validate_choice(
+        "gpu",
+        "mode",
+        requested,
+        &[
+            "integrated".to_owned(),
+            "hybrid".to_owned(),
+            "nvidia".to_owned(),
+        ],
+        &[],
+    )
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct WriteDryRunPlan {
     pub method: String,
@@ -267,6 +333,8 @@ pub struct WriteDryRunPlan {
     pub requested_value: String,
     pub readback_required: bool,
     pub rollback_value: String,
+    pub reboot_required: bool,
+    pub safety_notes: Vec<String>,
     pub steps: Vec<WritePlanStep>,
 }
 
@@ -278,6 +346,7 @@ pub enum WritePlanStep {
     WriteRequestedValue,
     ReadBackValue,
     RestorePreviousOnReadbackFailure,
+    RequireReboot,
 }
 
 pub fn plan_platform_profile_write(
@@ -314,6 +383,23 @@ pub fn plan_battery_charge_type_write(
     )
 }
 
+pub fn plan_gpu_mode_write(
+    capability: Option<&GpuCapability>,
+    requested: &str,
+) -> Result<WriteDryRunPlan, ValidationError> {
+    validate_gpu_mode_choice(capability, requested)?;
+    let capability = capability.expect("validated GPU capability must exist");
+    plan_write(
+        write_contract("SetGpuMode"),
+        "envycontrol",
+        capability
+            .mode
+            .as_deref()
+            .expect("validated GPU mode current value must exist"),
+        requested,
+    )
+}
+
 fn write_contract(method: &str) -> &'static WriteMethodContract {
     WRITE_METHOD_CONTRACTS
         .iter()
@@ -327,6 +413,17 @@ fn plan_write(
     previous_value: &str,
     requested_value: &str,
 ) -> Result<WriteDryRunPlan, ValidationError> {
+    let mut steps = vec![
+        WritePlanStep::AuthorizeCaller,
+        WritePlanStep::StorePreviousValue,
+        WritePlanStep::WriteRequestedValue,
+        WritePlanStep::ReadBackValue,
+        WritePlanStep::RestorePreviousOnReadbackFailure,
+    ];
+    if contract.reboot_required {
+        steps.push(WritePlanStep::RequireReboot);
+    }
+
     Ok(WriteDryRunPlan {
         method: contract.method.to_owned(),
         capability_id: contract.capability_id.to_owned(),
@@ -336,13 +433,13 @@ fn plan_write(
         requested_value: requested_value.to_owned(),
         readback_required: true,
         rollback_value: previous_value.to_owned(),
-        steps: vec![
-            WritePlanStep::AuthorizeCaller,
-            WritePlanStep::StorePreviousValue,
-            WritePlanStep::WriteRequestedValue,
-            WritePlanStep::ReadBackValue,
-            WritePlanStep::RestorePreviousOnReadbackFailure,
-        ],
+        reboot_required: contract.reboot_required,
+        safety_notes: contract
+            .safety_notes
+            .iter()
+            .map(|note| (*note).to_owned())
+            .collect(),
+        steps,
     })
 }
 
@@ -409,7 +506,10 @@ mod tests {
             .map(|contract| contract.method)
             .collect::<Vec<_>>();
 
-        assert_eq!(methods, ["SetPlatformProfile", "SetBatteryChargeType"]);
+        assert_eq!(
+            methods,
+            ["SetPlatformProfile", "SetBatteryChargeType", "SetGpuMode"]
+        );
         assert!(WRITE_METHOD_CONTRACTS
             .iter()
             .all(|contract| !contract.enabled));
@@ -419,10 +519,14 @@ mod tests {
     fn write_contracts_require_polkit_validation_and_rollback() {
         for contract in WRITE_METHOD_CONTRACTS {
             assert!(contract.polkit_action.starts_with(DBUS_ACTION_PREFIX));
-            assert_eq!(contract.risk, RiskLevel::ReversibleWrite);
+            assert!(matches!(
+                contract.risk,
+                RiskLevel::ReversibleWrite | RiskLevel::ExperimentalWrite
+            ));
             assert!(!contract.preconditions.is_empty());
             assert!(!contract.validators.is_empty());
             assert!(!contract.rollback.is_empty());
+            assert!(!contract.safety_notes.is_empty());
             assert!(contract
                 .validators
                 .iter()
@@ -567,6 +671,74 @@ mod tests {
     }
 
     #[test]
+    fn gpu_mode_validator_accepts_exact_envycontrol_modes() {
+        let capability = GpuCapability {
+            provider: "envycontrol".to_owned(),
+            status: CapabilityStatus::ProbeOnly,
+            mode: Some("hybrid".to_owned()),
+        };
+
+        assert_eq!(
+            validate_gpu_mode_choice(Some(&capability), "integrated"),
+            Ok(())
+        );
+        assert_eq!(
+            validate_gpu_mode_choice(Some(&capability), "hybrid"),
+            Ok(())
+        );
+        assert_eq!(
+            validate_gpu_mode_choice(Some(&capability), "nvidia"),
+            Ok(())
+        );
+    }
+
+    #[test]
+    fn gpu_mode_validator_rejects_missing_unsupported_and_non_exact_choices() {
+        let capability = GpuCapability {
+            provider: "envycontrol".to_owned(),
+            status: CapabilityStatus::ProbeOnly,
+            mode: Some("hybrid".to_owned()),
+        };
+        let missing_current = GpuCapability {
+            mode: None,
+            ..capability.clone()
+        };
+        let unsupported_status = GpuCapability {
+            status: CapabilityStatus::Unsupported,
+            ..capability.clone()
+        };
+        let unsupported_provider = GpuCapability {
+            provider: "other".to_owned(),
+            ..capability.clone()
+        };
+
+        assert!(matches!(
+            validate_gpu_mode_choice(None, "hybrid"),
+            Err(ValidationError::MissingCapability { .. })
+        ));
+        assert!(matches!(
+            validate_gpu_mode_choice(Some(&missing_current), "hybrid"),
+            Err(ValidationError::MissingCurrentValue { .. })
+        ));
+        assert!(matches!(
+            validate_gpu_mode_choice(Some(&unsupported_status), "hybrid"),
+            Err(ValidationError::MissingCapability { .. })
+        ));
+        assert!(matches!(
+            validate_gpu_mode_choice(Some(&unsupported_provider), "hybrid"),
+            Err(ValidationError::BlockedChoice { .. })
+        ));
+        assert!(matches!(
+            validate_gpu_mode_choice(Some(&capability), "Hybrid"),
+            Err(ValidationError::UnsupportedChoice { .. })
+        ));
+        assert!(matches!(
+            validate_gpu_mode_choice(Some(&capability), " nvidia "),
+            Err(ValidationError::UnsupportedChoice { .. })
+        ));
+    }
+
+    #[test]
     fn platform_profile_dry_run_plan_uses_validator_and_contract_metadata() {
         let capability = PlatformProfileCapability {
             current: Some("balanced".to_owned()),
@@ -615,6 +787,36 @@ mod tests {
         assert_eq!(plan.requested_value, "Conservation");
         assert_eq!(plan.rollback_value, "Standard");
         assert!(plan.readback_required);
+        assert!(!plan.reboot_required);
+    }
+
+    #[test]
+    fn gpu_mode_dry_run_plan_uses_validator_and_reboot_contract_metadata() {
+        let capability = GpuCapability {
+            provider: "envycontrol".to_owned(),
+            status: CapabilityStatus::ProbeOnly,
+            mode: Some("hybrid".to_owned()),
+        };
+
+        let plan = plan_gpu_mode_write(Some(&capability), "nvidia").unwrap();
+
+        assert_eq!(plan.method, "SetGpuMode");
+        assert_eq!(plan.capability_id, "gpu");
+        assert_eq!(plan.path, "envycontrol");
+        assert_eq!(plan.previous_value, "hybrid");
+        assert_eq!(plan.requested_value, "nvidia");
+        assert_eq!(plan.rollback_value, "hybrid");
+        assert!(plan.readback_required);
+        assert!(plan.reboot_required);
+        assert!(plan.steps.contains(&WritePlanStep::RequireReboot));
+        assert_eq!(
+            plan.polkit_action,
+            "org.ratvantage.LegionControl1.set-gpu-mode"
+        );
+        assert!(plan
+            .safety_notes
+            .iter()
+            .any(|note| note.contains("dry-run planning only")));
     }
 
     #[test]
@@ -639,6 +841,10 @@ mod tests {
         assert!(matches!(
             plan_battery_charge_type_write(Some(&battery), "Fast"),
             Err(ValidationError::UnsupportedChoice { .. })
+        ));
+        assert!(matches!(
+            plan_gpu_mode_write(None, "hybrid"),
+            Err(ValidationError::MissingCapability { .. })
         ));
     }
 }

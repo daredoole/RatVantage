@@ -404,6 +404,10 @@ impl LegionControlClient {
         self.call_json_arg("PlanBatteryChargeTypeWrite", requested)
     }
 
+    pub fn plan_gpu_mode_write(&self, requested: &str) -> Result<WriteDryRunPlan> {
+        self.call_json_arg("PlanGpuModeWrite", requested)
+    }
+
     pub fn status(&self) -> Result<UiStatus> {
         UiStatus::from_client(self)
     }

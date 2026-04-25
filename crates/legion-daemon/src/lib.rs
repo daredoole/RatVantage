@@ -3,8 +3,8 @@ use std::sync::Mutex;
 use anyhow::Result;
 use legion_common::{
     plan_battery_charge_type_write as plan_battery_charge_type,
-    plan_platform_profile_write as plan_platform_profile, CapabilityRegistry, ValidationError,
-    WriteDryRunPlan,
+    plan_gpu_mode_write as plan_gpu_mode, plan_platform_profile_write as plan_platform_profile,
+    CapabilityRegistry, ValidationError, WriteDryRunPlan,
 };
 use legion_probe::{probe, ProbeOptions};
 use serde::Serialize;
@@ -12,7 +12,7 @@ use zbus::{blocking::Connection, blocking::ConnectionBuilder, fdo, interface};
 
 pub const DBUS_INTERFACE: &str = "org.ratvantage.LegionControl1";
 pub const DBUS_PATH: &str = "/org/ratvantage/LegionControl1";
-pub const READ_ONLY_METHODS: &str = "GetHardwareSummary,GetCapabilities,RefreshCapabilities,GetTelemetry,GetRawProbeReport,PlanPlatformProfileWrite,PlanBatteryChargeTypeWrite";
+pub const READ_ONLY_METHODS: &str = "GetHardwareSummary,GetCapabilities,RefreshCapabilities,GetTelemetry,GetRawProbeReport,PlanPlatformProfileWrite,PlanBatteryChargeTypeWrite,PlanGpuModeWrite";
 
 pub struct LegionControl {
     options: ProbeOptions,
@@ -58,6 +58,11 @@ impl LegionControl {
         let registry = self.planning_snapshot()?;
         plan_battery_charge_type(registry.battery_charge_type.as_ref(), requested)
             .map_err(PlanningError::Validation)
+    }
+
+    pub fn plan_gpu_mode_write(&self, requested: &str) -> Result<WriteDryRunPlan, PlanningError> {
+        let registry = self.planning_snapshot()?;
+        plan_gpu_mode(registry.gpu.as_ref(), requested).map_err(PlanningError::Validation)
     }
 
     fn refresh(&self) -> fdo::Result<CapabilityRegistry> {
@@ -107,6 +112,10 @@ impl LegionControl {
 
     fn PlanBatteryChargeTypeWrite(&self, requested: &str) -> fdo::Result<String> {
         to_plan_json(self.plan_battery_charge_type_write(requested))
+    }
+
+    fn PlanGpuModeWrite(&self, requested: &str) -> fdo::Result<String> {
+        to_plan_json(self.plan_gpu_mode_write(requested))
     }
 }
 
