@@ -18,6 +18,7 @@ Pre-alpha implementation scaffold exists:
 - Fedora packaging metadata and validation for systemd, D-Bus, polkit, desktop, AppStream, and RPM assets.
 - Read-only sysfs fixture capture workflow for adding more real hardware reports.
 - Disabled write-method contract drafts for platform profile and battery charge type.
+- Pure validators for platform profile and battery charge type choices.
 - Local CI script and GitHub Actions CI.
 
 No hardware write path exists yet. Write support must wait for validators, polkit policy, rollback behavior, and manual target-machine validation.
@@ -85,13 +86,14 @@ Completed scaffold:
 - Fedora packaging metadata and validation.
 - Read-only fixture capture workflow.
 - Disabled write-method contract drafts.
+- Pure platform profile and battery charge type validators.
 - Fixture, private-bus, unit, and contract tests.
 - Local and GitHub CI.
 
 Next:
 
 - Add captured probe fixtures from additional supported Legion machines.
-- Validators for platform profile and battery charge type, still without enabling writes.
+- Validator-backed dry-run planning for future writes, still without enabling D-Bus write methods.
 
 See [docs/feature-roadmap.md](docs/feature-roadmap.md) and [docs/implementation-plan.md](docs/implementation-plan.md).
 

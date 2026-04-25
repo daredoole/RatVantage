@@ -12,12 +12,13 @@ Current pre-alpha code provides the safe read-only base:
 - Packaging metadata validation in local and GitHub CI.
 - Read-only sysfs fixture capture workflow for adding real hardware reports.
 - Disabled draft write-method contracts for platform profile and battery charge type.
+- Pure validators for platform profile and battery charge type choices.
 - Fixture tests, private-bus integration tests, clippy/fmt/test local CI, and GitHub CI.
 
 ## Next immediate work
 
 - Use the capture workflow to add fixtures from additional supported Legion machines.
-- Implement validators for platform profile and battery charge type without enabling writes.
+- Draft validator-backed dry-run planning for future writes without enabling D-Bus write methods.
 - Keep progress docs current after each completed roadmap slice.
 - Keep GitHub CI as remote guard; run `./scripts/ci-local.sh` before pushing to reduce failed CI minutes.
 

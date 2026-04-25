@@ -504,7 +504,7 @@ ErrorOccurred(s code, s message)
 7. [x] Add a read-only sysfs fixture capture workflow for real hardware reports.
 8. [ ] Capture and add fixtures from additional supported Legion machines.
 9. [x] Draft write-method D-Bus contracts without enabling writes.
-10. [ ] Implement validators for platform profile and battery charge type before any write methods.
+10. [x] Implement validators for platform profile and battery charge type before any write methods.
 
 ## Test strategy
 

@@ -28,6 +28,7 @@
 - Packaging metadata validation script wired into local and GitHub CI.
 - Read-only sysfs fixture capture workflow, validated against the existing 82WM fixture in local CI.
 - Disabled draft write-method contracts for platform profile and battery charge type.
+- Pure validators for platform profile and battery charge type choices; no write methods are enabled.
 - Local CI and GitHub CI.
 - `docs/implementation-plan.md` intentionally has both layouts:
   - `Current scaffold` shows what exists today.
@@ -52,7 +53,7 @@ Do not turn GitHub CI off completely yet. Use local CI before pushing, then keep
 ## Next tasks
 
 1. Capture and add fixtures from additional supported Legion machines.
-2. Implement validators for platform profile and battery charge type, without enabling writes.
+2. Draft validator-backed dry-run planning for future writes, without enabling D-Bus write methods.
 3. Add placeholder tray/autostart packaging only after a tray crate exists.
 
 ## Working process

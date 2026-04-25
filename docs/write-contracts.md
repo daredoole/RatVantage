@@ -26,6 +26,8 @@ The source of truth for draft metadata is
 - Keep the D-Bus methods absent until validators and rollback exist.
 - Authorize each write through polkit inside the daemon, never through GUI sudo.
 - Validate requested values against choices read at runtime.
+- Use `validate_platform_profile_choice` and
+  `validate_battery_charge_type_choice` before any future write.
 - Read back the changed sysfs value after each write.
 - Store previous values before writing.
 - Restore previous values on read-back failure when still safe and listed.

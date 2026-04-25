@@ -177,6 +177,124 @@ pub const WRITE_METHOD_CONTRACTS: &[WriteMethodContract] = &[
     },
 ];
 
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(tag = "code", rename_all = "snake_case")]
+pub enum ValidationError {
+    MissingCapability {
+        capability_id: String,
+    },
+    MissingCurrentValue {
+        capability_id: String,
+    },
+    NoChoicesDetected {
+        capability_id: String,
+    },
+    EmptyValue {
+        field: String,
+    },
+    UnsupportedChoice {
+        capability_id: String,
+        requested: String,
+        choices: Vec<String>,
+    },
+    BlockedChoice {
+        capability_id: String,
+        requested: String,
+        reason: String,
+    },
+}
+
+pub fn validate_platform_profile_choice(
+    capability: Option<&PlatformProfileCapability>,
+    requested: &str,
+) -> Result<(), ValidationError> {
+    let capability = capability.ok_or_else(|| ValidationError::MissingCapability {
+        capability_id: "platform_profile".to_owned(),
+    })?;
+    require_current("platform_profile", capability.current.as_deref())?;
+    validate_choice(
+        "platform_profile",
+        "profile",
+        requested,
+        &capability.choices,
+        &[
+            (
+                "custom",
+                "custom profile needs firmware attribute validators",
+            ),
+            ("max-power", "max-power needs explicit high-risk policy"),
+            ("extreme", "extreme profile needs explicit high-risk policy"),
+        ],
+    )
+}
+
+pub fn validate_battery_charge_type_choice(
+    capability: Option<&BatteryChargeTypeCapability>,
+    requested: &str,
+) -> Result<(), ValidationError> {
+    let capability = capability.ok_or_else(|| ValidationError::MissingCapability {
+        capability_id: "battery_charge_type".to_owned(),
+    })?;
+    require_current("battery_charge_type", capability.current.as_deref())?;
+    validate_choice(
+        "battery_charge_type",
+        "charge_type",
+        requested,
+        &capability.choices,
+        &[],
+    )
+}
+
+fn require_current(capability_id: &str, current: Option<&str>) -> Result<(), ValidationError> {
+    match current {
+        Some(value) if !value.is_empty() => Ok(()),
+        _ => Err(ValidationError::MissingCurrentValue {
+            capability_id: capability_id.to_owned(),
+        }),
+    }
+}
+
+fn validate_choice(
+    capability_id: &str,
+    field: &str,
+    requested: &str,
+    choices: &[String],
+    blocked: &[(&str, &str)],
+) -> Result<(), ValidationError> {
+    if requested.is_empty() {
+        return Err(ValidationError::EmptyValue {
+            field: field.to_owned(),
+        });
+    }
+
+    if choices.is_empty() {
+        return Err(ValidationError::NoChoicesDetected {
+            capability_id: capability_id.to_owned(),
+        });
+    }
+
+    if !choices.iter().any(|choice| choice == requested) {
+        return Err(ValidationError::UnsupportedChoice {
+            capability_id: capability_id.to_owned(),
+            requested: requested.to_owned(),
+            choices: choices.to_vec(),
+        });
+    }
+
+    if let Some((_, reason)) = blocked
+        .iter()
+        .find(|(blocked_choice, _)| *blocked_choice == requested)
+    {
+        return Err(ValidationError::BlockedChoice {
+            capability_id: capability_id.to_owned(),
+            requested: requested.to_owned(),
+            reason: (*reason).to_owned(),
+        });
+    }
+
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -213,5 +331,129 @@ mod tests {
                 .iter()
                 .any(|rule| rule.contains("restore")));
         }
+    }
+
+    #[test]
+    fn platform_profile_validator_accepts_exact_runtime_choice() {
+        let capability = PlatformProfileCapability {
+            current: Some("balanced".to_owned()),
+            choices: vec![
+                "quiet".to_owned(),
+                "balanced".to_owned(),
+                "performance".to_owned(),
+            ],
+            path: "/sys/firmware/acpi/platform_profile".to_owned(),
+        };
+
+        assert_eq!(
+            validate_platform_profile_choice(Some(&capability), "performance"),
+            Ok(())
+        );
+    }
+
+    #[test]
+    fn platform_profile_validator_rejects_missing_unsupported_and_blocked_choices() {
+        let capability = PlatformProfileCapability {
+            current: Some("balanced".to_owned()),
+            choices: vec![
+                "balanced".to_owned(),
+                "custom".to_owned(),
+                "extreme".to_owned(),
+            ],
+            path: "/sys/firmware/acpi/platform_profile".to_owned(),
+        };
+        let missing_current = PlatformProfileCapability {
+            current: None,
+            choices: vec!["balanced".to_owned()],
+            path: "/sys/firmware/acpi/platform_profile".to_owned(),
+        };
+        let missing_choices = PlatformProfileCapability {
+            current: Some("balanced".to_owned()),
+            choices: vec![],
+            path: "/sys/firmware/acpi/platform_profile".to_owned(),
+        };
+
+        assert!(matches!(
+            validate_platform_profile_choice(None, "balanced"),
+            Err(ValidationError::MissingCapability { .. })
+        ));
+        assert!(matches!(
+            validate_platform_profile_choice(Some(&missing_current), "balanced"),
+            Err(ValidationError::MissingCurrentValue { .. })
+        ));
+        assert!(matches!(
+            validate_platform_profile_choice(Some(&missing_choices), "balanced"),
+            Err(ValidationError::NoChoicesDetected { .. })
+        ));
+        assert!(matches!(
+            validate_platform_profile_choice(Some(&capability), " balance "),
+            Err(ValidationError::UnsupportedChoice { .. })
+        ));
+        assert!(matches!(
+            validate_platform_profile_choice(Some(&capability), "custom"),
+            Err(ValidationError::BlockedChoice { .. })
+        ));
+        assert!(matches!(
+            validate_platform_profile_choice(Some(&capability), "extreme"),
+            Err(ValidationError::BlockedChoice { .. })
+        ));
+    }
+
+    #[test]
+    fn battery_charge_type_validator_accepts_exact_runtime_choice() {
+        let capability = BatteryChargeTypeCapability {
+            current: Some("Standard".to_owned()),
+            choices: vec![
+                "Fast".to_owned(),
+                "Standard".to_owned(),
+                "Long_Life".to_owned(),
+            ],
+            path: "/sys/class/power_supply/BAT0/charge_type".to_owned(),
+        };
+
+        assert_eq!(
+            validate_battery_charge_type_choice(Some(&capability), "Long_Life"),
+            Ok(())
+        );
+    }
+
+    #[test]
+    fn battery_charge_type_validator_rejects_empty_missing_and_non_exact_choices() {
+        let capability = BatteryChargeTypeCapability {
+            current: Some("Standard".to_owned()),
+            choices: vec!["Fast".to_owned(), "Standard".to_owned()],
+            path: "/sys/class/power_supply/BAT0/charge_type".to_owned(),
+        };
+        let missing_current = BatteryChargeTypeCapability {
+            current: None,
+            choices: vec!["Standard".to_owned()],
+            path: "/sys/class/power_supply/BAT0/charge_type".to_owned(),
+        };
+        let missing_choices = BatteryChargeTypeCapability {
+            current: Some("Standard".to_owned()),
+            choices: vec![],
+            path: "/sys/class/power_supply/BAT0/charge_type".to_owned(),
+        };
+
+        assert!(matches!(
+            validate_battery_charge_type_choice(Some(&capability), ""),
+            Err(ValidationError::EmptyValue { .. })
+        ));
+        assert!(matches!(
+            validate_battery_charge_type_choice(None, "Standard"),
+            Err(ValidationError::MissingCapability { .. })
+        ));
+        assert!(matches!(
+            validate_battery_charge_type_choice(Some(&missing_current), "Standard"),
+            Err(ValidationError::MissingCurrentValue { .. })
+        ));
+        assert!(matches!(
+            validate_battery_charge_type_choice(Some(&missing_choices), "Standard"),
+            Err(ValidationError::NoChoicesDetected { .. })
+        ));
+        assert!(matches!(
+            validate_battery_charge_type_choice(Some(&capability), "standard"),
+            Err(ValidationError::UnsupportedChoice { .. })
+        ));
     }
 }
