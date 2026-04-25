@@ -2,6 +2,7 @@ use std::io::{BufRead, BufReader};
 use std::path::PathBuf;
 use std::process::{Child, Command, Stdio};
 
+use legion_common::{CapabilityStatus, RiskLevel};
 use legion_control_daemon::{LegionControl, DBUS_INTERFACE, DBUS_PATH};
 use legion_control_ui::LegionControlClient;
 use legion_probe::ProbeOptions;
@@ -28,12 +29,28 @@ fn client_reads_daemon_contract_over_private_bus() {
     assert_eq!(hardware.product_name.as_deref(), Some("82WM"));
 
     let capabilities = client.capabilities().unwrap();
-    assert!(capabilities
+    let mut capability_ids = capabilities
         .iter()
-        .any(|capability| capability.id == "platform_profile"));
-    assert!(capabilities
-        .iter()
-        .any(|capability| capability.id == "ideapad_toggles"));
+        .map(|capability| capability.id.as_str())
+        .collect::<Vec<_>>();
+    capability_ids.sort_unstable();
+    assert_eq!(
+        capability_ids,
+        [
+            "battery_charge_type",
+            "fan_curves",
+            "firmware_attributes",
+            "hwmon",
+            "ideapad_toggles",
+            "leds",
+            "platform_profile"
+        ]
+    );
+    assert!(capabilities.iter().all(|capability| {
+        capability.risk == RiskLevel::ReadOnly
+            && capability.status == CapabilityStatus::ProbeOnly
+            && capability.details.is_null()
+    }));
 
     let telemetry = client.telemetry().unwrap();
     assert!(telemetry
@@ -45,6 +62,18 @@ fn client_reads_daemon_contract_over_private_bus() {
     assert_eq!(raw.hardware, hardware);
     assert_eq!(raw.telemetry, telemetry);
     assert!(raw.leds.iter().any(|led| led.name == "platform::ylogo"));
+    assert_eq!(
+        raw.platform_profile
+            .as_ref()
+            .and_then(|profile| profile.current.as_deref()),
+        Some("balanced")
+    );
+    assert_eq!(
+        raw.battery_charge_type
+            .as_ref()
+            .and_then(|charge_type| charge_type.current.as_deref()),
+        Some("Standard")
+    );
 
     let refreshed = client.refresh_capabilities().unwrap();
     assert_eq!(refreshed, capabilities);
