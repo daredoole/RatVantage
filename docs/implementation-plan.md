@@ -514,6 +514,7 @@ ErrorOccurred(s code, s message)
 14. [x] Add read-only StatusNotifier tray backend while keeping write actions disabled.
 15. [x] Add repeatable StatusNotifier tray smoke workflow before enabling autostart.
 16. [x] Add read-only daemon session-bus dev mode and record automated KDE StatusNotifier registration smoke.
+17. [x] Record KDE Plasma Wayland StatusNotifier tooltip/menu/quit smoke evidence.
 
 ## Test strategy
 

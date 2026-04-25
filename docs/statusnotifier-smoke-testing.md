@@ -49,4 +49,5 @@ Do not flip `Hidden=true` or `X-GNOME-Autostart-enabled=false` until KDE and GNO
 
 | Date | Desktop | Command | Result | Remaining check |
 |---|---|---|---|---|
-| 2026-04-25 | KDE Plasma Wayland | `scripts/smoke-statusnotifier-tray.sh --bus-address "$DBUS_SESSION_BUS_ADDRESS" --hold-seconds 1` with fixture daemon on `--session` | Automated registration passed, `before=6 after=7`, autostart disabled. | Visual panel/menu confirmation still required. |
+| 2026-04-25 | KDE Plasma Wayland | `scripts/smoke-statusnotifier-tray.sh --bus-address "$DBUS_SESSION_BUS_ADDRESS" --hold-seconds 1` with fixture daemon on `--session` | Automated registration passed, `before=6 after=7`, autostart disabled. | Completed by KDE desktop evidence below. |
+| 2026-04-25 | KDE Plasma Wayland | Fixture daemon on `--session`, tray on session bus, `busctl` StatusNotifier/DBusMenu checks, screenshot at `target/smoke/statusnotifier-kde-wayland-2026-04-25.png` | Registered item exposed `Id=org.ratvantage.LegionControl`, `Title=Legion Control`, `Category=Hardware`, `Status=Active`, `IconName=applications-system`, tooltip `82WM Legion Pro 5 16ARX8: 7 read-only capabilities`; menu exported Open dashboard, Refresh status, Quit, and disabled write actions; DBusMenu Refresh succeeded; DBusMenu Quit removed the tray item. | GNOME-with-extension smoke still required before enabling autostart. |

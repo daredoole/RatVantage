@@ -30,7 +30,7 @@
 - Read-only `legion-control-tray --status` scaffold.
 - Read-only `legion-control-tray` StatusNotifier backend with dashboard, refresh, quit, and disabled write actions.
 - StatusNotifier tray smoke script and manual checklist; autostart is still disabled.
-- Automated KDE session-bus StatusNotifier registration smoke passed with fixture daemon; visual panel/menu confirmation is still pending.
+- KDE Plasma Wayland StatusNotifier smoke passed with fixture daemon: registration, screenshot capture, tooltip properties, read-only menu export, refresh, quit, and disabled write actions were verified.
 - Disabled tray autostart packaging placeholder.
 - Headless GTK smoke test for the optional shell, run through Xvfb in local and GitHub CI.
 - Private-bus contract tests and shared test support.
@@ -70,7 +70,7 @@ Do not turn GitHub CI off completely yet. Use local CI before pushing, then keep
 
 ## Next tasks
 
-1. Complete visual KDE tray confirmation and GNOME-with-extension smoke before enabling autostart.
+1. Complete GNOME-with-extension StatusNotifier smoke before enabling autostart.
 2. Add more captured fixtures when additional supported Legion machines are available.
 
 ## Working process
