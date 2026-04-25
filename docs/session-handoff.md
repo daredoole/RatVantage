@@ -13,7 +13,7 @@
   - `bb1de2f` (`Add read-only EnvyControl GPU query`)
   - `832a084` (`Refresh battery telemetry handoff`)
   - `1d23afd` (`Add battery overview telemetry`)
-- Latest known milestone: read-only pre-alpha scaffold with GTK smoke coverage, hardened packaging metadata, disabled write planning, runtime 82WM fixture coverage, read-only StatusNotifier tray backend, KDE StatusNotifier tooltip/menu/quit smoke evidence, documented GNOME untested path, read-only battery overview telemetry, read-only EnvyControl GPU query, UI `--overview` output, UI `--diagnostics` JSON bundle with best-effort daemon logs, and GTK diagnostics tab with Copy JSON.
+- Latest known milestone: read-only pre-alpha scaffold with GTK smoke coverage, hardened packaging metadata, disabled write planning, runtime 82WM fixture coverage, read-only StatusNotifier tray backend, KDE StatusNotifier tooltip/menu/quit smoke evidence, documented GNOME untested path, read-only battery overview telemetry, read-only EnvyControl GPU query, UI status/overview/diagnostics output, and GTK read-only Status, Profiles, Battery, and Diagnostics tabs.
 - Rust toolchain: pinned stable in `rust-toolchain.toml`; local stable installed because GTK stack requires rustc 1.92+.
 
 ## Implemented
@@ -26,6 +26,8 @@
 - UI `--overview` command for platform profile, battery charge type, fan RPM, temperatures, GPU mode, and battery telemetry.
 - UI `--diagnostics` command for a read-only JSON debug bundle containing hardware summary, kernel version, detected sysfs paths, recent daemon log excerpts, and raw probe report.
 - Platform profile and battery charge type models include both current-value paths and choice-list paths for diagnostics.
+- UI status output includes per-capability status and risk labels.
+- Optional GTK read-only Profiles and Battery tabs render the same diagnostics bundle data without write controls.
 - Optional GTK diagnostics tab for the same read-only hardware/debug bundle, with Copy JSON.
 - Packaged read-only fan preset TOML assets in `data/presets/`, validated by `scripts/validate-packaging.sh` and installed by the RPM spec.
 - Read-only D-Bus daemon methods:

@@ -6,7 +6,7 @@ Current pre-alpha code provides the safe read-only base:
 
 - Runtime probe for hardware summary, capabilities, telemetry, and raw probe report.
 - Root-capable daemon shape with read-only D-Bus API only.
-- UI status client and optional GTK4/libadwaita shell with a read-only diagnostics tab.
+- UI status client and optional GTK4/libadwaita shell with read-only Status, Profiles, Battery, and Diagnostics tabs.
 - Read-only tray/status helper scaffold.
 - Read-only StatusNotifier tray backend with dashboard, refresh, quit, and disabled write actions.
 - StatusNotifier dashboard launch forwards custom D-Bus addresses for private/session-bus workflows.
@@ -28,6 +28,8 @@ Current pre-alpha code provides the safe read-only base:
 - Read-only UI `--diagnostics` JSON bundle with hardware summary, kernel version, detected sysfs paths, recent daemon log excerpts, and raw probe report.
 - Diagnostics include `platform_profile_choices` and `charge_types` source paths.
 - Read-only UI dry-run plan previews for platform profile and battery charge type writes.
+- UI status output includes per-capability status and risk labels.
+- Read-only GTK Profiles and Battery tabs show platform profile choices, battery charge choices, sysfs source paths, and battery telemetry from the diagnostics bundle.
 - Read-only GTK diagnostics tab for the same hardware/debug bundle, including Copy JSON.
 - Packaged read-only fan preset TOML assets with CI schema validation.
 - Fixture tests, private-bus integration tests, clippy/fmt/test local CI, and GitHub CI.
@@ -65,14 +67,14 @@ Goal: safe, useful daily controls using only confirmed interfaces and conservati
 
 ### Profiles
 
-- Show exact values from `/sys/firmware/acpi/platform_profile_choices`.
+- Show exact values from `/sys/firmware/acpi/platform_profile_choices`. [implemented as read-only GTK page]
 - Allow setting only listed profiles.
 - Do not expose `custom` or `max-power` unless listed.
 - Re-read fan curve and telemetry after profile changes.
 
 ### Battery
 
-- Show `Fast`, `Standard`, `Long_Life` from `/sys/class/power_supply/BAT0/charge_types`.
+- Show `Fast`, `Standard`, `Long_Life` from `/sys/class/power_supply/BAT0/charge_types`. [implemented as read-only GTK page]
 - Allow setting exact charge type values.
 - Show explanatory labels without claiming exact thresholds.
 

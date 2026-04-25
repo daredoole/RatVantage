@@ -1,7 +1,10 @@
 #![cfg(feature = "gtk-ui")]
 
 use adw::prelude::*;
-use legion_common::{Capability, CapabilityRegistry, CapabilityStatus, HardwareSummary, RiskLevel};
+use legion_common::{
+    BatteryChargeTypeCapability, BatteryTelemetry, Capability, CapabilityRegistry,
+    CapabilityStatus, HardwareSummary, PlatformProfileCapability, RiskLevel,
+};
 use legion_control_ui::{gtk_shell, DiagnosticsBundle, UiStatus};
 
 #[test]
@@ -28,6 +31,24 @@ fn status_and_error_pages_build_under_headless_display() {
     assert_eq!(page.spacing(), 12);
     assert_eq!(page.observe_children().n_items(), 4);
 
+    let page = gtk_shell::profiles_page(Ok(sample_diagnostics()));
+    let page = page
+        .downcast::<gtk4::Box>()
+        .expect("profiles page should be a vertical box");
+
+    assert_eq!(page.orientation(), gtk4::Orientation::Vertical);
+    assert_eq!(page.spacing(), 12);
+    assert_eq!(page.observe_children().n_items(), 2);
+
+    let page = gtk_shell::battery_page(Ok(sample_diagnostics()));
+    let page = page
+        .downcast::<gtk4::Box>()
+        .expect("battery page should be a vertical box");
+
+    assert_eq!(page.orientation(), gtk4::Orientation::Vertical);
+    assert_eq!(page.spacing(), 12);
+    assert_eq!(page.observe_children().n_items(), 3);
+
     let page = gtk_shell::dashboard_page(Ok(sample_status()), Ok(sample_diagnostics()));
     let page = page
         .downcast::<gtk4::Box>()
@@ -48,6 +69,22 @@ fn status_and_error_pages_build_under_headless_display() {
     let page = page
         .downcast::<gtk4::Box>()
         .expect("diagnostics error page should be a vertical box");
+
+    assert_eq!(page.orientation(), gtk4::Orientation::Vertical);
+    assert_eq!(page.observe_children().n_items(), 2);
+
+    let page = gtk_shell::profiles_page(Err(anyhow::anyhow!("daemon unavailable")));
+    let page = page
+        .downcast::<gtk4::Box>()
+        .expect("profiles error page should be a vertical box");
+
+    assert_eq!(page.orientation(), gtk4::Orientation::Vertical);
+    assert_eq!(page.observe_children().n_items(), 2);
+
+    let page = gtk_shell::battery_page(Err(anyhow::anyhow!("daemon unavailable")));
+    let page = page
+        .downcast::<gtk4::Box>()
+        .expect("battery error page should be a vertical box");
 
     assert_eq!(page.orientation(), gtk4::Orientation::Vertical);
     assert_eq!(page.observe_children().n_items(), 2);
@@ -103,6 +140,33 @@ fn sample_diagnostics() -> DiagnosticsBundle {
         evidence: vec![],
         details: serde_json::Value::Null,
     }];
+    report.platform_profile = Some(PlatformProfileCapability {
+        current: Some("balanced".to_owned()),
+        choices: vec![
+            "low-power".to_owned(),
+            "balanced".to_owned(),
+            "performance".to_owned(),
+        ],
+        path: "/tmp/fixture/sys/firmware/acpi/platform_profile".to_owned(),
+        choices_path: "/tmp/fixture/sys/firmware/acpi/platform_profile_choices".to_owned(),
+    });
+    report.battery_charge_type = Some(BatteryChargeTypeCapability {
+        current: Some("Standard".to_owned()),
+        choices: vec![
+            "Fast".to_owned(),
+            "Standard".to_owned(),
+            "Conservation".to_owned(),
+        ],
+        path: "/tmp/fixture/sys/class/power_supply/BAT0/charge_control_end_threshold".to_owned(),
+        choices_path: "/tmp/fixture/sys/class/power_supply/BAT0/charge_types".to_owned(),
+    });
+    report.telemetry.battery = Some(BatteryTelemetry {
+        name: "BAT0".to_owned(),
+        path: "/tmp/fixture/sys/class/power_supply/BAT0".to_owned(),
+        capacity_percent: Some(79),
+        status: Some("Charging".to_owned()),
+        health: Some("Good".to_owned()),
+    });
 
     DiagnosticsBundle::from_report_with_logs(
         report,

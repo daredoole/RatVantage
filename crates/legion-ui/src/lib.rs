@@ -112,6 +112,20 @@ impl UiStatus {
             .collect()
     }
 
+    pub fn capability_statuses(&self) -> Vec<String> {
+        self.capabilities
+            .iter()
+            .map(|capability| {
+                format!(
+                    "{}:{}:{}",
+                    capability.id,
+                    capability_status_label(capability.status),
+                    risk_level_label(capability.risk)
+                )
+            })
+            .collect()
+    }
+
     pub fn render_lines(&self) -> Vec<String> {
         vec![
             "Legion Control status".to_owned(),
@@ -120,7 +134,29 @@ impl UiStatus {
             format!("product_version={}", self.hardware.product_version),
             format!("capability_count={}", self.capability_count()),
             format!("capabilities={}", self.capability_ids().join(",")),
+            format!(
+                "capability_statuses={}",
+                self.capability_statuses().join(",")
+            ),
         ]
+    }
+}
+
+pub fn capability_status_label(status: CapabilityStatus) -> &'static str {
+    match status {
+        CapabilityStatus::Detected => "detected",
+        CapabilityStatus::Missing => "missing",
+        CapabilityStatus::ProbeOnly => "probe_only",
+        CapabilityStatus::Unsupported => "unsupported",
+    }
+}
+
+pub fn risk_level_label(risk: RiskLevel) -> &'static str {
+    match risk {
+        RiskLevel::ReadOnly => "read_only",
+        RiskLevel::ReversibleWrite => "reversible_write",
+        RiskLevel::ExperimentalWrite => "experimental_write",
+        RiskLevel::Unsupported => "unsupported",
     }
 }
 

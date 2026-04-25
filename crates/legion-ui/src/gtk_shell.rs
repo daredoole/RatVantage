@@ -1,6 +1,9 @@
-use crate::{render_diagnostics_json, DiagnosticsBundle, LegionControlClient, UiStatus};
+use crate::{
+    capability_status_label, render_diagnostics_json, risk_level_label, DiagnosticsBundle,
+    LegionControlClient, UiStatus,
+};
 use adw::prelude::*;
-use anyhow::Result;
+use anyhow::{anyhow, Result};
 
 pub fn run() -> Result<()> {
     let app = adw::Application::builder()
@@ -33,9 +36,23 @@ pub fn dashboard_page(
     status: Result<UiStatus>,
     diagnostics: Result<DiagnosticsBundle>,
 ) -> gtk4::Widget {
+    let (profiles, battery, diagnostics) = match diagnostics {
+        Ok(bundle) => (Ok(bundle.clone()), Ok(bundle.clone()), Ok(bundle)),
+        Err(error) => {
+            let message = error.to_string();
+            (
+                Err(anyhow!(message.clone())),
+                Err(anyhow!(message.clone())),
+                Err(anyhow!(message)),
+            )
+        }
+    };
+
     let stack = gtk4::Stack::new();
     stack.set_vexpand(true);
     stack.add_titled(&status_page(status), Some("status"), "Status");
+    stack.add_titled(&profiles_page(profiles), Some("profiles"), "Profiles");
+    stack.add_titled(&battery_page(battery), Some("battery"), "Battery");
     stack.add_titled(
         &diagnostics_page(diagnostics),
         Some("diagnostics"),
@@ -64,6 +81,36 @@ pub fn status_page(status: Result<UiStatus>) -> gtk4::Widget {
 
     match status {
         Ok(status) => append_status(&page, &status),
+        Err(error) => append_error(&page, &error),
+    }
+
+    page.upcast()
+}
+
+pub fn profiles_page(diagnostics: Result<DiagnosticsBundle>) -> gtk4::Widget {
+    let page = gtk4::Box::new(gtk4::Orientation::Vertical, 12);
+    page.set_margin_top(24);
+    page.set_margin_bottom(24);
+    page.set_margin_start(24);
+    page.set_margin_end(24);
+
+    match diagnostics {
+        Ok(bundle) => append_profiles(&page, &bundle),
+        Err(error) => append_error(&page, &error),
+    }
+
+    page.upcast()
+}
+
+pub fn battery_page(diagnostics: Result<DiagnosticsBundle>) -> gtk4::Widget {
+    let page = gtk4::Box::new(gtk4::Orientation::Vertical, 12);
+    page.set_margin_top(24);
+    page.set_margin_bottom(24);
+    page.set_margin_start(24);
+    page.set_margin_end(24);
+
+    match diagnostics {
+        Ok(bundle) => append_battery(&page, &bundle),
         Err(error) => append_error(&page, &error),
     }
 
@@ -107,9 +154,95 @@ fn append_status(page: &gtk4::Box, status: &UiStatus) {
     let capabilities = adw::PreferencesGroup::new();
     capabilities.set_title("Read-only Capabilities");
     for capability in &status.capabilities {
-        capabilities.add(&info_row(&capability.label, &capability.id));
+        capabilities.add(&info_row(
+            &capability.label,
+            &format!(
+                "{} - {} - {}",
+                capability.id,
+                capability_status_label(capability.status),
+                risk_level_label(capability.risk)
+            ),
+        ));
     }
     page.append(&capabilities);
+}
+
+fn append_profiles(page: &gtk4::Box, bundle: &DiagnosticsBundle) {
+    let title = gtk4::Label::new(Some("Profiles"));
+    title.add_css_class("title-2");
+    title.set_xalign(0.0);
+    page.append(&title);
+
+    let group = adw::PreferencesGroup::new();
+    group.set_title("Platform Profile");
+    if let Some(profile) = &bundle.raw_probe_report.platform_profile {
+        group.add(&info_row(
+            "Current",
+            profile.current.as_deref().unwrap_or("unknown"),
+        ));
+        group.add(&info_row("Choices", &profile.choices.join(", ")));
+        group.add(&info_row("Profile path", &profile.path));
+        group.add(&info_row("Choices path", &profile.choices_path));
+    } else {
+        group.add(&info_row("Platform profile", "unavailable"));
+    }
+    page.append(&group);
+}
+
+fn append_battery(page: &gtk4::Box, bundle: &DiagnosticsBundle) {
+    let title = gtk4::Label::new(Some("Battery"));
+    title.add_css_class("title-2");
+    title.set_xalign(0.0);
+    page.append(&title);
+
+    let charge_type = adw::PreferencesGroup::new();
+    charge_type.set_title("Charge Type");
+    if let Some(charge_type_capability) = &bundle.raw_probe_report.battery_charge_type {
+        charge_type.add(&info_row(
+            "Current",
+            charge_type_capability
+                .current
+                .as_deref()
+                .unwrap_or("unknown"),
+        ));
+        charge_type.add(&info_row(
+            "Choices",
+            &charge_type_capability.choices.join(", "),
+        ));
+        charge_type.add(&info_row("Status path", &charge_type_capability.path));
+        charge_type.add(&info_row(
+            "Choices path",
+            &charge_type_capability.choices_path,
+        ));
+    } else {
+        charge_type.add(&info_row("Charge type", "unavailable"));
+    }
+    page.append(&charge_type);
+
+    let telemetry = adw::PreferencesGroup::new();
+    telemetry.set_title("Telemetry");
+    if let Some(battery) = &bundle.raw_probe_report.telemetry.battery {
+        telemetry.add(&info_row("Name", &battery.name));
+        telemetry.add(&info_row(
+            "Capacity",
+            &battery
+                .capacity_percent
+                .map(|capacity| format!("{capacity}%"))
+                .unwrap_or_else(|| "unknown".to_owned()),
+        ));
+        telemetry.add(&info_row(
+            "Status",
+            battery.status.as_deref().unwrap_or("unknown"),
+        ));
+        telemetry.add(&info_row(
+            "Health",
+            battery.health.as_deref().unwrap_or("unknown"),
+        ));
+        telemetry.add(&info_row("Path", &battery.path));
+    } else {
+        telemetry.add(&info_row("Battery telemetry", "unavailable"));
+    }
+    page.append(&telemetry);
 }
 
 fn append_diagnostics(page: &gtk4::Box, bundle: &DiagnosticsBundle) {

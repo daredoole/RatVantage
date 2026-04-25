@@ -212,6 +212,7 @@ fn status_model_normalizes_daemon_data_for_ui() {
             "product_version=Legion Pro 5 16ARX8",
             "capability_count=8",
             "capabilities=battery_charge_type,fan_curves,firmware_attributes,gpu,hwmon,ideapad_toggles,leds,platform_profile",
+            "capability_statuses=battery_charge_type:probe_only:read_only,fan_curves:probe_only:read_only,firmware_attributes:probe_only:read_only,gpu:missing:read_only,hwmon:probe_only:read_only,ideapad_toggles:probe_only:read_only,leds:probe_only:read_only,platform_profile:probe_only:read_only",
         ]
     );
 }
@@ -236,6 +237,7 @@ fn status_cli_prints_hardware_and_capability_summary() {
             "product_version=Legion Pro 5 16ARX8\n",
             "capability_count=8\n",
             "capabilities=battery_charge_type,fan_curves,firmware_attributes,gpu,hwmon,ideapad_toggles,leds,platform_profile\n",
+            "capability_statuses=battery_charge_type:probe_only:read_only,fan_curves:probe_only:read_only,firmware_attributes:probe_only:read_only,gpu:missing:read_only,hwmon:probe_only:read_only,ideapad_toggles:probe_only:read_only,leds:probe_only:read_only,platform_profile:probe_only:read_only\n",
         )
     );
 }
