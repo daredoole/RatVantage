@@ -5,8 +5,10 @@
 - Repository: `https://github.com/daredoole/RatVantage`
 - Visibility: private for now.
 - Branch: `main`
-- Latest pushed docs correction: `31d4fed` (`Clarify current and target repo layout`).
-- Latest known milestone: read-only pre-alpha scaffold.
+- Latest local commits:
+  - `b91e28f` (`Harden Fedora packaging assets`)
+  - `a004a63` (`Add headless GTK smoke test`)
+- Latest known milestone: read-only pre-alpha scaffold with headless GTK smoke coverage and hardened packaging metadata.
 - Rust toolchain: pinned stable in `rust-toolchain.toml`; local stable installed because GTK stack requires rustc 1.92+.
 
 ## Implemented
@@ -20,7 +22,10 @@
   - `GetTelemetry`
   - `GetRawProbeReport`
 - UI `--status` command and optional GTK4/libadwaita shell behind `gtk-ui`.
+- Headless GTK smoke test for the optional shell, run through Xvfb in local and GitHub CI.
 - Private-bus contract tests and shared test support.
+- Fedora packaging assets for systemd, D-Bus, polkit, desktop metadata, AppStream metadata, and RPM spec.
+- Packaging metadata validation script wired into local and GitHub CI.
 - Local CI and GitHub CI.
 - `docs/implementation-plan.md` intentionally has both layouts:
   - `Current scaffold` shows what exists today.
@@ -31,6 +36,7 @@
 ```bash
 ./scripts/install-dev-deps-fedora.sh
 ./scripts/ci-local.sh
+./scripts/validate-packaging.sh
 cargo run -p legion-probe -- --json --sysfs-root tests/fixtures/sysfs-82wm-confirmed
 cargo run -p legion-control-daemon -- --dry-run
 cargo run -p legion-control-ui --features gtk-ui
@@ -42,10 +48,17 @@ Do not turn GitHub CI off completely yet. Use local CI before pushing, then keep
 
 ## Next tasks
 
-1. Add headless GTK smoke test for the optional shell.
-2. Add packaging assets for Fedora/systemd/D-Bus/polkit/desktop/metainfo/RPM.
-3. Expand probe fixtures from real hardware reports.
-4. Draft but do not enable write-method contracts.
+1. Expand probe fixtures from real hardware reports.
+2. Draft but do not enable write-method contracts.
+3. Add placeholder tray/autostart packaging only after a tray crate exists.
+
+## Working process
+
+- Treat each roadmap slice as one implementation unit.
+- Validate with focused checks plus `./scripts/ci-local.sh` before committing.
+- Update `README.md`, `docs/feature-roadmap.md`, `docs/implementation-plan.md`, and this handoff when progress or next tasks change.
+- Commit each completed slice separately with a short imperative message.
+- Use parallel agents for bounded audits or implementation slices when their work can run independently.
 
 ## New session prompt
 

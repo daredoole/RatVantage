@@ -14,6 +14,8 @@ Pre-alpha implementation scaffold exists:
 - Probe fixture coverage for confirmed 82WM-style sysfs paths.
 - Private D-Bus contract tests for read-only daemon methods.
 - UI `--status` model and optional GTK4/libadwaita shell behind `gtk-ui`.
+- Headless GTK smoke coverage for the optional shell.
+- Fedora packaging metadata and validation for systemd, D-Bus, polkit, desktop, AppStream, and RPM assets.
 - Local CI script and GitHub Actions CI.
 
 No hardware write path exists yet. Write support must wait for validators, polkit policy, rollback behavior, and manual target-machine validation.
@@ -43,9 +45,10 @@ cd RatVantage
 rustup toolchain install stable
 ./scripts/install-dev-deps-fedora.sh
 ./scripts/ci-local.sh
+./scripts/validate-packaging.sh
 ```
 
-Runtime installation is not defined yet. Intended release format is Fedora RPMs with separate daemon and UI packages.
+RPM packaging assets now exist, but release installation is not supported yet. Intended release format is Fedora RPMs with separate daemon and UI packages.
 
 ## Development Workflow
 
@@ -73,13 +76,13 @@ Completed scaffold:
 - Read-only probe and capability model.
 - Read-only daemon D-Bus methods.
 - UI status client and optional GTK shell.
+- Headless GTK smoke coverage.
+- Fedora packaging metadata and validation.
 - Fixture, private-bus, unit, and contract tests.
 - Local and GitHub CI.
 
 Next:
 
-- GUI smoke tests under a headless display.
-- Fedora packaging files, systemd unit, D-Bus policy, and desktop metadata.
 - Expanded probe fixtures from real hardware reports.
 - First write-method design, still disabled until safety checks exist.
 

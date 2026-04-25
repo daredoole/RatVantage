@@ -11,7 +11,7 @@ The repository now has a working pre-alpha scaffold:
 - UI status client, deterministic `--status` output, and optional GTK4/libadwaita shell behind `gtk-ui`.
 - Local CI script, Fedora dependency installer, GitHub Actions CI, and pinned stable Rust toolchain.
 
-Next implementation work should keep the read-only boundary intact while packaging, GUI smoke testing, and additional fixture coverage land. Hardware writes remain design-only until validators, polkit policy, rollback, and manual validation are complete.
+Next implementation work should keep the read-only boundary intact while additional fixture coverage lands and write contracts are drafted but disabled. Hardware writes remain design-only until validators, polkit policy, rollback, and manual validation are complete.
 
 ## Repo structure
 
@@ -38,13 +38,24 @@ RatVantage/
 │   └── codex-build-kickoff.md
 ├── scripts/
 │   ├── ci-local.sh
-│   └── install-dev-deps-fedora.sh
+│   ├── install-dev-deps-fedora.sh
+│   └── validate-packaging.sh
 ├── crates/
 │   ├── legion-common/
 │   ├── legion-daemon/
 │   ├── legion-ui/
 │   ├── legion-probe/
 │   └── test-support/
+├── data/
+│   ├── dbus/
+│   ├── desktop/
+│   ├── icons/
+│   ├── metainfo/
+│   ├── polkit/
+│   ├── presets/
+│   └── systemd/
+├── packaging/
+│   └── rpm/
 ├── tests/
 │   └── fixtures/
 │       └── sysfs-82wm-confirmed/
@@ -472,16 +483,16 @@ ErrorOccurred(s code, s message)
 
 ## First 10 coding tasks
 
-1. Create Rust workspace with `legion-common`, `legion-daemon`, `legion-ui`, `legion-probe`.
-2. Implement `legion-common` capability and telemetry structs with serde JSON output.
-3. Implement read-only `legion-probe` for DMI, platform profile, battery charge type, hwmon fan/temp telemetry, LED nodes, and EnvyControl presence.
-4. Add fixture-based tests for probe parsing using fake sysfs directories.
-5. Implement daemon skeleton with zbus service, `GetCapabilities`, `GetTelemetry`, and journald logging.
-6. Add systemd, D-Bus, and polkit data files, but keep write methods disabled behind a build/dev flag until validators are complete.
-7. Implement validators for platform profile and battery charge type.
-8. Implement polkit checks and write methods for platform profile and battery charge type.
-9. Implement Legion hwmon fan curve detection and packaged preset validation without writes; then add write path with rollback.
-10. Build GTK4/libadwaita Overview, Profiles, Battery, and Fan Presets pages backed by daemon data.
+1. [x] Create Rust workspace with `legion-common`, `legion-daemon`, `legion-ui`, `legion-probe`.
+2. [x] Implement `legion-common` capability and telemetry structs with serde JSON output.
+3. [x] Implement read-only `legion-probe` for DMI, platform profile, battery charge type, hwmon fan/temp telemetry, LED nodes, and EnvyControl presence.
+4. [x] Add fixture-based tests for probe parsing using fake sysfs directories.
+5. [x] Implement daemon skeleton with zbus service and read-only hardware, capability, telemetry, refresh, and raw-report methods.
+6. [x] Add systemd, D-Bus, polkit, desktop, metainfo, and RPM packaging assets while keeping write methods absent.
+7. [ ] Expand fixtures using real probe reports from supported Legion machines.
+8. [ ] Draft write-method D-Bus contracts without enabling writes.
+9. [ ] Implement validators for platform profile and battery charge type.
+10. [ ] Implement polkit checks and write methods for platform profile and battery charge type after validators and rollback exist.
 
 ## Test strategy
 

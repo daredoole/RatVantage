@@ -374,7 +374,11 @@ Other desktops:
 | App styling | libadwaita is native | libadwaita works but looks GNOME-style | Accept; focus Fedora-native GNOME first |
 | Polkit agent | GNOME Shell agent | KDE polkit agent | Let desktop handle auth prompts |
 
-## Packaging checklist
+## RPM build/install validation checklist
+
+Asset-level packaging metadata is validated by `scripts/validate-packaging.sh`.
+The checklist below tracks full RPM build and install verification, so unchecked
+items do not mean the source asset files are missing.
 
 - [ ] Build daemon and UI with release flags.
 - [ ] Install daemon to `/usr/libexec/legion-control/`.
