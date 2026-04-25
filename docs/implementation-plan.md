@@ -8,7 +8,7 @@ The repository now has a working pre-alpha scaffold:
 - Read-only probe that builds hardware summary, capability, telemetry, and raw report JSON.
 - Read-only daemon exposing hardware/capability/telemetry/raw-report methods plus dry-run planning methods for platform profile, battery charge type, GPU mode, and fan presets.
 - Private D-Bus contract tests that verify method introspection and JSON contracts.
-- UI status, overview, diagnostics, and dry-run planning clients with deterministic CLI output, including reboot-required GPU mode planning, fan preset validation, and read-only appearance/peripheral values, plus optional GTK4/libadwaita shell with read-only Status, Profiles, Battery, Fans, Appearance, and Diagnostics tabs behind `gtk-ui`.
+- UI status, overview, diagnostics, and dry-run planning clients with deterministic CLI output, including reboot-required GPU mode planning with rollback guidance, fan preset validation, and read-only appearance/peripheral values, plus optional GTK4/libadwaita shell with read-only Status, Profiles, Battery, Fans, Appearance, and Diagnostics tabs behind `gtk-ui`.
 - Packaged read-only fan preset TOML assets with CI schema validation and runtime dry-run planning.
 - Local CI script, Fedora dependency installer, GitHub Actions CI, and pinned stable Rust toolchain.
 
@@ -525,6 +525,7 @@ ErrorOccurred(s code, s message)
 20. [x] Add read-only `BAT0` capacity/status/health telemetry for overview data.
 21. [x] Add read-only EnvyControl GPU mode query when installed.
 22. [x] Add read-only UI `--overview` summary for MVP overview data, LED brightness, and firmware toggle values.
+23. [x] Add rollback guidance to read-only GPU dry-run plans.
 
 ## Test strategy
 

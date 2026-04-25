@@ -403,6 +403,7 @@ pub struct WriteDryRunPlan {
     pub requested_value: String,
     pub readback_required: bool,
     pub rollback_value: String,
+    pub rollback_instructions: Vec<String>,
     pub reboot_required: bool,
     pub safety_notes: Vec<String>,
     pub steps: Vec<WritePlanStep>,
@@ -521,6 +522,7 @@ fn plan_write(
         requested_value: requested_value.to_owned(),
         readback_required: true,
         rollback_value: previous_value.to_owned(),
+        rollback_instructions: rollback_instructions(contract, previous_value, requested_value),
         reboot_required: contract.reboot_required,
         safety_notes: contract
             .safety_notes
@@ -529,6 +531,30 @@ fn plan_write(
             .collect(),
         steps,
     })
+}
+
+fn rollback_instructions(
+    contract: &WriteMethodContract,
+    previous_value: &str,
+    requested_value: &str,
+) -> Vec<String> {
+    let mut instructions: Vec<String> = contract
+        .rollback
+        .iter()
+        .map(|instruction| (*instruction).to_owned())
+        .collect();
+
+    if contract.method == "SetGpuMode" {
+        instructions.push(format!(
+            "future rollback target is previous GPU mode `{previous_value}` if `{requested_value}` fails after reboot"
+        ));
+        instructions.push(
+            "if graphical login is unavailable, use a TTY or rescue session to restore the previous EnvyControl mode, then reboot again"
+                .to_owned(),
+        );
+    }
+
+    instructions
 }
 
 fn require_current(capability_id: &str, current: Option<&str>) -> Result<(), ValidationError> {
@@ -985,6 +1011,14 @@ mod tests {
         assert_eq!(plan.previous_value, "hybrid");
         assert_eq!(plan.requested_value, "nvidia");
         assert_eq!(plan.rollback_value, "hybrid");
+        assert!(plan
+            .rollback_instructions
+            .iter()
+            .any(|instruction| instruction.contains("previous GPU mode `hybrid`")));
+        assert!(plan
+            .rollback_instructions
+            .iter()
+            .any(|instruction| instruction.contains("TTY or rescue session")));
         assert!(plan.readback_required);
         assert!(plan.reboot_required);
         assert!(plan.steps.contains(&WritePlanStep::RequireReboot));

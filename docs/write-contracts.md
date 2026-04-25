@@ -49,8 +49,8 @@ The source of truth for draft metadata is
 
 Dry-run planning is pure shared logic in `legion-common`. It returns the future
 method name, capability ID, polkit action, target path/tool, previous value,
-requested value, read-back requirement, rollback value, reboot requirement,
-safety notes, and ordered execution step IDs.
+requested value, read-back requirement, rollback value, rollback instructions,
+reboot requirement, safety notes, and ordered execution step IDs.
 
 The plan functions do not write sysfs. The daemon exposes them as read-only
 D-Bus planning methods so clients can preview validation, future polkit action,
@@ -58,8 +58,8 @@ target path, rollback value, and execution steps before any write method exists.
 `legion-control-ui --plan-platform-profile <profile>` and
 `legion-control-ui --plan-battery-charge-type <charge_type>` print sysfs-backed
 plans as JSON for CLI inspection. `legion-control-ui --plan-gpu-mode <mode>`
-prints the EnvyControl GPU mode plan and marks the future change as reboot
-required.
+prints the EnvyControl GPU mode plan, marks the future change as reboot
+required, and includes rollback guidance for the previous mode.
 `legion-control-ui --plan-fan-preset <preset_id>` prints the packaged fan preset
 plan only when the preset schema is valid and the detected fan curve exposes a
 complete 10-point writable shape.

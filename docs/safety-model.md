@@ -215,7 +215,7 @@ Store in `/var/lib/legion-control/state.toml`:
 - Firmware change requiring reboot.
 - External tool changed NVIDIA configuration outside the daemon.
 
-Manual rollback instructions belong in README and GPU page.
+Manual rollback instructions are represented in GPU dry-run plans now; README and GPU page copy must be finalized before any write method is enabled.
 
 ## Logging strategy
 

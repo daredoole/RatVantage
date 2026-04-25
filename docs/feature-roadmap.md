@@ -27,7 +27,7 @@ Current pre-alpha code provides the safe read-only base:
 - Read-only UI `--overview` summary for platform profile, battery mode, fan RPM, temperatures, GPU mode, battery telemetry, LED brightness, and firmware toggle values.
 - Read-only UI `--diagnostics` JSON bundle with hardware summary, compact counts, kernel version, detected sysfs paths, recent daemon log excerpts, and raw probe report.
 - Diagnostics include `platform_profile_choices` and `charge_types` source paths.
-- Read-only UI dry-run plan previews for platform profile, battery charge type, GPU mode, and fan preset writes.
+- Read-only UI dry-run plan previews for platform profile, battery charge type, GPU mode, and fan preset writes, including GPU rollback guidance.
 - UI status output includes per-capability status and risk labels.
 - Read-only GTK Profiles, Battery, and Fans tabs show platform profile choices, battery charge choices, fan telemetry, fan curve paths, packaged preset IDs, sysfs source paths, and battery telemetry from the diagnostics bundle.
 - Read-only GTK Appearance tab shows LED brightness nodes and firmware toggle values from the diagnostics bundle.
@@ -106,7 +106,7 @@ Suggested labels:
 - Read `envycontrol --query` when available. [implemented]
 - Offer guided switch to `integrated`, `hybrid`, or `nvidia` only if EnvyControl is installed and daemon validation passes. [implemented as dry-run planning only]
 - Mark changes as pending reboot. [implemented in dry-run plan JSON]
-- Provide clear rollback instructions.
+- Provide clear rollback instructions. [implemented in dry-run plan JSON]
 
 ### Appearance
 

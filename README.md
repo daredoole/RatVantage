@@ -28,6 +28,7 @@ Pre-alpha implementation scaffold exists:
 - Pure validators for platform profile, battery charge type, EnvyControl GPU mode, and packaged fan preset choices.
 - Validator-backed dry-run planning for platform profile, battery charge type, GPU mode, and fan presets.
 - Read-only D-Bus dry-run planning for platform profile, battery charge type, GPU mode, and fan presets.
+- GPU dry-run plans include reboot-required metadata and rollback guidance; execution remains disabled.
 - Local CI script and GitHub Actions CI.
 
 No hardware write path exists yet. Write support must wait for validators, polkit policy, rollback behavior, and manual target-machine validation.
