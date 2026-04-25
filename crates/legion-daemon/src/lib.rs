@@ -1,7 +1,11 @@
 use std::sync::Mutex;
 
 use anyhow::Result;
-use legion_common::CapabilityRegistry;
+use legion_common::{
+    plan_battery_charge_type_write as plan_battery_charge_type,
+    plan_platform_profile_write as plan_platform_profile, CapabilityRegistry, ValidationError,
+    WriteDryRunPlan,
+};
 use legion_probe::{probe, ProbeOptions};
 use serde::Serialize;
 use zbus::{blocking::Connection, blocking::ConnectionBuilder, fdo, interface};
@@ -14,6 +18,12 @@ pub const READ_ONLY_METHODS: &str =
 pub struct LegionControl {
     options: ProbeOptions,
     registry: Mutex<CapabilityRegistry>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum PlanningError {
+    RegistryUnavailable,
+    Validation(ValidationError),
 }
 
 impl LegionControl {
@@ -33,6 +43,24 @@ impl LegionControl {
             .map_err(|_| fdo::Error::Failed("capability registry lock poisoned".to_owned()))
     }
 
+    pub fn plan_platform_profile_write(
+        &self,
+        requested: &str,
+    ) -> Result<WriteDryRunPlan, PlanningError> {
+        let registry = self.planning_snapshot()?;
+        plan_platform_profile(registry.platform_profile.as_ref(), requested)
+            .map_err(PlanningError::Validation)
+    }
+
+    pub fn plan_battery_charge_type_write(
+        &self,
+        requested: &str,
+    ) -> Result<WriteDryRunPlan, PlanningError> {
+        let registry = self.planning_snapshot()?;
+        plan_battery_charge_type(registry.battery_charge_type.as_ref(), requested)
+            .map_err(PlanningError::Validation)
+    }
+
     fn refresh(&self) -> fdo::Result<CapabilityRegistry> {
         let registry = probe(&self.options);
         let mut cached = self
@@ -41,6 +69,13 @@ impl LegionControl {
             .map_err(|_| fdo::Error::Failed("capability registry lock poisoned".to_owned()))?;
         *cached = registry.clone();
         Ok(registry)
+    }
+
+    fn planning_snapshot(&self) -> Result<CapabilityRegistry, PlanningError> {
+        self.registry
+            .lock()
+            .map(|registry| registry.clone())
+            .map_err(|_| PlanningError::RegistryUnavailable)
     }
 }
 

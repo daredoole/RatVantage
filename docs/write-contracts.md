@@ -43,6 +43,9 @@ method name, capability ID, polkit action, sysfs path, previous value, requested
 value, read-back requirement, rollback value, and ordered execution step IDs.
 
 The plan functions do not write sysfs and are not exposed through D-Bus.
+The daemon may call them through non-D-Bus Rust adapters for tests and future
+internal orchestration, but those adapters must remain outside the zbus
+`#[interface]` implementation until write support is deliberately enabled.
 
 ## Out Of Scope
 

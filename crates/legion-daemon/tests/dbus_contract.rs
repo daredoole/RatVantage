@@ -65,6 +65,34 @@ fn introspection_exposes_only_read_only_legion_methods() {
         .all(|method| !method.starts_with("Set") && !method.starts_with("Write")));
 }
 
+#[test]
+fn daemon_builds_dry_run_plans_without_dbus_write_methods() {
+    let service = LegionControl::new(ProbeOptions {
+        sysfs_root: fixture_root(),
+    });
+
+    let platform_plan = service.plan_platform_profile_write("performance").unwrap();
+    assert_eq!(platform_plan.method, "SetPlatformProfile");
+    assert_eq!(platform_plan.capability_id, "platform_profile");
+    assert_eq!(platform_plan.previous_value, "balanced");
+    assert_eq!(platform_plan.requested_value, "performance");
+    assert_eq!(platform_plan.rollback_value, "balanced");
+    assert!(platform_plan.readback_required);
+
+    let battery_plan = service
+        .plan_battery_charge_type_write("Conservation")
+        .unwrap();
+    assert_eq!(battery_plan.method, "SetBatteryChargeType");
+    assert_eq!(battery_plan.capability_id, "battery_charge_type");
+    assert_eq!(battery_plan.previous_value, "Standard");
+    assert_eq!(battery_plan.requested_value, "Conservation");
+    assert_eq!(battery_plan.rollback_value, "Standard");
+    assert!(battery_plan.readback_required);
+
+    assert!(service.plan_platform_profile_write("custom").is_err());
+    assert!(service.plan_battery_charge_type_write("Invalid").is_err());
+}
+
 fn test_proxy() -> (PrivateBus, zbus::blocking::Connection, Proxy<'static>) {
     let bus = PrivateBus::start();
     let service = LegionControl::new(ProbeOptions {

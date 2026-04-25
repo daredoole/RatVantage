@@ -14,12 +14,13 @@ Current pre-alpha code provides the safe read-only base:
 - Disabled draft write-method contracts for platform profile and battery charge type.
 - Pure validators for platform profile and battery charge type choices.
 - Validator-backed dry-run planning for platform profile and battery charge type.
+- Daemon-side Rust adapters for dry-run planning, without D-Bus write methods.
 - Fixture tests, private-bus integration tests, clippy/fmt/test local CI, and GitHub CI.
 
 ## Next immediate work
 
 - Use the capture workflow to add fixtures from additional supported Legion machines.
-- Decide whether and how dry-run plans should be exposed by the daemon without enabling write methods.
+- Add tray/autostart packaging only after a tray crate exists.
 - Keep progress docs current after each completed roadmap slice.
 - Keep GitHub CI as remote guard; run `./scripts/ci-local.sh` before pushing to reduce failed CI minutes.
 

@@ -20,6 +20,7 @@ Pre-alpha implementation scaffold exists:
 - Disabled write-method contract drafts for platform profile and battery charge type.
 - Pure validators for platform profile and battery charge type choices.
 - Validator-backed dry-run planning for platform profile and battery charge type.
+- Daemon-side dry-run planning adapters that are not exposed over D-Bus.
 - Local CI script and GitHub Actions CI.
 
 No hardware write path exists yet. Write support must wait for validators, polkit policy, rollback behavior, and manual target-machine validation.
@@ -89,13 +90,14 @@ Completed scaffold:
 - Disabled write-method contract drafts.
 - Pure platform profile and battery charge type validators.
 - Pure dry-run planning for future platform profile and battery charge type writes.
+- Non-D-Bus daemon planning adapters.
 - Fixture, private-bus, unit, and contract tests.
 - Local and GitHub CI.
 
 Next:
 
 - Add captured probe fixtures from additional supported Legion machines.
-- Decide whether and how dry-run plans should be exposed by the daemon, still without enabling write methods.
+- Tray/autostart packaging only after a tray crate exists.
 
 See [docs/feature-roadmap.md](docs/feature-roadmap.md) and [docs/implementation-plan.md](docs/implementation-plan.md).
 

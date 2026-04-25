@@ -30,6 +30,7 @@
 - Disabled draft write-method contracts for platform profile and battery charge type.
 - Pure validators for platform profile and battery charge type choices; no write methods are enabled.
 - Validator-backed dry-run planning for platform profile and battery charge type; still no D-Bus write methods.
+- Daemon-side Rust adapters for dry-run planning, tested directly while D-Bus introspection remains read-only.
 - Local CI and GitHub CI.
 - `docs/implementation-plan.md` intentionally has both layouts:
   - `Current scaffold` shows what exists today.
@@ -54,8 +55,7 @@ Do not turn GitHub CI off completely yet. Use local CI before pushing, then keep
 ## Next tasks
 
 1. Capture and add fixtures from additional supported Legion machines.
-2. Add daemon-side planning adapters and private-bus tests only after deciding how dry-run plans should be exposed.
-3. Add placeholder tray/autostart packaging only after a tray crate exists.
+2. Add placeholder tray/autostart packaging only after a tray crate exists.
 
 ## Working process
 
