@@ -13,10 +13,10 @@ status-notifier = ["dep:ksni"]
 anyhow.workspace = true
 clap.workspace = true
 ksni = { version = "0.3.4", features = ["blocking"], optional = true }
+legion-common.workspace = true
 legion-control-ui.workspace = true
 
 [dev-dependencies]
-legion-common.workspace = true
 legion-control-daemon = { path = "../legion-daemon" }
 legion-probe.workspace = true
 ratvantage-test-support.workspace = true

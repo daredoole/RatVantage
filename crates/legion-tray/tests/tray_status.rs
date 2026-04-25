@@ -16,7 +16,12 @@ fn status_cli_prints_tray_summary_over_private_bus() {
     assert!(output.status.success());
     let stdout = String::from_utf8(output.stdout).unwrap();
     assert!(stdout.contains("Legion Control tray status"));
-    assert!(stdout.contains("tooltip=82WM Legion Pro 5 16ARX8: 8 read-only capabilities"));
+    assert!(
+        stdout.contains("tooltip=82WM Legion Pro 5 16ARX8: 7 available capabilities, 1 missing")
+    );
+    assert!(stdout.contains("capability_count=8"));
+    assert!(stdout.contains("available_capability_count=7"));
+    assert!(stdout.contains("missing_capability_count=1"));
     assert!(stdout.contains(
         "capabilities=battery_charge_type,fan_curves,firmware_attributes,gpu,hwmon,ideapad_toggles,leds,platform_profile"
     ));
@@ -33,7 +38,7 @@ fn tooltip_cli_prints_single_line_over_private_bus() {
     assert!(output.status.success());
     assert_eq!(
         String::from_utf8(output.stdout).unwrap(),
-        "82WM Legion Pro 5 16ARX8: 8 read-only capabilities\n"
+        "82WM Legion Pro 5 16ARX8: 7 available capabilities, 1 missing\n"
     );
 }
 

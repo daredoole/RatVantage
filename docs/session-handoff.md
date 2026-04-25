@@ -39,6 +39,7 @@
 - Read-only `legion-control-tray --status` scaffold.
 - Read-only `legion-control-tray` StatusNotifier backend with dashboard, refresh, quit, and disabled write actions.
 - StatusNotifier tray dashboard launch forwards `--bus-address` when the tray runs against a private/session bus.
+- Tray tooltip reports available and missing capability counts separately.
 - StatusNotifier tray smoke script and manual checklist; autostart is still disabled.
 - KDE Plasma Wayland StatusNotifier smoke passed with fixture daemon: registration, screenshot capture, tooltip properties, read-only menu export, refresh, quit, and disabled write actions were verified.
 - GNOME AppIndicator extension path is intentionally untested for now: GNOME Shell and the extension are installed, but the active graphical session is KDE Wayland. Keep tray autostart disabled.

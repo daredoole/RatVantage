@@ -16,6 +16,7 @@ Pre-alpha implementation scaffold exists:
 - UI `--status`, `--overview`, and `--diagnostics` commands plus optional GTK4/libadwaita shell with a read-only diagnostics tab behind `gtk-ui`.
 - Read-only tray/status helper scaffold.
 - Tray dashboard launch forwards custom D-Bus addresses for private/session-bus smoke workflows.
+- Tray status separates available and missing capabilities in tooltips.
 - Disabled tray autostart packaging placeholder.
 - Runtime-captured 82WM fixture coverage, including bracketed battery `charge_types` current-value parsing.
 - Headless GTK smoke coverage for the optional shell.
@@ -101,6 +102,7 @@ Completed scaffold:
 - Read-only tray/status helper scaffold.
 - Read-only StatusNotifier tray backend with disabled write actions.
 - StatusNotifier dashboard launch keeps `--bus-address` when the tray uses a private bus.
+- Tray tooltip reports available and missing capability counts separately.
 - Disabled tray autostart packaging placeholder.
 - Headless GTK smoke coverage.
 - Fedora packaging metadata and validation.

@@ -213,7 +213,7 @@ mod tests {
         assert_eq!(tray.icon_name(), ICON_NAME);
         assert_eq!(
             tray.tool_tip().description,
-            "82WM Legion Pro 5 16ARX8: 1 read-only capabilities"
+            "82WM Legion Pro 5 16ARX8: 1 available capabilities"
         );
     }
 
