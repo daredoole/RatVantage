@@ -20,6 +20,7 @@ Pre-alpha implementation scaffold exists:
 - Headless GTK smoke coverage for the optional shell.
 - Fedora packaging metadata and validation for systemd, D-Bus, polkit, desktop, AppStream, and RPM assets.
 - Read-only sysfs fixture capture workflow for adding more real hardware reports.
+- Packaged read-only fan preset TOML assets with CI schema validation.
 - Disabled write-method contract drafts for platform profile and battery charge type.
 - Pure validators for platform profile and battery charge type choices.
 - Validator-backed dry-run planning for platform profile and battery charge type.
@@ -101,6 +102,7 @@ Completed scaffold:
 - Fedora packaging metadata and validation.
 - Read-only fixture capture workflow.
 - Runtime-captured 82WM fixture coverage.
+- Packaged fan preset TOML assets.
 - Disabled write-method contract drafts.
 - Pure platform profile and battery charge type validators.
 - Pure dry-run planning for future platform profile and battery charge type writes.

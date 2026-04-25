@@ -1,0 +1,46 @@
+schema_version = 1
+id = "max-safe"
+label = "Max safe"
+description = "Conservative high-airflow fallback for thermal stress or recovery."
+target_profiles = ["performance"]
+safety_note = "Noise-heavy fallback; daemon must still validate every point and avoid partial writes."
+
+[[points]]
+temperature_c = 35
+pwm = 60
+
+[[points]]
+temperature_c = 40
+pwm = 85
+
+[[points]]
+temperature_c = 45
+pwm = 110
+
+[[points]]
+temperature_c = 50
+pwm = 140
+
+[[points]]
+temperature_c = 55
+pwm = 170
+
+[[points]]
+temperature_c = 60
+pwm = 200
+
+[[points]]
+temperature_c = 65
+pwm = 225
+
+[[points]]
+temperature_c = 72
+pwm = 245
+
+[[points]]
+temperature_c = 80
+pwm = 255
+
+[[points]]
+temperature_c = 90
+pwm = 255

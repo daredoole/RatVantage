@@ -1,0 +1,46 @@
+schema_version = 1
+id = "balanced-daily"
+label = "Balanced daily"
+description = "General-purpose curve for mixed browser, build, and light gaming workloads."
+target_profiles = ["balanced", "balanced-performance"]
+safety_note = "Middle-ground fan ramp; daemon must write a complete validated curve only."
+
+[[points]]
+temperature_c = 35
+pwm = 10
+
+[[points]]
+temperature_c = 40
+pwm = 30
+
+[[points]]
+temperature_c = 45
+pwm = 50
+
+[[points]]
+temperature_c = 50
+pwm = 70
+
+[[points]]
+temperature_c = 55
+pwm = 95
+
+[[points]]
+temperature_c = 60
+pwm = 120
+
+[[points]]
+temperature_c = 65
+pwm = 150
+
+[[points]]
+temperature_c = 72
+pwm = 185
+
+[[points]]
+temperature_c = 80
+pwm = 225
+
+[[points]]
+temperature_c = 90
+pwm = 255

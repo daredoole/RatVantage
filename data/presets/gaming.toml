@@ -1,0 +1,46 @@
+schema_version = 1
+id = "gaming"
+label = "Gaming"
+description = "Earlier ramp for sustained GPU and CPU load."
+target_profiles = ["balanced-performance", "performance"]
+safety_note = "Higher sustained fan speeds; daemon must preserve rollback state before any future write."
+
+[[points]]
+temperature_c = 35
+pwm = 25
+
+[[points]]
+temperature_c = 40
+pwm = 50
+
+[[points]]
+temperature_c = 45
+pwm = 75
+
+[[points]]
+temperature_c = 50
+pwm = 105
+
+[[points]]
+temperature_c = 55
+pwm = 135
+
+[[points]]
+temperature_c = 60
+pwm = 165
+
+[[points]]
+temperature_c = 65
+pwm = 195
+
+[[points]]
+temperature_c = 72
+pwm = 225
+
+[[points]]
+temperature_c = 80
+pwm = 245
+
+[[points]]
+temperature_c = 90
+pwm = 255

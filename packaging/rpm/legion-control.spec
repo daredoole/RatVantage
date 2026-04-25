@@ -82,6 +82,9 @@ install -Dpm0644 data/desktop/org.ratvantage.LegionControl.Tray.desktop \
     %{buildroot}%{_sysconfdir}/xdg/autostart/org.ratvantage.LegionControl.Tray.desktop
 install -Dpm0644 data/metainfo/org.ratvantage.LegionControl.metainfo.xml \
     %{buildroot}%{_datadir}/metainfo/org.ratvantage.LegionControl.metainfo.xml
+install -dm0755 %{buildroot}%{_datadir}/legion-control/presets
+install -pm0644 data/presets/*.toml \
+    %{buildroot}%{_datadir}/legion-control/presets/
 
 %check
 desktop-file-validate %{buildroot}%{_datadir}/applications/org.ratvantage.LegionControl.desktop
@@ -102,6 +105,7 @@ appstreamcli validate --no-net %{buildroot}%{_datadir}/metainfo/org.ratvantage.L
 %doc README.md BRAND.md
 %{_bindir}/legion-probe
 %{_datadir}/metainfo/org.ratvantage.LegionControl.metainfo.xml
+%{_datadir}/legion-control/presets/*.toml
 
 %files daemon
 %{_libexecdir}/legion-control/legion-control-daemon

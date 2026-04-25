@@ -26,6 +26,7 @@
 - UI `--overview` command for platform profile, battery charge type, fan RPM, temperatures, GPU mode, and battery telemetry.
 - UI `--diagnostics` command for a read-only JSON debug bundle containing hardware summary, kernel version, detected sysfs paths, recent daemon log excerpts, and raw probe report.
 - Optional GTK diagnostics tab for the same read-only hardware/debug bundle, with Copy JSON.
+- Packaged read-only fan preset TOML assets in `data/presets/`, validated by `scripts/validate-packaging.sh` and installed by the RPM spec.
 - Read-only D-Bus daemon methods:
   - `GetHardwareSummary`
   - `GetCapabilities`

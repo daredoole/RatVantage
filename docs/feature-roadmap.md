@@ -25,6 +25,7 @@ Current pre-alpha code provides the safe read-only base:
 - Read-only UI `--overview` summary for platform profile, battery mode, fan RPM, temperatures, GPU mode, and battery telemetry.
 - Read-only UI `--diagnostics` JSON bundle with hardware summary, kernel version, detected sysfs paths, recent daemon log excerpts, and raw probe report.
 - Read-only GTK diagnostics tab for the same hardware/debug bundle, including Copy JSON.
+- Packaged read-only fan preset TOML assets with CI schema validation.
 - Fixture tests, private-bus integration tests, clippy/fmt/test local CI, and GitHub CI.
 
 ## Next immediate work
@@ -83,10 +84,10 @@ Suggested labels:
 
 - Read detected fan curve capability.
 - Provide packaged presets:
-  - Quiet office
-  - Balanced daily
-  - Gaming
-  - Max safe
+  - Quiet office [implemented as inert TOML asset]
+  - Balanced daily [implemented as inert TOML asset]
+  - Gaming [implemented as inert TOML asset]
+  - Max safe [implemented as inert TOML asset]
 - Apply full validated curve only.
 - Restore safe/default action.
 - Store last-known-good fan curve.

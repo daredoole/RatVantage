@@ -1,0 +1,46 @@
+schema_version = 1
+id = "quiet-office"
+label = "Quiet office"
+description = "Low-noise baseline for light desktop work."
+target_profiles = ["quiet", "balanced"]
+safety_note = "Prioritizes low fan speed; daemon must still clamp and validate against detected firmware limits before any future write."
+
+[[points]]
+temperature_c = 35
+pwm = 0
+
+[[points]]
+temperature_c = 40
+pwm = 20
+
+[[points]]
+temperature_c = 45
+pwm = 35
+
+[[points]]
+temperature_c = 50
+pwm = 50
+
+[[points]]
+temperature_c = 55
+pwm = 70
+
+[[points]]
+temperature_c = 60
+pwm = 95
+
+[[points]]
+temperature_c = 65
+pwm = 120
+
+[[points]]
+temperature_c = 72
+pwm = 155
+
+[[points]]
+temperature_c = 80
+pwm = 200
+
+[[points]]
+temperature_c = 90
+pwm = 255
