@@ -110,6 +110,13 @@ pub fn system_connection(service: LegionControl) -> Result<Connection> {
         .build()?)
 }
 
+pub fn session_connection(service: LegionControl) -> Result<Connection> {
+    Ok(ConnectionBuilder::session()?
+        .name(DBUS_INTERFACE)?
+        .serve_at(DBUS_PATH, service)?
+        .build()?)
+}
+
 fn to_json<T: Serialize>(value: &T) -> fdo::Result<String> {
     serde_json::to_string(value).map_err(|error| fdo::Error::Failed(error.to_string()))
 }

@@ -1,7 +1,8 @@
 use anyhow::Result;
 use clap::Parser;
 use legion_control_daemon::{
-    system_connection, LegionControl, DBUS_INTERFACE, DBUS_PATH, READ_ONLY_METHODS,
+    session_connection, system_connection, LegionControl, DBUS_INTERFACE, DBUS_PATH,
+    READ_ONLY_METHODS,
 };
 use legion_probe::{probe, ProbeOptions};
 
@@ -9,6 +10,9 @@ use legion_probe::{probe, ProbeOptions};
 struct Args {
     #[arg(long)]
     dry_run: bool,
+
+    #[arg(long)]
+    session: bool,
 
     #[arg(long, default_value = "/")]
     sysfs_root: std::path::PathBuf,
@@ -31,7 +35,15 @@ fn main() -> Result<()> {
         return Ok(());
     }
 
-    let _connection = system_connection(service)?;
+    let _connection = if args.session {
+        let connection = session_connection(service)?;
+        println!("serving development session bus");
+        connection
+    } else {
+        let connection = system_connection(service)?;
+        println!("serving system bus");
+        connection
+    };
 
     println!("serving interface={DBUS_INTERFACE} path={DBUS_PATH}");
     loop {

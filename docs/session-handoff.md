@@ -6,13 +6,13 @@
 - Visibility: private for now.
 - Branch: `main`
 - Latest local commits:
+  - `05e8454` (`Add StatusNotifier tray smoke workflow`)
+  - `9d1c188` (`Refresh tray backend handoff`)
   - `3ddc3e9` (`Add read-only StatusNotifier tray backend`)
   - `29b174f` (`Refresh runtime fixture progress docs`)
   - `f0d7b14` (`Add runtime 82WM probe fixture`)
   - `431f457` (`Clarify disabled tray autostart docs`)
-  - `d10599e` (`Package disabled tray autostart placeholder`)
-  - `e0ff36c` (`Add read-only tray scaffold`)
-- Latest known milestone: read-only pre-alpha scaffold with GTK smoke coverage, hardened packaging metadata, disabled write planning, runtime 82WM fixture coverage, and a read-only StatusNotifier tray backend.
+- Latest known milestone: read-only pre-alpha scaffold with GTK smoke coverage, hardened packaging metadata, disabled write planning, runtime 82WM fixture coverage, read-only StatusNotifier tray backend, and automated KDE StatusNotifier registration smoke.
 - Rust toolchain: pinned stable in `rust-toolchain.toml`; local stable installed because GTK stack requires rustc 1.92+.
 
 ## Implemented
@@ -30,6 +30,7 @@
 - Read-only `legion-control-tray --status` scaffold.
 - Read-only `legion-control-tray` StatusNotifier backend with dashboard, refresh, quit, and disabled write actions.
 - StatusNotifier tray smoke script and manual checklist; autostart is still disabled.
+- Automated KDE session-bus StatusNotifier registration smoke passed with fixture daemon; visual panel/menu confirmation is still pending.
 - Disabled tray autostart packaging placeholder.
 - Headless GTK smoke test for the optional shell, run through Xvfb in local and GitHub CI.
 - Private-bus contract tests and shared test support.
@@ -54,6 +55,7 @@
 scripts/capture-sysfs-fixture.sh --output tests/fixtures/sysfs-<model>-<note>
 cargo run -p legion-probe -- --json --sysfs-root tests/fixtures/sysfs-82wm-confirmed
 cargo run -p legion-control-daemon -- --dry-run
+cargo run -p legion-control-daemon -- --session --sysfs-root tests/fixtures/sysfs-82wm-confirmed
 cargo run -p legion-control-ui --features gtk-ui
 cargo run -p legion-control-tray -- --bus-address <dbus-address>
 cargo run -p legion-control-tray -- --status --bus-address <dbus-address>
@@ -68,7 +70,7 @@ Do not turn GitHub CI off completely yet. Use local CI before pushing, then keep
 
 ## Next tasks
 
-1. Run and record StatusNotifier tray smoke results on target desktops before enabling autostart.
+1. Complete visual KDE tray confirmation and GNOME-with-extension smoke before enabling autostart.
 2. Add more captured fixtures when additional supported Legion machines are available.
 
 ## Working process

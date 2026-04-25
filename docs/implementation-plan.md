@@ -513,6 +513,7 @@ ErrorOccurred(s code, s message)
 13. [x] Add bracketed battery `charge_types` parsing from the runtime fixture.
 14. [x] Add read-only StatusNotifier tray backend while keeping write actions disabled.
 15. [x] Add repeatable StatusNotifier tray smoke workflow before enabling autostart.
+16. [x] Add read-only daemon session-bus dev mode and record automated KDE StatusNotifier registration smoke.
 
 ## Test strategy
 

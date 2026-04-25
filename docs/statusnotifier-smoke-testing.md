@@ -11,10 +11,17 @@ cargo build -p legion-control-tray
 scripts/smoke-statusnotifier-tray.sh --hold-seconds 15
 ```
 
-If testing against a private or non-system daemon, pass its bus address:
+For fixture-backed development smoke testing, run the read-only daemon on the
+session bus in one terminal:
 
 ```bash
-scripts/smoke-statusnotifier-tray.sh --bus-address <dbus-address> --hold-seconds 15
+cargo run -p legion-control-daemon -- --session --sysfs-root tests/fixtures/sysfs-82wm-confirmed
+```
+
+Then run the tray smoke from another terminal:
+
+```bash
+scripts/smoke-statusnotifier-tray.sh --bus-address "$DBUS_SESSION_BUS_ADDRESS" --hold-seconds 15
 ```
 
 The script verifies that `org.kde.StatusNotifierWatcher` exists, the tray can read daemon status, autostart is still disabled, and the registered StatusNotifier item count increases while the tray process is running.
@@ -37,3 +44,9 @@ Manual checks during the hold window:
 | GNOME without extension or unsupported shell | Script fails because no watcher is available, or no tray item is visible. | Do not enable autostart. |
 
 Do not flip `Hidden=true` or `X-GNOME-Autostart-enabled=false` until KDE and GNOME-with-extension smoke checks pass.
+
+## Recorded Results
+
+| Date | Desktop | Command | Result | Remaining check |
+|---|---|---|---|---|
+| 2026-04-25 | KDE Plasma Wayland | `scripts/smoke-statusnotifier-tray.sh --bus-address "$DBUS_SESSION_BUS_ADDRESS" --hold-seconds 1` with fixture daemon on `--session` | Automated registration passed, `before=6 after=7`, autostart disabled. | Visual panel/menu confirmation still required. |
