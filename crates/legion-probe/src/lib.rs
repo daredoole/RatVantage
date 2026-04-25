@@ -3,8 +3,9 @@ use std::path::{Path, PathBuf};
 
 use legion_common::{
     BatteryChargeTypeCapability, Capability, CapabilityRegistry, CapabilityStatus,
-    FirmwareAttributeCapability, HardwareSummary, HwmonSensor, PlatformProfileCapability,
-    RiskLevel, TelemetrySnapshot,
+    FanCurveCapability, FirmwareAttributeCapability, HardwareSummary, HwmonSensor,
+    IdeapadToggleCapability, LedCapability, PlatformProfileCapability, RiskLevel,
+    TelemetrySnapshot,
 };
 
 #[derive(Debug, Clone)]
@@ -24,7 +25,10 @@ pub fn probe(options: &ProbeOptions) -> CapabilityRegistry {
     let platform_profile = detect_platform_profile(&options.sysfs_root);
     let battery_charge_type = detect_battery_charge_type(&options.sysfs_root);
     let hwmon_sensors = detect_hwmon_sensors(&options.sysfs_root);
+    let fan_curves = detect_fan_curves(&options.sysfs_root);
+    let leds = detect_leds(&options.sysfs_root);
     let firmware_attributes = detect_firmware_attributes(&options.sysfs_root);
+    let ideapad_toggles = detect_ideapad_toggles(&options.sysfs_root);
 
     let mut capabilities = Vec::new();
     push_capability(
@@ -51,6 +55,19 @@ pub fn probe(options: &ProbeOptions) -> CapabilityRegistry {
         "Lenovo firmware attributes",
         !firmware_attributes.is_empty(),
     );
+    push_capability(
+        &mut capabilities,
+        "fan_curves",
+        "Fan curve nodes",
+        !fan_curves.is_empty(),
+    );
+    push_capability(&mut capabilities, "leds", "LED nodes", !leds.is_empty());
+    push_capability(
+        &mut capabilities,
+        "ideapad_toggles",
+        "Ideapad toggles",
+        !ideapad_toggles.is_empty(),
+    );
 
     CapabilityRegistry {
         hardware: detect_hardware(&options.sysfs_root),
@@ -61,7 +78,10 @@ pub fn probe(options: &ProbeOptions) -> CapabilityRegistry {
             sensors: hwmon_sensors.clone(),
         },
         hwmon_sensors,
+        fan_curves,
+        leds,
         firmware_attributes,
+        ideapad_toggles,
         ..CapabilityRegistry::default()
     }
 }
@@ -161,6 +181,91 @@ fn detect_hwmon_sensors(root: &Path) -> Vec<HwmonSensor> {
     sensors
 }
 
+fn detect_fan_curves(root: &Path) -> Vec<FanCurveCapability> {
+    let hwmon_root = root.join("sys/class/hwmon");
+    let Ok(entries) = fs::read_dir(hwmon_root) else {
+        return Vec::new();
+    };
+
+    let mut fan_curves = Vec::new();
+    for entry in entries.flatten() {
+        let dir = entry.path();
+        if !dir.is_dir() {
+            continue;
+        }
+
+        let Ok(files) = fs::read_dir(&dir) else {
+            continue;
+        };
+        let mut point_paths: Vec<String> = files
+            .flatten()
+            .map(|file| file.path())
+            .filter(|path| {
+                path.file_name()
+                    .and_then(|name| name.to_str())
+                    .is_some_and(is_fan_curve_point)
+            })
+            .map(|path| path.display().to_string())
+            .collect();
+        point_paths.sort();
+
+        if point_paths.is_empty() {
+            continue;
+        }
+
+        let id = read_trim(dir.join("name")).unwrap_or_else(|| {
+            dir.file_name()
+                .and_then(|name| name.to_str())
+                .unwrap_or("hwmon")
+                .to_owned()
+        });
+        fan_curves.push(FanCurveCapability {
+            id,
+            status: CapabilityStatus::ProbeOnly,
+            path: Some(dir.display().to_string()),
+            point_paths,
+        });
+    }
+    fan_curves.sort_by(|left, right| left.id.cmp(&right.id));
+    fan_curves
+}
+
+fn is_fan_curve_point(name: &str) -> bool {
+    name.starts_with("pwm") && name.contains("_auto_point")
+}
+
+fn detect_leds(root: &Path) -> Vec<LedCapability> {
+    let leds_root = root.join("sys/class/leds");
+    let Ok(entries) = fs::read_dir(leds_root) else {
+        return Vec::new();
+    };
+
+    let mut leds = Vec::new();
+    for entry in entries.flatten() {
+        let dir = entry.path();
+        let brightness_path = dir.join("brightness");
+        if !brightness_path.exists() {
+            continue;
+        }
+        let Some(name) = dir
+            .file_name()
+            .and_then(|name| name.to_str())
+            .map(str::to_owned)
+        else {
+            continue;
+        };
+
+        leds.push(LedCapability {
+            name,
+            path: brightness_path.display().to_string(),
+            brightness: read_i64(&brightness_path),
+            max_brightness: read_i64(dir.join("max_brightness")),
+        });
+    }
+    leds.sort_by(|left, right| left.name.cmp(&right.name));
+    leds
+}
+
 fn detect_firmware_attributes(root: &Path) -> Vec<FirmwareAttributeCapability> {
     let attributes_root = root.join("sys/class/firmware-attributes");
     let Ok(providers) = fs::read_dir(attributes_root) else {
@@ -194,6 +299,47 @@ fn detect_firmware_attributes(root: &Path) -> Vec<FirmwareAttributeCapability> {
         }
     }
     attributes
+}
+
+fn detect_ideapad_toggles(root: &Path) -> Vec<IdeapadToggleCapability> {
+    let base = root.join("sys/bus/platform/drivers/ideapad_acpi");
+    let Ok(entries) = fs::read_dir(base) else {
+        return Vec::new();
+    };
+
+    let toggle_names = [
+        "fn_lock",
+        "touchpad",
+        "camera_power",
+        "usb_charging",
+        "conservation_mode",
+        "fan_mode",
+    ];
+    let mut toggles = Vec::new();
+    for entry in entries.flatten() {
+        let device = entry.path();
+        if !device.is_dir() {
+            continue;
+        }
+        for name in toggle_names {
+            let path = device.join(name);
+            if !path.exists() {
+                continue;
+            }
+            toggles.push(IdeapadToggleCapability {
+                name: name.to_owned(),
+                status: CapabilityStatus::ProbeOnly,
+                current_value: read_trim(&path),
+                path: Some(path.display().to_string()),
+            });
+        }
+    }
+    toggles.sort_by(|left, right| left.name.cmp(&right.name));
+    toggles
+}
+
+fn read_i64(path: impl AsRef<Path>) -> Option<i64> {
+    read_trim(path).and_then(|value| value.parse().ok())
 }
 
 fn read_trim(path: impl AsRef<Path>) -> Option<String> {
@@ -251,6 +397,21 @@ mod tests {
                 && sensor.label.as_deref() == Some("CPU Fan")
                 && sensor.kind == "fan"
         }));
+        assert!(registry.fan_curves.iter().any(|fan_curve| {
+            fan_curve.id == "legion-hwmon"
+                && fan_curve
+                    .point_paths
+                    .iter()
+                    .any(|path| path.ends_with("pwm1_auto_point1_pwm"))
+        }));
+        assert!(registry.leds.iter().any(|led| {
+            led.name == "platform::ylogo"
+                && led.brightness == Some(1)
+                && led.max_brightness == Some(1)
+        }));
+        assert!(registry.ideapad_toggles.iter().any(|toggle| {
+            toggle.name == "conservation_mode" && toggle.current_value.as_deref() == Some("1")
+        }));
     }
 
     #[test]
@@ -270,6 +431,9 @@ mod tests {
         assert!(registry.platform_profile.is_none());
         assert!(registry.battery_charge_type.is_none());
         assert!(registry.hwmon_sensors.is_empty());
+        assert!(registry.fan_curves.is_empty());
+        assert!(registry.leds.is_empty());
+        assert!(registry.ideapad_toggles.is_empty());
 
         fs::remove_dir_all(root).unwrap();
     }

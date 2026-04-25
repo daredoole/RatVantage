@@ -80,12 +80,15 @@ pub struct FanCurveCapability {
     pub id: String,
     pub status: CapabilityStatus,
     pub path: Option<String>,
+    pub point_paths: Vec<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct LedCapability {
     pub name: String,
     pub path: String,
+    pub brightness: Option<i64>,
+    pub max_brightness: Option<i64>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -101,6 +104,7 @@ pub struct IdeapadToggleCapability {
     pub name: String,
     pub status: CapabilityStatus,
     pub path: Option<String>,
+    pub current_value: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
