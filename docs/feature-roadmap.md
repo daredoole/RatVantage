@@ -28,7 +28,7 @@ Current pre-alpha code provides the safe read-only base:
 - Read-only UI `--overview` summary for platform profile, battery mode, fan RPM, temperatures, GPU mode, battery telemetry, LED brightness, and firmware toggle values.
 - Read-only UI `--diagnostics` JSON bundle with hardware summary, compact counts, kernel version, detected sysfs paths, recent daemon log excerpts, and raw probe report.
 - Diagnostics include `platform_profile_choices` and `charge_types` source paths.
-- Read-only UI dry-run plan previews for platform profile, battery charge type, GPU mode, and fan preset writes, including GPU rollback guidance.
+- Read-only UI dry-run plan previews for platform profile, battery charge type, GPU mode, fan preset, and fan restore/default writes, including GPU rollback guidance.
 - UI status output includes per-capability status and risk labels.
 - Read-only GTK Profiles, Battery, and Fans tabs show platform profile choices, battery charge choices, fan telemetry, fan curve paths, packaged preset IDs, sysfs source paths, and battery telemetry from the diagnostics bundle.
 - Read-only GTK Appearance tab shows LED brightness nodes and firmware toggle values from the diagnostics bundle.
@@ -99,7 +99,7 @@ Suggested labels:
   - Gaming [implemented as TOML asset and dry-run input]
   - Max safe [implemented as TOML asset and dry-run input]
 - Apply full validated curve only. [implemented as dry-run validation only]
-- Restore safe/default action.
+- Restore safe/default action. [implemented as dry-run planning only]
 - Store last-known-good fan curve.
 
 ### GPU

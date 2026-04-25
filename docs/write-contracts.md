@@ -14,6 +14,7 @@ The active daemon must continue to expose only:
 - `PlanBatteryChargeTypeWrite`
 - `PlanGpuModeWrite`
 - `PlanFanPresetWrite`
+- `PlanRestoreAutoFanWrite`
 
 ## Disabled Drafts
 
@@ -23,6 +24,7 @@ The active daemon must continue to expose only:
 | `SetBatteryChargeType` | `battery_charge_type` | `org.ratvantage.LegionControl1.set-battery-charge-type` | `{"charge_type":"string"}` | reversible write |
 | `SetGpuMode` | `gpu` | `org.ratvantage.LegionControl1.set-gpu-mode` | `{"mode":"integrated|hybrid|nvidia"}` | experimental write, reboot required |
 | `ApplyFanPreset` | `fan_curves` | `org.ratvantage.LegionControl1.apply-fan-preset` | `{"preset_id":"string"}` | experimental write |
+| `RestoreAutoFan` | `fan_curves` | `org.ratvantage.LegionControl1.restore-auto-fan` | `{}` | experimental write |
 
 The source of truth for draft metadata is
 `legion_common::WRITE_METHOD_CONTRACTS`.
@@ -36,9 +38,10 @@ The source of truth for draft metadata is
   `validate_battery_charge_type_choice` before any future sysfs write.
 - Use `validate_gpu_mode_choice` before any future EnvyControl GPU mode write.
 - Use `validate_fan_preset_choice` before any future fan curve preset write.
-- Use `plan_platform_profile_write`, `plan_battery_charge_type_write`, and
-  `plan_gpu_mode_write`, and `plan_fan_preset_write` for validator-backed
-  dry-run plans before any future daemon write implementation.
+- Use `plan_platform_profile_write`, `plan_battery_charge_type_write`,
+  `plan_gpu_mode_write`, `plan_fan_preset_write`, and
+  `plan_restore_auto_fan_write` for validator-backed dry-run plans before any
+  future daemon write implementation.
 - Read back the changed sysfs value after each write.
 - Store previous values before writing.
 - Restore previous values on read-back failure when still safe and listed.
@@ -63,6 +66,8 @@ required, and includes rollback guidance for the previous mode.
 `legion-control-ui --plan-fan-preset <preset_id>` prints the packaged fan preset
 plan only when the preset schema is valid and the detected fan curve exposes a
 complete 10-point writable shape.
+`legion-control-ui --plan-restore-auto-fan` prints the future restore/default
+fan-control plan when a fan curve capability is detected.
 The actual write methods must remain outside the zbus `#[interface]`
 implementation until write support is deliberately enabled.
 

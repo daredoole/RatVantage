@@ -31,6 +31,9 @@ struct Args {
     plan_fan_preset: Option<String>,
 
     #[arg(long)]
+    plan_restore_auto_fan: bool,
+
+    #[arg(long)]
     bus_address: Option<String>,
 }
 
@@ -45,6 +48,7 @@ fn main() -> Result<()> {
         args.plan_battery_charge_type.is_some(),
         args.plan_gpu_mode.is_some(),
         args.plan_fan_preset.is_some(),
+        args.plan_restore_auto_fan,
     ]
     .into_iter()
     .filter(|enabled| *enabled)
@@ -66,6 +70,8 @@ fn main() -> Result<()> {
             print_write_plan(&client.plan_gpu_mode_write(&mode)?)?;
         } else if let Some(preset_id) = args.plan_fan_preset {
             print_write_plan(&client.plan_fan_preset_write(&preset_id)?)?;
+        } else if args.plan_restore_auto_fan {
+            print_write_plan(&client.plan_restore_auto_fan_write()?)?;
         } else if args.diagnostics {
             print_diagnostics(&client.diagnostics_bundle()?)?;
         } else if args.overview {

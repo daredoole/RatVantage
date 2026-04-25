@@ -503,6 +503,10 @@ impl LegionControlClient {
         self.call_json_arg("PlanFanPresetWrite", requested)
     }
 
+    pub fn plan_restore_auto_fan_write(&self) -> Result<WriteDryRunPlan> {
+        self.call_json("PlanRestoreAutoFanWrite")
+    }
+
     pub fn status(&self) -> Result<UiStatus> {
         UiStatus::from_client(self)
     }

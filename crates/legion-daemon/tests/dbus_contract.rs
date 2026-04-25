@@ -100,6 +100,7 @@ fn introspection_exposes_only_read_only_legion_methods() {
             "PlanFanPresetWrite",
             "PlanGpuModeWrite",
             "PlanPlatformProfileWrite",
+            "PlanRestoreAutoFanWrite",
             "RefreshCapabilities"
         ]
     );
@@ -136,6 +137,11 @@ fn daemon_builds_dry_run_plans_without_dbus_write_methods() {
     assert!(service.plan_battery_charge_type_write("Invalid").is_err());
     assert!(service.plan_gpu_mode_write("hybrid").is_err());
     assert!(service.plan_fan_preset_write("balanced-daily").is_err());
+
+    let restore_plan = service.plan_restore_auto_fan_write().unwrap();
+    assert_eq!(restore_plan.method, "RestoreAutoFan");
+    assert_eq!(restore_plan.capability_id, "fan_curves");
+    assert_eq!(restore_plan.requested_value, "auto/default fan control");
 }
 
 #[test]
@@ -155,6 +161,13 @@ fn daemon_builds_fan_preset_plan_from_runtime_fixture() {
         .safety_notes
         .iter()
         .any(|note| note.contains("Middle-ground fan ramp")));
+
+    let restore_plan = service.plan_restore_auto_fan_write().unwrap();
+    assert_eq!(restore_plan.method, "RestoreAutoFan");
+    assert_eq!(restore_plan.capability_id, "fan_curves");
+    assert_eq!(restore_plan.requested_value, "auto/default fan control");
+    assert!(restore_plan.readback_required);
+    assert!(!restore_plan.reboot_required);
 }
 
 fn test_proxy() -> (PrivateBus, zbus::blocking::Connection, Proxy<'static>) {

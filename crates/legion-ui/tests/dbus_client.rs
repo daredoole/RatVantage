@@ -380,6 +380,30 @@ fn fan_preset_plan_cli_prints_read_only_write_preview_json() {
 }
 
 #[test]
+fn restore_auto_fan_plan_cli_prints_read_only_write_preview_json() {
+    let (_bus, _service_connection, address) = runtime_fixture_service();
+    let client = LegionControlClient::address(&address).unwrap();
+    let plan = client.plan_restore_auto_fan_write().unwrap();
+    assert_eq!(plan.method, "RestoreAutoFan");
+    assert_eq!(plan.previous_value, "current fan-control state");
+    assert_eq!(plan.requested_value, "auto/default fan control");
+    assert!(!plan.reboot_required);
+
+    let output = Command::new(env!("CARGO_BIN_EXE_legion-control-ui"))
+        .args(["--plan-restore-auto-fan", "--bus-address", &address])
+        .output()
+        .unwrap();
+
+    assert!(output.status.success());
+    assert!(output.stderr.is_empty());
+    let json: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(json["method"], "RestoreAutoFan");
+    assert_eq!(json["capability_id"], "fan_curves");
+    assert_eq!(json["requested_value"], "auto/default fan control");
+    assert_eq!(json["readback_required"], true);
+}
+
+#[test]
 fn status_model_uses_unknown_for_missing_hardware_fields() {
     let status = UiStatus::from_parts(Default::default(), Vec::new()).unwrap();
 

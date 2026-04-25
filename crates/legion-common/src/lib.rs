@@ -265,6 +265,31 @@ pub const WRITE_METHOD_CONTRACTS: &[WriteMethodContract] = &[
             "write method remains disabled; dry-run planning only",
         ],
     },
+    WriteMethodContract {
+        method: "RestoreAutoFan",
+        capability_id: "fan_curves",
+        polkit_action: "org.ratvantage.LegionControl1.restore-auto-fan",
+        request_type: r#"{}"#,
+        risk: RiskLevel::ExperimentalWrite,
+        enabled: false,
+        reboot_required: false,
+        preconditions: &[
+            "fan_curves capability is detected",
+            "daemon has captured the current fan-control state before restore",
+        ],
+        validators: &[
+            "detected fan curve exposes a restore-capable control path",
+            "post-restore telemetry and read-back remain within expected bounds",
+        ],
+        rollback: &[
+            "store current fan-control state before restore",
+            "restore previous fan-control state if read-back fails",
+        ],
+        safety_notes: &[
+            "restoring automatic fan control can change thermal behavior immediately",
+            "write method remains disabled; dry-run planning only",
+        ],
+    },
 ];
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -487,6 +512,20 @@ pub fn plan_fan_preset_write(
     )?;
     plan.safety_notes.push(preset.safety_note.clone());
     Ok(plan)
+}
+
+pub fn plan_restore_auto_fan_write(
+    fan_curves: &[FanCurveCapability],
+) -> Result<WriteDryRunPlan, ValidationError> {
+    let curve = select_fan_curve(fan_curves).ok_or_else(|| ValidationError::MissingCapability {
+        capability_id: "fan_curves".to_owned(),
+    })?;
+    plan_write(
+        write_contract("RestoreAutoFan"),
+        curve.path.as_deref().unwrap_or("fan_curves"),
+        "current fan-control state",
+        "auto/default fan control",
+    )
 }
 
 fn write_contract(method: &str) -> &'static WriteMethodContract {
@@ -712,7 +751,8 @@ mod tests {
                 "SetPlatformProfile",
                 "SetBatteryChargeType",
                 "SetGpuMode",
-                "ApplyFanPreset"
+                "ApplyFanPreset",
+                "RestoreAutoFan"
             ]
         );
         assert!(WRITE_METHOD_CONTRACTS
@@ -1106,6 +1146,29 @@ mod tests {
             .safety_notes
             .iter()
             .any(|note| note.contains("Middle-ground fan ramp")));
+    }
+
+    #[test]
+    fn restore_auto_fan_dry_run_plan_requires_detected_fan_curve() {
+        let plan = plan_restore_auto_fan_write(&[complete_fan_curve()]).unwrap();
+
+        assert_eq!(plan.method, "RestoreAutoFan");
+        assert_eq!(plan.capability_id, "fan_curves");
+        assert_eq!(plan.path, "/sys/class/hwmon/hwmon9");
+        assert_eq!(plan.previous_value, "current fan-control state");
+        assert_eq!(plan.requested_value, "auto/default fan control");
+        assert_eq!(plan.rollback_value, "current fan-control state");
+        assert!(plan.readback_required);
+        assert!(!plan.reboot_required);
+        assert!(plan
+            .safety_notes
+            .iter()
+            .any(|note| note.contains("dry-run planning only")));
+
+        assert!(matches!(
+            plan_restore_auto_fan_write(&[]),
+            Err(ValidationError::MissingCapability { .. })
+        ));
     }
 
     #[test]

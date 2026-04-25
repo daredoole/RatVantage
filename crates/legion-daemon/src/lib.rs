@@ -4,7 +4,8 @@ use anyhow::Result;
 use legion_common::{
     plan_battery_charge_type_write as plan_battery_charge_type,
     plan_fan_preset_write as plan_fan_preset, plan_gpu_mode_write as plan_gpu_mode,
-    plan_platform_profile_write as plan_platform_profile, CapabilityRegistry, FanPreset,
+    plan_platform_profile_write as plan_platform_profile,
+    plan_restore_auto_fan_write as plan_restore_auto_fan, CapabilityRegistry, FanPreset,
     ValidationError, WriteDryRunPlan,
 };
 use legion_probe::{probe, ProbeOptions};
@@ -13,7 +14,7 @@ use zbus::{blocking::Connection, blocking::ConnectionBuilder, fdo, interface};
 
 pub const DBUS_INTERFACE: &str = "org.ratvantage.LegionControl1";
 pub const DBUS_PATH: &str = "/org/ratvantage/LegionControl1";
-pub const READ_ONLY_METHODS: &str = "GetHardwareSummary,GetCapabilities,RefreshCapabilities,GetTelemetry,GetRawProbeReport,PlanPlatformProfileWrite,PlanBatteryChargeTypeWrite,PlanGpuModeWrite,PlanFanPresetWrite";
+pub const READ_ONLY_METHODS: &str = "GetHardwareSummary,GetCapabilities,RefreshCapabilities,GetTelemetry,GetRawProbeReport,PlanPlatformProfileWrite,PlanBatteryChargeTypeWrite,PlanGpuModeWrite,PlanFanPresetWrite,PlanRestoreAutoFanWrite";
 
 const PACKAGED_FAN_PRESETS: &[&str] = &[
     include_str!("../../../data/presets/quiet-office.toml"),
@@ -81,6 +82,11 @@ impl LegionControl {
             .map_err(PlanningError::Validation)
     }
 
+    pub fn plan_restore_auto_fan_write(&self) -> Result<WriteDryRunPlan, PlanningError> {
+        let registry = self.planning_snapshot()?;
+        plan_restore_auto_fan(&registry.fan_curves).map_err(PlanningError::Validation)
+    }
+
     fn refresh(&self) -> fdo::Result<CapabilityRegistry> {
         let registry = probe(&self.options);
         let mut cached = self
@@ -136,6 +142,10 @@ impl LegionControl {
 
     fn PlanFanPresetWrite(&self, requested: &str) -> fdo::Result<String> {
         to_plan_json(self.plan_fan_preset_write(requested))
+    }
+
+    fn PlanRestoreAutoFanWrite(&self) -> fdo::Result<String> {
+        to_plan_json(self.plan_restore_auto_fan_write())
     }
 }
 

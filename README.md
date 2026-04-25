@@ -25,10 +25,10 @@ Pre-alpha implementation scaffold exists:
 - Read-only sysfs fixture capture workflow for adding more real hardware reports.
 - Read-only validation evidence for the current 82WM target is recorded in `docs/implementation-plan.md`.
 - Packaged read-only fan preset TOML assets with CI schema validation and dry-run planning.
-- Disabled write-method contract drafts for platform profile, battery charge type, GPU mode, and fan presets.
+- Disabled write-method contract drafts for platform profile, battery charge type, GPU mode, fan presets, and fan restore/default.
 - Pure validators for platform profile, battery charge type, EnvyControl GPU mode, and packaged fan preset choices.
-- Validator-backed dry-run planning for platform profile, battery charge type, GPU mode, and fan presets.
-- Read-only D-Bus dry-run planning for platform profile, battery charge type, GPU mode, and fan presets.
+- Validator-backed dry-run planning for platform profile, battery charge type, GPU mode, fan presets, and fan restore/default.
+- Read-only D-Bus dry-run planning for platform profile, battery charge type, GPU mode, fan presets, and fan restore/default.
 - GPU dry-run plans include reboot-required metadata and rollback guidance; execution remains disabled.
 - Local CI script and GitHub Actions CI.
 
@@ -88,6 +88,7 @@ cargo run -p legion-control-ui -- --plan-platform-profile performance --bus-addr
 cargo run -p legion-control-ui -- --plan-battery-charge-type Conservation --bus-address <dbus-address>
 cargo run -p legion-control-ui -- --plan-gpu-mode hybrid --bus-address <dbus-address>
 cargo run -p legion-control-ui -- --plan-fan-preset balanced-daily --bus-address <dbus-address>
+cargo run -p legion-control-ui -- --plan-restore-auto-fan --bus-address <dbus-address>
 cargo run -p legion-control-tray -- --status --bus-address <dbus-address>
 cargo run -p legion-control-tray -- --tooltip --bus-address <dbus-address>
 cargo run -p legion-control-ui --features gtk-ui
