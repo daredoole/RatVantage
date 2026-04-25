@@ -20,10 +20,10 @@ jobs:
         with:
           components: rustfmt, clippy
 
-      - name: Install D-Bus test dependency
+      - name: Install system test dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y dbus
+          sudo apt-get install -y dbus libgtk-4-dev libadwaita-1-dev pkg-config
 
       - name: Check formatting
         run: cargo fmt --all --check

@@ -2,6 +2,9 @@ use anyhow::Result;
 use clap::Parser;
 use legion_control_ui::{LegionControlClient, UiStatus, DBUS_INTERFACE};
 
+#[cfg(feature = "gtk-ui")]
+mod gtk_shell;
+
 #[derive(Debug, Parser)]
 struct Args {
     #[arg(long)]
@@ -21,6 +24,11 @@ fn main() -> Result<()> {
         };
         print_status(&client.status()?);
         return Ok(());
+    }
+
+    #[cfg(feature = "gtk-ui")]
+    {
+        return gtk_shell::run();
     }
 
     println!("Legion Control UI scaffold");

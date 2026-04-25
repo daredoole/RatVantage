@@ -6,12 +6,18 @@ license.workspace = true
 repository.workspace = true
 
 [dependencies]
+adw = { package = "libadwaita", version = "0.9.1", optional = true }
 anyhow.workspace = true
 clap.workspace = true
+gtk4 = { version = "0.11.2", optional = true }
 legion-common.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 zbus.workspace = true
+
+[features]
+default = []
+gtk-ui = ["dep:adw", "dep:gtk4"]
 
 [dev-dependencies]
 legion-control-daemon = { path = "../legion-daemon" }
