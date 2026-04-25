@@ -6,13 +6,13 @@
 - Visibility: private for now.
 - Branch: `main`
 - Latest local commits:
+  - `cb8983e` (`Add read-only UI overview command`)
+  - `000029c` (`Refresh EnvyControl handoff`)
   - `bb1de2f` (`Add read-only EnvyControl GPU query`)
   - `832a084` (`Refresh battery telemetry handoff`)
   - `1d23afd` (`Add battery overview telemetry`)
   - `e87a348` (`Mark GNOME tray path untested`)
-  - `266b066` (`Record GNOME smoke blocker`)
-  - `e57c91b` (`Refresh KDE smoke handoff`)
-- Latest known milestone: read-only pre-alpha scaffold with GTK smoke coverage, hardened packaging metadata, disabled write planning, runtime 82WM fixture coverage, read-only StatusNotifier tray backend, KDE StatusNotifier tooltip/menu/quit smoke evidence, documented GNOME untested path, read-only battery overview telemetry, and read-only EnvyControl GPU query.
+- Latest known milestone: read-only pre-alpha scaffold with GTK smoke coverage, hardened packaging metadata, disabled write planning, runtime 82WM fixture coverage, read-only StatusNotifier tray backend, KDE StatusNotifier tooltip/menu/quit smoke evidence, documented GNOME untested path, read-only battery overview telemetry, read-only EnvyControl GPU query, and UI `--overview` output.
 - Rust toolchain: pinned stable in `rust-toolchain.toml`; local stable installed because GTK stack requires rustc 1.92+.
 
 ## Implemented
@@ -22,6 +22,7 @@
 - Bracketed battery `charge_types` parsing, including inferred current value when `charge_type` is absent.
 - Read-only `BAT0` telemetry for capacity percent, charging status, and health string when exposed.
 - Read-only EnvyControl GPU mode query when `envycontrol --query` is available; fixture-backed runs keep GPU capability missing for deterministic tests.
+- UI `--overview` command for platform profile, battery charge type, fan RPM, temperatures, GPU mode, and battery telemetry.
 - Read-only D-Bus daemon methods:
   - `GetHardwareSummary`
   - `GetCapabilities`
