@@ -6,13 +6,13 @@
 - Visibility: private for now.
 - Branch: `main`
 - Latest local commits:
+  - `bb1de2f` (`Add read-only EnvyControl GPU query`)
+  - `832a084` (`Refresh battery telemetry handoff`)
   - `1d23afd` (`Add battery overview telemetry`)
   - `e87a348` (`Mark GNOME tray path untested`)
   - `266b066` (`Record GNOME smoke blocker`)
   - `e57c91b` (`Refresh KDE smoke handoff`)
-  - `bc6c5ef` (`Record KDE StatusNotifier smoke result`)
-  - `96e561d` (`Refresh smoke support handoff`)
-- Latest known milestone: read-only pre-alpha scaffold with GTK smoke coverage, hardened packaging metadata, disabled write planning, runtime 82WM fixture coverage, read-only StatusNotifier tray backend, KDE StatusNotifier tooltip/menu/quit smoke evidence, documented GNOME untested path, and read-only battery overview telemetry.
+- Latest known milestone: read-only pre-alpha scaffold with GTK smoke coverage, hardened packaging metadata, disabled write planning, runtime 82WM fixture coverage, read-only StatusNotifier tray backend, KDE StatusNotifier tooltip/menu/quit smoke evidence, documented GNOME untested path, read-only battery overview telemetry, and read-only EnvyControl GPU query.
 - Rust toolchain: pinned stable in `rust-toolchain.toml`; local stable installed because GTK stack requires rustc 1.92+.
 
 ## Implemented
