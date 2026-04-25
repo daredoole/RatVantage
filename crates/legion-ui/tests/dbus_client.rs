@@ -2,7 +2,10 @@ use std::process::Command;
 
 use legion_common::{Capability, CapabilityStatus, HardwareSummary, RiskLevel};
 use legion_control_daemon::{LegionControl, DBUS_INTERFACE, DBUS_PATH};
-use legion_control_ui::{render_overview_lines, LegionControlClient, UiStatus};
+use legion_control_ui::{
+    render_diagnostics_json, render_overview_lines, DiagnosticsBundle, LegionControlClient,
+    UiStatus,
+};
 use legion_probe::ProbeOptions;
 use ratvantage_test_support::{fixture_root, PrivateBus};
 use zbus::blocking::ConnectionBuilder;
@@ -89,6 +92,31 @@ fn client_reads_daemon_contract_over_private_bus() {
             "battery_status=Charging",
             "battery_health=Good",
         ]
+    );
+
+    let bundle = DiagnosticsBundle::from_report(raw.clone(), Some("test-kernel".to_owned()));
+    assert_eq!(bundle.hardware, hardware);
+    assert_eq!(bundle.kernel_version.as_deref(), Some("test-kernel"));
+    assert!(bundle
+        .detected_sysfs_paths
+        .iter()
+        .any(|path| path == &raw.hardware.sysfs_root));
+    assert!(bundle
+        .detected_sysfs_paths
+        .iter()
+        .any(|path| path.ends_with("sys/firmware/acpi/platform_profile")));
+    assert!(bundle
+        .detected_sysfs_paths
+        .iter()
+        .any(|path| path.ends_with("sys/class/power_supply/BAT0")));
+
+    let json: serde_json::Value =
+        serde_json::from_str(&render_diagnostics_json(&bundle).unwrap()).unwrap();
+    assert_eq!(json["kernel_version"], "test-kernel");
+    assert_eq!(json["hardware"]["product_name"], "82WM");
+    assert_eq!(
+        json["raw_probe_report"]["platform_profile"]["current"],
+        "balanced"
     );
 
     let refreshed = client.refresh_capabilities().unwrap();
@@ -195,6 +223,34 @@ fn overview_cli_prints_read_only_mvp_summary() {
             "battery_health=Good\n",
         )
     );
+}
+
+#[test]
+fn diagnostics_cli_prints_read_only_debug_bundle_json() {
+    let (_bus, _service_connection, address) = fixture_service();
+    let output = Command::new(env!("CARGO_BIN_EXE_legion-control-ui"))
+        .args(["--diagnostics", "--bus-address", &address])
+        .output()
+        .unwrap();
+
+    assert!(output.status.success());
+    assert!(output.stderr.is_empty());
+
+    let json: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(json["hardware"]["vendor"], "LENOVO");
+    assert_eq!(json["hardware"]["product_name"], "82WM");
+    assert_eq!(
+        json["raw_probe_report"]["battery_charge_type"]["current"],
+        "Standard"
+    );
+    assert!(json["detected_sysfs_paths"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|path| path
+            .as_str()
+            .unwrap()
+            .ends_with("sys/firmware/acpi/platform_profile")));
 }
 
 #[test]

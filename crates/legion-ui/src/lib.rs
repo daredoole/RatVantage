@@ -1,8 +1,10 @@
+use std::process::Command;
+
 use anyhow::Result;
 use legion_common::{
     Capability, CapabilityRegistry, CapabilityStatus, HardwareSummary, RiskLevel, TelemetrySnapshot,
 };
-use serde::de::DeserializeOwned;
+use serde::{de::DeserializeOwned, Serialize};
 use zbus::blocking::{Connection, ConnectionBuilder, Proxy};
 
 #[cfg(feature = "gtk-ui")]
@@ -35,6 +37,25 @@ pub struct UiCapabilityStatus {
     pub label: String,
     pub status: CapabilityStatus,
     pub risk: RiskLevel,
+}
+
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+pub struct DiagnosticsBundle {
+    pub hardware: HardwareSummary,
+    pub kernel_version: Option<String>,
+    pub detected_sysfs_paths: Vec<String>,
+    pub raw_probe_report: CapabilityRegistry,
+}
+
+impl DiagnosticsBundle {
+    pub fn from_report(report: CapabilityRegistry, kernel_version: Option<String>) -> Self {
+        Self {
+            hardware: report.hardware.clone(),
+            kernel_version,
+            detected_sysfs_paths: detected_sysfs_paths(&report),
+            raw_probe_report: report,
+        }
+    }
 }
 
 impl UiStatus {
@@ -181,6 +202,74 @@ fn render_sensor_values(sensors: &[legion_common::HwmonSensor], kind: &str) -> S
     }
 }
 
+pub fn render_diagnostics_json(bundle: &DiagnosticsBundle) -> Result<String> {
+    Ok(serde_json::to_string_pretty(bundle)?)
+}
+
+fn detected_sysfs_paths(report: &CapabilityRegistry) -> Vec<String> {
+    let mut paths = Vec::new();
+    push_path(&mut paths, &report.hardware.sysfs_root);
+
+    if let Some(profile) = &report.platform_profile {
+        push_path(&mut paths, &profile.path);
+    }
+    if let Some(charge_type) = &report.battery_charge_type {
+        push_path(&mut paths, &charge_type.path);
+    }
+    for sensor in &report.hwmon_sensors {
+        push_path(&mut paths, &sensor.input_path);
+    }
+    for curve in &report.fan_curves {
+        if let Some(path) = &curve.path {
+            push_path(&mut paths, path);
+        }
+        for point_path in &curve.point_paths {
+            push_path(&mut paths, point_path);
+        }
+    }
+    for led in &report.leds {
+        push_path(&mut paths, &led.path);
+    }
+    for attribute in &report.firmware_attributes {
+        push_path(&mut paths, &attribute.path);
+    }
+    for toggle in &report.ideapad_toggles {
+        if let Some(path) = &toggle.path {
+            push_path(&mut paths, path);
+        }
+    }
+    for sensor in &report.telemetry.sensors {
+        push_path(&mut paths, &sensor.input_path);
+    }
+    if let Some(battery) = &report.telemetry.battery {
+        push_path(&mut paths, &battery.path);
+    }
+
+    paths.sort();
+    paths.dedup();
+    paths
+}
+
+fn push_path(paths: &mut Vec<String>, path: &str) {
+    if !path.is_empty() {
+        paths.push(path.to_owned());
+    }
+}
+
+fn kernel_version() -> Option<String> {
+    let output = Command::new("uname").arg("-r").output().ok()?;
+    if !output.status.success() {
+        return None;
+    }
+    let version = String::from_utf8(output.stdout).ok()?;
+    let version = version.trim();
+    if version.is_empty() {
+        None
+    } else {
+        Some(version.to_owned())
+    }
+}
+
 impl LegionControlClient {
     pub fn system() -> Result<Self> {
         Ok(Self {
@@ -212,6 +301,13 @@ impl LegionControlClient {
 
     pub fn raw_probe_report(&self) -> Result<CapabilityRegistry> {
         self.call_json("GetRawProbeReport")
+    }
+
+    pub fn diagnostics_bundle(&self) -> Result<DiagnosticsBundle> {
+        Ok(DiagnosticsBundle::from_report(
+            self.raw_probe_report()?,
+            kernel_version(),
+        ))
     }
 
     pub fn status(&self) -> Result<UiStatus> {

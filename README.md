@@ -13,7 +13,7 @@ Pre-alpha implementation scaffold exists:
 - Rust workspace with shared models, read-only probe, read-only daemon, UI client, and test support crates.
 - Probe fixture coverage for confirmed and runtime-captured 82WM-style sysfs paths.
 - Private D-Bus contract tests for read-only daemon methods.
-- UI `--status` model and optional GTK4/libadwaita shell behind `gtk-ui`.
+- UI `--status`, `--overview`, and `--diagnostics` commands plus optional GTK4/libadwaita shell behind `gtk-ui`.
 - Read-only tray/status helper scaffold.
 - Disabled tray autostart packaging placeholder.
 - Runtime-captured 82WM fixture coverage, including bracketed battery `charge_types` current-value parsing.
@@ -75,6 +75,7 @@ cargo run -p legion-control-daemon -- --dry-run
 cargo run -p legion-control-daemon -- --session --sysfs-root tests/fixtures/sysfs-82wm-confirmed
 cargo run -p legion-control-ui -- --status --bus-address <dbus-address>
 cargo run -p legion-control-ui -- --overview --bus-address <dbus-address>
+cargo run -p legion-control-ui -- --diagnostics --bus-address <dbus-address>
 cargo run -p legion-control-tray -- --status --bus-address <dbus-address>
 cargo run -p legion-control-tray -- --tooltip --bus-address <dbus-address>
 cargo run -p legion-control-ui --features gtk-ui
@@ -92,7 +93,7 @@ Completed scaffold:
 
 - Read-only probe and capability model.
 - Read-only daemon D-Bus methods.
-- UI status client and optional GTK shell.
+- UI status, overview, diagnostics clients, and optional GTK shell.
 - Read-only tray/status helper scaffold.
 - Read-only StatusNotifier tray backend with disabled write actions.
 - Disabled tray autostart packaging placeholder.
@@ -104,6 +105,7 @@ Completed scaffold:
 - Pure platform profile and battery charge type validators.
 - Pure dry-run planning for future platform profile and battery charge type writes.
 - Non-D-Bus daemon planning adapters.
+- Read-only diagnostics JSON bundle with hardware summary, kernel version, detected sysfs paths, and raw probe report.
 - Fixture, private-bus, unit, and contract tests.
 - Local and GitHub CI.
 

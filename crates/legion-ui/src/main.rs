@@ -2,7 +2,10 @@ use anyhow::Result;
 use clap::Parser;
 #[cfg(not(feature = "gtk-ui"))]
 use legion_control_ui::DBUS_INTERFACE;
-use legion_control_ui::{render_overview_lines, LegionControlClient, UiStatus};
+use legion_control_ui::{
+    render_diagnostics_json, render_overview_lines, DiagnosticsBundle, LegionControlClient,
+    UiStatus,
+};
 
 #[derive(Debug, Parser)]
 struct Args {
@@ -13,18 +16,23 @@ struct Args {
     overview: bool,
 
     #[arg(long)]
+    diagnostics: bool,
+
+    #[arg(long)]
     bus_address: Option<String>,
 }
 
 fn main() -> Result<()> {
     let args = Args::parse();
 
-    if args.status || args.overview {
+    if args.status || args.overview || args.diagnostics {
         let client = match args.bus_address {
             Some(address) => LegionControlClient::address(&address)?,
             None => LegionControlClient::system()?,
         };
-        if args.overview {
+        if args.diagnostics {
+            print_diagnostics(&client.diagnostics_bundle()?)?;
+        } else if args.overview {
             print_overview(&client.raw_probe_report()?);
         } else {
             print_status(&client.status()?);
@@ -57,4 +65,9 @@ fn print_overview(report: &legion_common::CapabilityRegistry) {
     for line in render_overview_lines(report) {
         println!("{line}");
     }
+}
+
+fn print_diagnostics(bundle: &DiagnosticsBundle) -> Result<()> {
+    println!("{}", render_diagnostics_json(bundle)?);
+    Ok(())
 }
