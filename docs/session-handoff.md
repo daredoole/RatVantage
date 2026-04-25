@@ -5,6 +5,7 @@
 - Repository: `https://github.com/daredoole/RatVantage`
 - Visibility: private for now.
 - Branch: `main`
+- Latest pushed docs correction: `31d4fed` (`Clarify current and target repo layout`).
 - Latest known milestone: read-only pre-alpha scaffold.
 - Rust toolchain: pinned stable in `rust-toolchain.toml`; local stable installed because GTK stack requires rustc 1.92+.
 
@@ -21,6 +22,9 @@
 - UI `--status` command and optional GTK4/libadwaita shell behind `gtk-ui`.
 - Private-bus contract tests and shared test support.
 - Local CI and GitHub CI.
+- `docs/implementation-plan.md` intentionally has both layouts:
+  - `Current scaffold` shows what exists today.
+  - `Target layout` preserves the fuller planned architecture with `data/`, `packaging/`, `xtask/`, presets, desktop metadata, and tray work.
 
 ## Commands
 
@@ -42,6 +46,14 @@ Do not turn GitHub CI off completely yet. Use local CI before pushing, then keep
 2. Add packaging assets for Fedora/systemd/D-Bus/polkit/desktop/metainfo/RPM.
 3. Expand probe fixtures from real hardware reports.
 4. Draft but do not enable write-method contracts.
+
+## New session prompt
+
+Start with:
+
+```text
+Read AGENTS.md and docs/session-handoff.md first. Then inspect current git status and continue from the next task without changing safety constraints.
+```
 
 ## Safety constraints
 
