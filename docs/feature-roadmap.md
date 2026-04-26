@@ -6,9 +6,9 @@ Current pre-alpha code provides the safe read-only base:
 
 - Runtime probe for hardware summary, capabilities, telemetry, and raw probe report.
 - Root-capable daemon shape with read-only D-Bus APIs plus gated reversible execution for `SetPlatformProfile` and `SetBatteryChargeType`.
-- UI status client and optional GTK4/libadwaita shell with read-only Status, Profiles, Battery, Fans, Appearance, and Diagnostics tabs.
-- Read-only tray/status helper with a state-driven menu derived from detected profile choices, battery charge choices, packaged preset labels, and pending runtime state.
-- Read-only StatusNotifier tray backend with dashboard, refresh, quit, and `--menu-check` diagnostics for the runtime-derived menu.
+- UI status client and optional GTK4/libadwaita shell with Status, Profiles, Battery, Fans, Appearance, and Diagnostics tabs; the Profiles and Battery tabs now include gated quick-apply controls with inline execution feedback.
+- Tray/status helper with a state-driven menu derived from detected profile choices, battery charge choices, packaged preset labels, pending runtime state, and reversible quick actions for platform profile and battery charge type.
+- StatusNotifier tray backend with dashboard, refresh, quit, write action execution, and `--menu-check` diagnostics for the runtime-derived menu.
 - StatusNotifier dashboard launch forwards custom D-Bus addresses for private/session-bus workflows.
 - Tray tooltip reports platform profile, fan RPM, and available/missing capabilities.
 - Disabled tray autostart packaging placeholder.
@@ -47,7 +47,7 @@ Current pre-alpha code provides the safe read-only base:
 
 - Keep tray autostart disabled; GNOME AppIndicator extension path is still untested.
 - Collect more captured fixtures through the compatibility bundle workflow when additional supported Legion machines are available.
-- If no new hardware reports are available, continue with read-only UI/tray polish; KDE-specific smoke/reporting is now in place, while GNOME validation remains blocked.
+- If no new hardware reports are available, continue with write-path expansion for other low-risk controls plus tray/UI refresh and resume behavior; KDE-specific smoke/reporting is now in place, while GNOME validation remains blocked.
 - Keep progress docs current after each completed roadmap slice.
 - Keep GitHub CI as remote guard; run `./scripts/ci-local.sh` before pushing to reduce failed CI minutes.
 
@@ -79,7 +79,7 @@ Goal: safe, useful daily controls using only confirmed interfaces and conservati
 ### Profiles
 
 - Show exact values from `/sys/firmware/acpi/platform_profile_choices`. [implemented as read-only GTK page]
-- Surface detected profile choices in the tray menu without enabling writes. [implemented]
+- Surface detected profile choices in the tray menu and expose gated quick actions. [implemented]
 - Allow gated platform-profile execution with read-back and rollback. [implemented in daemon/UI CLI, disabled by default unless the daemon write flag is enabled]
 - Allow setting only listed profiles.
 - Do not expose `custom` or `max-power` unless listed.
@@ -88,7 +88,7 @@ Goal: safe, useful daily controls using only confirmed interfaces and conservati
 ### Battery
 
 - Show `Fast`, `Standard`, `Long_Life` from `/sys/class/power_supply/BAT0/charge_types`. [implemented as read-only GTK page]
-- Surface current charge type, detected charge choices, and battery telemetry in the tray menu without enabling writes. [implemented]
+- Surface current charge type, detected charge choices, battery telemetry, and gated quick actions in the tray menu. [implemented]
 - Allow gated battery charge type execution with read-back and rollback. [implemented in daemon/UI CLI, disabled by default unless the daemon write flag is enabled]
 - Allow setting exact charge type values.
 - Show explanatory labels without claiming exact thresholds.

@@ -4,7 +4,10 @@ use crate::{
 };
 use adw::prelude::*;
 use anyhow::{anyhow, Result};
-use legion_common::{FanCurveSnapshot, GpuModePending};
+use legion_common::{
+    BatteryChargeTypeCapability, FanCurveSnapshot, GpuModePending, PlatformProfileCapability,
+    WriteExecutionResult, WriteExecutionStatus,
+};
 
 pub fn run() -> Result<()> {
     let app = adw::Application::builder()
@@ -245,6 +248,13 @@ fn append_profiles(page: &gtk4::Box, bundle: &DiagnosticsBundle) {
         group.add(&info_row("Platform profile", "unavailable"));
     }
     page.append(&group);
+
+    let controls =
+        build_platform_profile_controls(bundle.raw_probe_report.platform_profile.as_ref());
+    page.append(&controls);
+
+    let feedback = build_write_feedback_group("Platform profile");
+    page.append(&feedback);
 }
 
 fn append_battery(page: &gtk4::Box, bundle: &DiagnosticsBundle) {
@@ -276,6 +286,13 @@ fn append_battery(page: &gtk4::Box, bundle: &DiagnosticsBundle) {
         charge_type.add(&info_row("Charge type", "unavailable"));
     }
     page.append(&charge_type);
+
+    let controls =
+        build_battery_charge_type_controls(bundle.raw_probe_report.battery_charge_type.as_ref());
+    page.append(&controls);
+
+    let feedback = build_write_feedback_group("Battery charge type");
+    page.append(&feedback);
 
     let telemetry = adw::PreferencesGroup::new();
     telemetry.set_title("Telemetry");
@@ -532,4 +549,165 @@ fn info_row(title: &str, value: &str) -> adw::ActionRow {
         .subtitle(value)
         .selectable(false)
         .build()
+}
+
+fn build_platform_profile_controls(
+    capability: Option<&PlatformProfileCapability>,
+) -> adw::PreferencesGroup {
+    build_write_controls(
+        "Platform profile quick apply",
+        capability.map(|capability| capability.current.as_deref().unwrap_or("unknown")),
+        capability.map(|capability| capability.choices.as_slice()),
+        "Requested profile",
+        "Apply profile",
+        "Platform profile",
+        |requested| {
+            LegionControlClient::system().and_then(|client| client.set_platform_profile(requested))
+        },
+    )
+}
+
+fn build_battery_charge_type_controls(
+    capability: Option<&BatteryChargeTypeCapability>,
+) -> adw::PreferencesGroup {
+    build_write_controls(
+        "Battery charge type quick apply",
+        capability.map(|capability| capability.current.as_deref().unwrap_or("unknown")),
+        capability.map(|capability| capability.choices.as_slice()),
+        "Requested charge type",
+        "Apply charge type",
+        "Battery charge type",
+        |requested| {
+            LegionControlClient::system()
+                .and_then(|client| client.set_battery_charge_type(requested))
+        },
+    )
+}
+
+fn build_write_controls<F>(
+    title: &str,
+    current: Option<&str>,
+    choices: Option<&[String]>,
+    chooser_title: &str,
+    button_label: &str,
+    capability_label: &str,
+    execute: F,
+) -> adw::PreferencesGroup
+where
+    F: Fn(&str) -> Result<WriteExecutionResult> + 'static,
+{
+    let group = adw::PreferencesGroup::new();
+    group.set_title(title);
+
+    let Some(choices) = choices else {
+        group.add(&info_row(
+            capability_label,
+            "unavailable - quick apply disabled",
+        ));
+        return group;
+    };
+
+    let can_apply = !choices.is_empty();
+    let choice_refs = choices.iter().map(String::as_str).collect::<Vec<_>>();
+    let model = gtk4::StringList::new(&choice_refs);
+    let selected_index = current
+        .and_then(|current| choices.iter().position(|choice| choice == current))
+        .unwrap_or(0) as u32;
+
+    let chooser = gtk4::DropDown::builder().model(&model).build();
+    chooser.set_hexpand(true);
+    chooser.set_selected(selected_index);
+    chooser.set_sensitive(can_apply);
+
+    let apply = gtk4::Button::with_label(button_label);
+    apply.set_sensitive(can_apply);
+
+    let row = adw::ActionRow::builder()
+        .title(chooser_title)
+        .subtitle(if can_apply {
+            "Choose a detected runtime value to request from the daemon."
+        } else {
+            "No detected runtime values are available."
+        })
+        .selectable(false)
+        .build();
+    row.add_suffix(&chooser);
+    row.add_suffix(&apply);
+    group.add(&row);
+
+    let feedback_row = write_feedback_row(None);
+    group.add(&feedback_row);
+
+    let feedback_row_for_click = feedback_row.clone();
+    apply.connect_clicked(move |_| {
+        let Some(selected) = chooser
+            .selected_item()
+            .and_then(|item| item.downcast::<gtk4::StringObject>().ok())
+        else {
+            feedback_row_for_click.set_title("Apply result");
+            feedback_row_for_click.set_subtitle("Failed - no selected value was available.");
+            return;
+        };
+
+        let requested = selected.string().to_string();
+        feedback_row_for_click.set_title("Apply result");
+        feedback_row_for_click.set_subtitle("Applying write request...");
+
+        match execute(&requested) {
+            Ok(result) => {
+                feedback_row_for_click.set_title(write_feedback_title(Some(&result)));
+                feedback_row_for_click.set_subtitle(&write_feedback_subtitle(Some(&result)));
+            }
+            Err(error) => {
+                feedback_row_for_click.set_title("Apply error");
+                feedback_row_for_click.set_subtitle(&format!(
+                    "Failed - daemon call could not be completed: {error}"
+                ));
+            }
+        }
+    });
+
+    group
+}
+
+fn build_write_feedback_group(capability_label: &str) -> adw::PreferencesGroup {
+    let group = adw::PreferencesGroup::new();
+    group.set_title("Write feedback");
+    group.add(&info_row(
+        capability_label,
+        "Quick apply uses polkit-gated daemon writes and reports the last result inline.",
+    ));
+    group
+}
+
+fn write_feedback_row(result: Option<&WriteExecutionResult>) -> adw::ActionRow {
+    adw::ActionRow::builder()
+        .title(write_feedback_title(result))
+        .subtitle(write_feedback_subtitle(result))
+        .selectable(false)
+        .build()
+}
+
+pub fn write_feedback_title(result: Option<&WriteExecutionResult>) -> &'static str {
+    match result.map(|result| result.status) {
+        None => "Apply result",
+        Some(WriteExecutionStatus::Applied) => "Apply succeeded",
+        Some(WriteExecutionStatus::BlockedByPolicy) => "Apply blocked by policy",
+        Some(WriteExecutionStatus::BlockedByAuthorization) => "Apply blocked by authorization",
+        Some(WriteExecutionStatus::Failed) => "Apply failed",
+    }
+}
+
+pub fn write_feedback_subtitle(result: Option<&WriteExecutionResult>) -> String {
+    match result {
+        None => "No write attempted yet.".to_owned(),
+        Some(result) => {
+            let readback = result
+                .readback_value
+                .as_deref()
+                .map(|value| format!(" Read-back: {value}."))
+                .unwrap_or_default();
+            format!("{}{}", result.message, readback)
+        }
+    }
 }

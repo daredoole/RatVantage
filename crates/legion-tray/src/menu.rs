@@ -8,21 +8,27 @@ const PACKAGED_FAN_PRESETS: &[&str] = &[
     include_str!("../../../data/presets/max-safe.toml"),
 ];
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum TrayAction {
     NoOp,
+    SetPlatformProfile(String),
+    SetBatteryChargeType(String),
     OpenDashboard,
     RefreshStatus,
     Quit,
 }
 
 impl TrayAction {
-    fn as_str(self) -> &'static str {
+    fn as_str(&self) -> String {
         match self {
-            Self::NoOp => "noop",
-            Self::OpenDashboard => "open_dashboard",
-            Self::RefreshStatus => "refresh_status",
-            Self::Quit => "quit",
+            Self::NoOp => "noop".to_owned(),
+            Self::SetPlatformProfile(profile) => format!("set_platform_profile:{profile}"),
+            Self::SetBatteryChargeType(charge_type) => {
+                format!("set_battery_charge_type:{charge_type}")
+            }
+            Self::OpenDashboard => "open_dashboard".to_owned(),
+            Self::RefreshStatus => "refresh_status".to_owned(),
+            Self::Quit => "quit".to_owned(),
         }
     }
 }
@@ -129,6 +135,7 @@ impl TrayMenu {
             ))));
         }
 
+        append_quick_actions(&mut entries, report);
         entries.push(TrayMenuEntry::Separator);
         entries.push(TrayMenuEntry::Item(action_item(
             "Open dashboard",
@@ -160,9 +167,9 @@ impl TrayMenu {
     }
 }
 
-fn action_item(label: &str, action: TrayAction) -> TrayMenuItem {
+fn action_item(label: impl Into<String>, action: TrayAction) -> TrayMenuItem {
     TrayMenuItem {
-        label: label.to_owned(),
+        label: label.into(),
         action,
         enabled: true,
     }
@@ -214,6 +221,77 @@ fn battery_row(report: &CapabilityRegistry) -> Option<String> {
     } else {
         Some(format!("Battery: {}", parts.join(" / ")))
     }
+}
+
+fn append_quick_actions(entries: &mut Vec<TrayMenuEntry>, report: &CapabilityRegistry) {
+    let mut sections = Vec::new();
+
+    if let Some(section) = quick_action_section(
+        "Platform profile actions",
+        "Set platform profile",
+        report
+            .platform_profile
+            .as_ref()
+            .map(|profile| profile.current.as_deref()),
+        report
+            .platform_profile
+            .as_ref()
+            .map(|profile| profile.choices.as_slice()),
+        |choice| TrayAction::SetPlatformProfile(choice.to_owned()),
+    ) {
+        sections.extend(section);
+    }
+
+    if let Some(section) = quick_action_section(
+        "Battery charge type actions",
+        "Set battery charge type",
+        report
+            .battery_charge_type
+            .as_ref()
+            .map(|charge_type| charge_type.current.as_deref()),
+        report
+            .battery_charge_type
+            .as_ref()
+            .map(|charge_type| charge_type.choices.as_slice()),
+        |choice| TrayAction::SetBatteryChargeType(choice.to_owned()),
+    ) {
+        sections.extend(section);
+    }
+
+    if !sections.is_empty() {
+        entries.push(TrayMenuEntry::Separator);
+        entries.extend(sections);
+    }
+}
+
+fn quick_action_section<F>(
+    header: &str,
+    action_prefix: &str,
+    current: Option<Option<&str>>,
+    choices: Option<&[String]>,
+    action: F,
+) -> Option<Vec<TrayMenuEntry>>
+where
+    F: Fn(&str) -> TrayAction,
+{
+    let choices = choices?;
+    let current = current.flatten();
+    let actionable = choices
+        .iter()
+        .filter(|choice| Some(choice.as_str()) != current)
+        .collect::<Vec<_>>();
+    if actionable.is_empty() {
+        return None;
+    }
+
+    let mut entries = vec![TrayMenuEntry::Item(info_item(header.to_owned()))];
+    for choice in actionable {
+        entries.push(TrayMenuEntry::Item(action_item(
+            format!("{action_prefix}: {choice}"),
+            action(choice),
+        )));
+    }
+    Some(entries)
 }
 
 fn fan_rows(sensors: &[HwmonSensor]) -> Vec<String> {
@@ -372,18 +450,22 @@ mod tests {
                 "Fan presets: Quiet office, Balanced daily, Gaming, Max safe",
                 "Capabilities: 2 available, 1 missing",
                 "Missing: gpu",
+                "Platform profile actions",
+                "Battery charge type actions",
             ]
         );
         assert_eq!(
             enabled_labels(&menu),
-            ["Open dashboard", "Refresh status", "Quit"]
+            [
+                "Set platform profile: low-power",
+                "Set platform profile: performance",
+                "Set battery charge type: Conservation",
+                "Set battery charge type: Fast",
+                "Open dashboard",
+                "Refresh status",
+                "Quit",
+            ]
         );
-        assert!(!menu_labels(&menu)
-            .iter()
-            .any(|label| label.starts_with("Set platform profile")));
-        assert!(!menu_labels(&menu)
-            .iter()
-            .any(|label| label.starts_with("Set battery charge type:")));
         assert!(!menu_labels(&menu)
             .iter()
             .any(|label| label.starts_with("Apply preset:")));
@@ -432,6 +514,64 @@ mod tests {
             .any(|label| label.starts_with("Saved fan curve:")));
     }
 
+    #[test]
+    fn menu_builder_omits_quick_action_sections_when_choices_are_missing_or_singleton() {
+        let status = UiStatus::from_parts(
+            HardwareSummary {
+                sysfs_root: "/tmp/fixture".to_owned(),
+                vendor: Some("LENOVO".to_owned()),
+                product_name: Some("82WM".to_owned()),
+                product_version: Some("Legion Pro 5 16ARX8".to_owned()),
+                product_sku: None,
+            },
+            vec![
+                capability("platform_profile", CapabilityStatus::ProbeOnly),
+                capability("battery_charge_type", CapabilityStatus::ProbeOnly),
+            ],
+        )
+        .unwrap();
+        let report = CapabilityRegistry {
+            platform_profile: Some(PlatformProfileCapability {
+                current: Some("balanced".to_owned()),
+                choices: vec!["balanced".to_owned()],
+                path: "/tmp/platform_profile".to_owned(),
+                choices_path: "/tmp/platform_profile_choices".to_owned(),
+            }),
+            battery_charge_type: Some(BatteryChargeTypeCapability {
+                current: Some("Standard".to_owned()),
+                choices: vec!["Standard".to_owned()],
+                path: "/tmp/charge_type".to_owned(),
+                choices_path: "/tmp/charge_types".to_owned(),
+            }),
+            ..Default::default()
+        };
+
+        let menu = TrayMenu::from_status_and_report(&status, &report, None, None);
+
+        assert!(!menu_labels(&menu)
+            .iter()
+            .any(|label| label == &"Platform profile actions"));
+        assert!(!menu_labels(&menu)
+            .iter()
+            .any(|label| label == &"Battery charge type actions"));
+        assert!(!enabled_labels(&menu)
+            .iter()
+            .any(|label| label.starts_with("Set platform profile:")));
+        assert!(!enabled_labels(&menu)
+            .iter()
+            .any(|label| label.starts_with("Set battery charge type:")));
+    }
+
+    #[test]
+    fn menu_builder_keeps_dashboard_refresh_quit_after_quick_action_sections() {
+        let menu = menu_builder_fixture();
+        let enabled = enabled_labels(&menu);
+        assert_eq!(
+            &enabled[enabled.len().saturating_sub(3)..],
+            ["Open dashboard", "Refresh status", "Quit"]
+        );
+    }
+
     fn capability(id: &str, status: CapabilityStatus) -> Capability {
         Capability {
             id: id.to_owned(),
@@ -441,6 +581,48 @@ mod tests {
             evidence: Vec::new(),
             details: serde_json::Value::Null,
         }
+    }
+
+    fn menu_builder_fixture() -> TrayMenu {
+        let status = UiStatus::from_parts(
+            HardwareSummary {
+                sysfs_root: "/tmp/fixture".to_owned(),
+                vendor: Some("LENOVO".to_owned()),
+                product_name: Some("82WM".to_owned()),
+                product_version: Some("Legion Pro 5 16ARX8".to_owned()),
+                product_sku: None,
+            },
+            vec![
+                capability("platform_profile", CapabilityStatus::ProbeOnly),
+                capability("battery_charge_type", CapabilityStatus::ProbeOnly),
+            ],
+        )
+        .unwrap();
+        let report = CapabilityRegistry {
+            platform_profile: Some(PlatformProfileCapability {
+                current: Some("balanced".to_owned()),
+                choices: vec![
+                    "low-power".to_owned(),
+                    "balanced".to_owned(),
+                    "performance".to_owned(),
+                ],
+                path: "/tmp/platform_profile".to_owned(),
+                choices_path: "/tmp/platform_profile_choices".to_owned(),
+            }),
+            battery_charge_type: Some(BatteryChargeTypeCapability {
+                current: Some("Standard".to_owned()),
+                choices: vec![
+                    "Standard".to_owned(),
+                    "Conservation".to_owned(),
+                    "Fast".to_owned(),
+                ],
+                path: "/tmp/charge_type".to_owned(),
+                choices_path: "/tmp/charge_types".to_owned(),
+            }),
+            ..Default::default()
+        };
+
+        TrayMenu::from_status_and_report(&status, &report, None, None)
     }
 
     fn disabled_labels(menu: &TrayMenu) -> Vec<&str> {

@@ -13,13 +13,13 @@ Pre-alpha implementation scaffold exists:
 - Rust workspace with shared models, read-only probe, read-only daemon, UI client, and test support crates.
 - Probe fixture coverage for confirmed and runtime-captured 82WM-style sysfs paths.
 - Private D-Bus contract tests for read-only daemon methods.
-- UI `--status`, `--overview`, and `--diagnostics` commands plus optional GTK4/libadwaita shell with read-only Status, Profiles, Battery, Fans, Appearance, and Diagnostics tabs behind `gtk-ui`.
-- Read-only tray/status helper with a state-driven menu derived from detected profile choices, battery charge choices, packaged fan presets, and pending runtime state.
+- UI `--status`, `--overview`, and `--diagnostics` commands plus optional GTK4/libadwaita shell with Status, Profiles, Battery, Fans, Appearance, and Diagnostics tabs behind `gtk-ui`; the Profiles and Battery tabs now expose gated quick-apply controls with inline execution feedback.
+- Tray/status helper with a state-driven menu derived from detected profile choices, battery charge choices, packaged fan presets, pending runtime state, and gated quick actions for reversible profile and charge-type writes.
 - Tray dashboard launch forwards custom D-Bus addresses for private/session-bus smoke workflows.
 - Tray status separates available and missing capabilities in tooltips.
 - KDE StatusNotifier smoke can emit a reusable report bundle with environment, watcher, and tray summary data.
 - `legion-control-tray --desktop-check` reports desktop/session state, watcher availability, and autostart gating for read-only tray diagnostics.
-- `legion-control-tray --menu-check` prints the same derived tray menu so private-bus tests and smoke bundles can verify the exact runtime menu content.
+- `legion-control-tray --menu-check` prints the same derived tray menu, including quick-action entries, so private-bus tests and smoke bundles can verify the exact runtime menu content.
 - UI status output includes per-capability status and risk labels.
 - Disabled tray autostart packaging placeholder.
 - Runtime-captured 82WM fixture coverage, including bracketed battery `charge_types` current-value parsing.
@@ -37,7 +37,7 @@ Pre-alpha implementation scaffold exists:
 - GPU dry-run plans include reboot-required metadata and rollback guidance; execution remains disabled.
 - App-state-only GPU pending-reboot tracking in `/var/lib/legion-control/state.toml`; no hardware writes are performed.
 - App-state-only last-known-good fan curve capture in the same TOML state file; no fan writes are performed.
-- Tray/status output and GTK read-only pages surface pending GPU reboot state and saved fan curve snapshots.
+- Tray/status output and GTK pages surface pending GPU reboot state and saved fan curve snapshots.
 - Read-only diagnostics/export surfaces now include the same durable app-state fields, including `gpu_mode_pending` and `last_known_good_fan_curve`.
 - Local CI script and GitHub Actions CI.
 

@@ -7,13 +7,13 @@
 - Branch: `main`
 - Worktree at handoff: intended to be clean after the latest local tray menu diagnostics commit; run `git status --short --branch` and `git log --oneline -1` for the exact state before continuing.
 - Global Codex config: GitHub MCP is disabled, not removed, in `/home/darrian/.codex/config.toml`. New sessions should not rely on GitHub MCP unless the user explicitly re-enables it.
-- Latest local commits: run `git log --oneline -5` before continuing. Recent work includes diagnostics/export parity, compatibility bundle intake, KDE smoke report bundles, tray desktop diagnostics, and the runtime-derived tray menu plus `--menu-check`.
-- Latest known milestone: read-only pre-alpha scaffold with GTK smoke coverage, hardened packaging metadata, disabled write planning, runtime/current 82WM fixture and validation evidence, diagnostics log excerpts and compact summary counts, packaged fan preset assets with dry-run planning, fan restore/default dry-run planning, app-state-only GPU pending-reboot tracking, app-state-only last-known-good fan curve capture, overview/tray/GTK state visibility, diagnostics/export parity for `gpu_mode_pending` and `last_known_good_fan_curve`, read-only StatusNotifier tray backend, tray dashboard bus-address forwarding, tray tooltip profile/fan/count details, runtime-derived tray menu rows for detected profile/charge choices plus packaged presets and pending state, GNOME tray extension guidance, KDE StatusNotifier tooltip/menu/quit smoke evidence, report-capable KDE tray smoke bundles under `target/smoke/`, read-only tray desktop diagnostics via `legion-control-tray --desktop-check`, read-only tray menu diagnostics via `legion-control-tray --menu-check`, documented GNOME untested path, read-only battery overview telemetry, read-only EnvyControl GPU query, UI status/overview/diagnostics/dry-run output with LED brightness and firmware toggle values, GPU dry-run planning with reboot-required messaging and rollback guidance, gated platform-profile and battery charge type execution paths with `pkcheck` authorization and rollback tests, diagnostics choice-source paths, per-capability status labels, GTK read-only Status, Profiles, Battery, Fans, Appearance, and Diagnostics tabs, and a compatibility bundle/PR intake workflow for outside Legion hardware submissions.
+- Latest local commits: run `git log --oneline -5` before continuing. Recent work includes diagnostics/export parity, compatibility bundle intake, KDE smoke report bundles, tray desktop diagnostics, the runtime-derived tray menu plus `--menu-check`, caller-aware reversible platform/battery writes, and GTK/tray quick actions.
+- Latest known milestone: pre-alpha scaffold with GTK smoke coverage, hardened packaging metadata, disabled high-risk write planning, runtime/current 82WM fixture and validation evidence, diagnostics log excerpts and compact summary counts, packaged fan preset assets with dry-run planning, fan restore/default dry-run planning, app-state-only GPU pending-reboot tracking, app-state-only last-known-good fan curve capture, overview/tray/GTK state visibility, diagnostics/export parity for `gpu_mode_pending` and `last_known_good_fan_curve`, StatusNotifier tray backend, tray dashboard bus-address forwarding, tray tooltip profile/fan/count details, runtime-derived tray menu rows for detected profile/charge choices plus packaged presets and pending state, GTK Profile/Battery quick-apply controls with inline feedback, tray quick actions for reversible profile and charge-type writes, GNOME tray extension guidance, KDE StatusNotifier tooltip/menu/quit smoke evidence, report-capable KDE tray smoke bundles under `target/smoke/`, tray desktop diagnostics via `legion-control-tray --desktop-check`, tray menu diagnostics via `legion-control-tray --menu-check`, documented GNOME untested path, read-only battery overview telemetry, read-only EnvyControl GPU query, UI status/overview/diagnostics/dry-run output with LED brightness and firmware toggle values, GPU dry-run planning with reboot-required messaging and rollback guidance, gated platform-profile and battery charge type execution paths with `pkcheck` authorization and rollback tests, diagnostics choice-source paths, per-capability status labels, GTK Status, Profiles, Battery, Fans, Appearance, and Diagnostics tabs, and a compatibility bundle/PR intake workflow for outside Legion hardware submissions.
 - Rust toolchain: pinned stable in `rust-toolchain.toml`; local stable installed because GTK stack requires rustc 1.92+.
 
 ## Current task
 
-- Completed slice: wired real caller-aware `pkcheck` authorization for reversible writes and extended the execute/read-back/rollback pattern to battery charge type.
+- Completed slice: brought reversible platform-profile and battery charge type execution into GTK and tray quick actions with shared result feedback and test coverage.
 - The daemon now exposes:
   - `SetPlatformProfile`
   - `SetBatteryChargeType`
@@ -28,13 +28,15 @@
   - refreshes and reads back
   - restores the previous value if read-back does not match
 - Default behavior is still blocked unless the daemon is started with the explicit write-enable flags.
+- The GTK shell now exposes quick-apply controls in the Profiles and Battery tabs and renders idle/success/blocked/failed write feedback inline.
+- The StatusNotifier tray now exposes runtime-derived quick actions for non-current platform profile and battery charge type choices, then refreshes the menu after each attempted write.
 - Automated coverage exists in:
   - `crates/legion-daemon/src/lib.rs`
   - `crates/legion-daemon/tests/dbus_contract.rs`
   - `crates/legion-ui/src/main.rs`
   - `crates/legion-ui/tests/dbus_client.rs`
 - This still does not enable GPU, fan preset, or fan restore writes yet.
-- Next recommended task from the updated roadmap: bring the same execution result handling into GTK/tray quick actions, or extend the reversible write pattern to additional low-risk appearance/peripheral controls only after manual validation.
+- Next recommended task from the updated roadmap: extend the reversible write pattern to additional low-risk appearance/peripheral controls, then add tray/UI refresh and resume handling around the new write paths.
 
 ## Implemented
 
@@ -54,7 +56,7 @@
 - UI `--set-platform-profile` and `--set-battery-charge-type` commands for gated reversible execution results over D-Bus.
 - Platform profile and battery charge type models include both current-value paths and choice-list paths for diagnostics.
 - UI status output includes per-capability status and risk labels.
-- Optional GTK read-only Profiles and Battery tabs render the same diagnostics bundle data without write controls.
+- Optional GTK Profiles and Battery tabs render the diagnostics bundle data and expose gated quick-apply controls with inline write-result feedback.
 - Optional GTK read-only Fans tab renders fan telemetry, fan curve paths, and packaged preset IDs without write controls.
 - Optional GTK read-only Appearance tab renders LED brightness and firmware toggle values without write controls.
 - Optional GTK diagnostics tab for the same read-only hardware/debug bundle, with compact counts and Copy JSON parity for durable app-state fields.
@@ -73,9 +75,9 @@
   - `SetBatteryChargeType`
 - UI `--status`, `--plan-platform-profile`, `--set-platform-profile`, `--plan-battery-charge-type`, `--set-battery-charge-type`, `--plan-gpu-mode`, and `--plan-fan-preset` commands, plus optional GTK4/libadwaita shell behind `gtk-ui`.
 - Read-only `legion-control-tray --status` summary output.
-- Read-only `legion-control-tray --menu-check` diagnostics for the runtime-derived tray menu.
-- Read-only `legion-control-tray` StatusNotifier backend with dashboard, refresh, quit, and informational runtime menu rows.
-- Tray menu shows detected platform profile choices, battery charge choices, packaged fan preset labels, capability summaries, and pending app state without enabling writes.
+- `legion-control-tray --menu-check` diagnostics for the runtime-derived tray menu, including reversible quick-action entries.
+- `legion-control-tray` StatusNotifier backend with dashboard, refresh, quit, informational runtime menu rows, and reversible quick actions for platform profile and battery charge type.
+- Tray menu shows detected platform profile choices, battery charge choices, packaged fan preset labels, capability summaries, pending app state, and quick actions for non-current reversible choices.
 - StatusNotifier tray dashboard launch forwards `--bus-address` when the tray runs against a private/session bus.
 - Tray tooltip reports current platform profile, fan RPM, and available/missing capability counts.
 - StatusNotifier tray smoke script and manual checklist; autostart is still disabled.

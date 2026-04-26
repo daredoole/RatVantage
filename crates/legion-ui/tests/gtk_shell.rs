@@ -1,19 +1,22 @@
 #![cfg(feature = "gtk-ui")]
 
 use adw::prelude::*;
+use std::sync::Once;
+
 use legion_common::{
     BatteryChargeTypeCapability, BatteryTelemetry, Capability, CapabilityRegistry,
     CapabilityStatus, FanCurveCapability, FanCurvePointSnapshot, FanCurveSnapshot, GpuModePending,
     HardwareSummary, HwmonSensor, IdeapadToggleCapability, LedCapability,
-    PlatformProfileCapability, RiskLevel,
+    PlatformProfileCapability, RiskLevel, WriteDryRunPlan, WriteExecutionResult,
+    WriteExecutionStatus,
 };
 use legion_control_ui::{gtk_shell, DiagnosticsBundle, UiStatus};
 
-#[test]
+static GTK_INIT: Once = Once::new();
+
+#[gtk4::test]
 fn status_and_error_pages_build_under_headless_display() {
-    std::env::set_var("GSK_RENDERER", "cairo");
-    std::env::set_var("GTK_A11Y", "none");
-    adw::init().expect("GTK/libadwaita must initialize under Xvfb");
+    init_gtk();
 
     let page = gtk_shell::status_page(Ok(sample_status()), Ok(None));
     let page = page
@@ -92,7 +95,7 @@ fn status_and_error_pages_build_under_headless_display() {
 
     assert_eq!(page.orientation(), gtk4::Orientation::Vertical);
     assert_eq!(page.spacing(), 12);
-    assert_eq!(page.observe_children().n_items(), 2);
+    assert_eq!(page.observe_children().n_items(), 4);
 
     let page = gtk_shell::battery_page(Ok(sample_diagnostics()));
     let page = page
@@ -101,7 +104,7 @@ fn status_and_error_pages_build_under_headless_display() {
 
     assert_eq!(page.orientation(), gtk4::Orientation::Vertical);
     assert_eq!(page.spacing(), 12);
-    assert_eq!(page.observe_children().n_items(), 3);
+    assert_eq!(page.observe_children().n_items(), 5);
 
     let page = gtk_shell::dashboard_page(
         Ok(sample_status()),
@@ -163,6 +166,131 @@ fn status_and_error_pages_build_under_headless_display() {
 
     assert_eq!(page.orientation(), gtk4::Orientation::Vertical);
     assert_eq!(page.observe_children().n_items(), 2);
+}
+
+#[gtk4::test]
+fn profiles_and_battery_pages_render_quick_apply_controls() {
+    init_gtk();
+
+    let profiles = gtk_shell::profiles_page(Ok(sample_diagnostics()))
+        .downcast::<gtk4::Box>()
+        .expect("profiles page should be a vertical box");
+    let battery = gtk_shell::battery_page(Ok(sample_diagnostics()))
+        .downcast::<gtk4::Box>()
+        .expect("battery page should be a vertical box");
+
+    let profile_text = collect_widget_text(&profiles.clone().upcast());
+    assert!(profile_text
+        .iter()
+        .any(|text| text == "Platform profile quick apply"));
+    assert!(profile_text.iter().any(|text| text == "Requested profile"));
+    assert!(profile_text.iter().any(|text| text == "Apply profile"));
+    assert!(profile_text.iter().any(|text| text == "Apply result"));
+    assert!(profile_text
+        .iter()
+        .any(|text| text == "No write attempted yet."));
+
+    let battery_text = collect_widget_text(&battery.clone().upcast());
+    assert!(battery_text
+        .iter()
+        .any(|text| text == "Battery charge type quick apply"));
+    assert!(battery_text
+        .iter()
+        .any(|text| text == "Requested charge type"));
+    assert!(battery_text.iter().any(|text| text == "Apply charge type"));
+    assert!(battery_text.iter().any(|text| text == "Apply result"));
+    assert!(battery_text
+        .iter()
+        .any(|text| text == "No write attempted yet."));
+}
+
+#[gtk4::test]
+fn profiles_and_battery_pages_disable_quick_apply_when_capability_is_unavailable() {
+    init_gtk();
+
+    let mut diagnostics = sample_diagnostics();
+    diagnostics.raw_probe_report.platform_profile = None;
+    diagnostics.raw_probe_report.battery_charge_type = None;
+
+    let profiles = gtk_shell::profiles_page(Ok(diagnostics.clone()))
+        .downcast::<gtk4::Box>()
+        .expect("profiles page should be a vertical box");
+    let battery = gtk_shell::battery_page(Ok(diagnostics))
+        .downcast::<gtk4::Box>()
+        .expect("battery page should be a vertical box");
+
+    let profile_text = collect_widget_text(&profiles.clone().upcast());
+    assert!(profile_text
+        .iter()
+        .any(|text| text == "Platform profile quick apply"));
+    assert!(profile_text
+        .iter()
+        .any(|text| text == "unavailable - quick apply disabled"));
+    assert!(!profile_text.iter().any(|text| text == "Apply profile"));
+
+    let battery_text = collect_widget_text(&battery.clone().upcast());
+    assert!(battery_text
+        .iter()
+        .any(|text| text == "Battery charge type quick apply"));
+    assert!(battery_text
+        .iter()
+        .any(|text| text == "unavailable - quick apply disabled"));
+    assert!(!battery_text.iter().any(|text| text == "Apply charge type"));
+}
+
+#[test]
+fn write_feedback_helpers_render_idle_success_blocked_and_failure_states() {
+    let plan = WriteDryRunPlan {
+        method: "SetPlatformProfile".to_owned(),
+        capability_id: "platform_profile".to_owned(),
+        polkit_action: "org.ratvantage.LegionControl1.set-platform-profile".to_owned(),
+        path: "/tmp/platform_profile".to_owned(),
+        previous_value: "balanced".to_owned(),
+        requested_value: "performance".to_owned(),
+        readback_required: true,
+        rollback_value: "balanced".to_owned(),
+        rollback_instructions: Vec::new(),
+        reboot_required: false,
+        safety_notes: Vec::new(),
+        steps: Vec::new(),
+    };
+    let applied = WriteExecutionResult::applied(
+        plan.clone(),
+        "platform profile write applied and read back successfully",
+        Some("performance".to_owned()),
+    );
+    let blocked =
+        WriteExecutionResult::blocked_by_authorization(plan.clone(), "polkit authorization failed");
+    let failed = WriteExecutionResult {
+        status: WriteExecutionStatus::Failed,
+        applied: false,
+        message: "platform profile read-back mismatch after write".to_owned(),
+        readback_value: Some("balanced".to_owned()),
+        plan,
+    };
+
+    assert_eq!(gtk_shell::write_feedback_title(None), "Apply result");
+    assert_eq!(
+        gtk_shell::write_feedback_subtitle(None),
+        "No write attempted yet."
+    );
+    assert_eq!(
+        gtk_shell::write_feedback_title(Some(&applied)),
+        "Apply succeeded"
+    );
+    assert!(gtk_shell::write_feedback_subtitle(Some(&applied)).contains("read back successfully"));
+    assert_eq!(
+        gtk_shell::write_feedback_title(Some(&blocked)),
+        "Apply blocked by authorization"
+    );
+    assert!(
+        gtk_shell::write_feedback_subtitle(Some(&blocked)).contains("polkit authorization failed")
+    );
+    assert_eq!(
+        gtk_shell::write_feedback_title(Some(&failed)),
+        "Apply failed"
+    );
+    assert!(gtk_shell::write_feedback_subtitle(Some(&failed)).contains("Read-back: balanced."));
 }
 
 fn sample_status() -> UiStatus {
@@ -297,5 +425,57 @@ fn sample_fan_snapshot() -> FanCurveSnapshot {
             path: "/tmp/fixture/sys/class/hwmon/hwmon7/pwm1_auto_point1_temp".to_owned(),
             value: "42000".to_owned(),
         }],
+    }
+}
+
+fn init_gtk() {
+    GTK_INIT.call_once(|| {
+        std::env::set_var("GSK_RENDERER", "cairo");
+        std::env::set_var("GTK_A11Y", "none");
+        adw::init().expect("GTK/libadwaita must initialize under Xvfb");
+    });
+}
+
+fn collect_widget_text(root: &gtk4::Widget) -> Vec<String> {
+    let mut text = Vec::new();
+    collect_widget_text_recursive(root, &mut text);
+    text
+}
+
+fn collect_widget_text_recursive(widget: &gtk4::Widget, text: &mut Vec<String>) {
+    if let Ok(label) = widget.clone().downcast::<gtk4::Label>() {
+        let value = label.label().to_string();
+        if !value.is_empty() {
+            text.push(value);
+        }
+    }
+    if let Ok(button) = widget.clone().downcast::<gtk4::Button>() {
+        if let Some(label) = button.label() {
+            text.push(label.to_string());
+        }
+    }
+    if let Ok(row) = widget.clone().downcast::<adw::ActionRow>() {
+        let title = row.title().to_string();
+        if !title.is_empty() {
+            text.push(title);
+        }
+        if let Some(subtitle) = row.subtitle() {
+            let subtitle = subtitle.to_string();
+            if !subtitle.is_empty() {
+                text.push(subtitle);
+            }
+        }
+    }
+    if let Ok(group) = widget.clone().downcast::<adw::PreferencesGroup>() {
+        let title = group.title().to_string();
+        if !title.is_empty() {
+            text.push(title);
+        }
+    }
+
+    let mut child = widget.first_child();
+    while let Some(current) = child {
+        collect_widget_text_recursive(&current, text);
+        child = current.next_sibling();
     }
 }

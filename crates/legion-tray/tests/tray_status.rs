@@ -89,11 +89,23 @@ value = "42000"
     assert!(stdout.contains("label=Fan presets: Quiet office, Balanced daily, Gaming, Max safe"));
     assert!(stdout.contains("label=Capabilities: 7 available, 1 missing"));
     assert!(stdout.contains("label=Missing: gpu"));
+    assert!(stdout.contains("label=Platform profile actions"));
+    assert!(stdout.contains(
+        "enabled action=set_platform_profile:low-power label=Set platform profile: low-power"
+    ));
+    assert!(stdout.contains(
+        "enabled action=set_platform_profile:performance label=Set platform profile: performance"
+    ));
+    assert!(stdout.contains("label=Battery charge type actions"));
+    assert!(stdout.contains(
+        "enabled action=set_battery_charge_type:Conservation label=Set battery charge type: Conservation"
+    ));
+    assert!(stdout.contains(
+        "enabled action=set_battery_charge_type:Fast label=Set battery charge type: Fast"
+    ));
     assert!(stdout.contains("enabled action=open_dashboard label=Open dashboard"));
     assert!(stdout.contains("enabled action=refresh_status label=Refresh status"));
     assert!(stdout.contains("enabled action=quit label=Quit"));
-    assert!(!stdout.contains("Set platform profile"));
-    assert!(!stdout.contains("Set battery charge type:"));
     assert!(!stdout.contains("Apply preset:"));
     assert!(!stdout.contains("Toggle logo LED"));
 
