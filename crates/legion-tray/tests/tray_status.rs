@@ -78,10 +78,10 @@ value = "42000"
     let stdout = String::from_utf8(output.stdout).unwrap();
     assert!(stdout.contains("Legion Control tray menu"));
     assert!(stdout.contains("label=82WM Legion Pro 5 16ARX8"));
-    assert!(stdout.contains("label=Platform profile: balanced"));
-    assert!(stdout.contains("label=Profile choices: low-power, balanced, performance"));
-    assert!(stdout.contains("label=Battery charge type: Standard"));
-    assert!(stdout.contains("label=Charge choices: Standard, Conservation, Fast"));
+    assert!(stdout.contains("label=Power mode: Balanced"));
+    assert!(stdout.contains("label=Available profiles: Low Power, Balanced, Performance"));
+    assert!(stdout.contains("label=Charging mode: Standard"));
+    assert!(stdout.contains("label=Available charging modes: Standard, Conservation, Fast"));
     assert!(stdout.contains("label=Battery: 79% / Charging / Good"));
     assert!(stdout.contains("label=Logo LED: on"));
     assert!(stdout.contains("label=Fn-lock: off"));
@@ -92,31 +92,25 @@ value = "42000"
     assert!(stdout.contains("label=Fan presets: Quiet office, Balanced daily, Gaming, Max safe"));
     assert!(stdout.contains("label=Capabilities: 7 available, 1 missing"));
     assert!(stdout.contains("label=Missing: gpu"));
-    assert!(stdout.contains("label=Platform profile actions"));
     assert!(stdout.contains(
-        "enabled action=set_platform_profile:low-power label=Set platform profile: low-power"
+        "enabled action=set_platform_profile:low-power label=Low Power"
     ));
     assert!(stdout.contains(
-        "enabled action=set_platform_profile:performance label=Set platform profile: performance"
-    ));
-    assert!(stdout.contains("label=Battery charge type actions"));
-    assert!(stdout.contains(
-        "enabled action=set_battery_charge_type:Conservation label=Set battery charge type: Conservation"
+        "enabled action=set_platform_profile:performance label=Performance"
     ));
     assert!(stdout.contains(
-        "enabled action=set_battery_charge_type:Fast label=Set battery charge type: Fast"
+        "enabled action=set_battery_charge_type:Conservation label=Conservation"
     ));
-    assert!(stdout.contains("label=LED actions"));
-    assert!(stdout.contains(
-        "enabled action=set_led_state:platform::ylogo:off label=Set LED state: platform::ylogo off"
-    ));
-    assert!(stdout.contains("label=Fn-lock actions"));
-    assert!(stdout.contains("enabled action=set_ideapad_toggle:fn_lock:on label=Set Fn-lock on"));
-    assert!(stdout.contains("label=Camera power: dashboard confirmation required"));
+    assert!(stdout.contains("enabled action=set_battery_charge_type:Fast label=Fast"));
+    assert!(stdout.contains("label=Logo light"));
+    assert!(stdout.contains("enabled action=set_led_state:platform::ylogo:off label=Turn off"));
+    assert!(stdout.contains("label=Fn-lock"));
+    assert!(stdout.contains("enabled action=set_ideapad_toggle:fn_lock:on label=Turn on"));
+    assert!(stdout.contains("label=Camera power: on - open Dashboard to change"));
     assert!(stdout
-        .contains("enabled action=open_dashboard label=Open dashboard for camera power controls"));
-    assert!(stdout.contains("enabled action=open_dashboard label=Open dashboard"));
-    assert!(stdout.contains("enabled action=refresh_status label=Refresh status"));
+        .contains("enabled action=open_dashboard label=Camera settings"));
+    assert!(stdout.contains("enabled action=open_dashboard label=Dashboard"));
+    assert!(stdout.contains("enabled action=refresh_status label=Refresh"));
     assert!(stdout.contains("enabled action=quit label=Quit"));
     assert!(!stdout.contains("input12::capslock"));
     assert!(!stdout.contains("enp5s0-0::lan"));

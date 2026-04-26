@@ -622,18 +622,18 @@ mod tests {
         let menu = tray.menu();
 
         assert!(menu_has_disabled_item(&menu, "82WM Legion Pro 5 16ARX8"));
-        assert!(menu_has_disabled_item(&menu, "Platform profile: balanced"));
+        assert!(menu_has_disabled_item(&menu, "Power mode: Balanced"));
         assert!(menu_has_disabled_item(
             &menu,
-            "Profile choices: low-power, balanced, performance"
+            "Available profiles: Low Power, Balanced, Performance"
         ));
         assert!(menu_has_disabled_item(
             &menu,
-            "Battery charge type: Standard"
+            "Charging mode: Standard"
         ));
         assert!(menu_has_disabled_item(
             &menu,
-            "Charge choices: Standard, Conservation, Fast"
+            "Available charging modes: Standard, Conservation, Fast"
         ));
         assert!(menu_has_disabled_item(
             &menu,
@@ -660,41 +660,23 @@ mod tests {
             "Capabilities: 1 available, 1 missing"
         ));
         assert!(menu_has_disabled_item(&menu, "Missing: gpu"));
-        assert!(menu_has_disabled_item(&menu, "Platform profile actions"));
-        assert!(menu_has_disabled_item(&menu, "Battery charge type actions"));
-        assert!(menu_has_disabled_item(&menu, "LED actions"));
-        assert!(menu_has_disabled_item(&menu, "Fn-lock actions"));
+        assert!(menu_has_disabled_item(&menu, "Power mode"));
+        assert!(menu_has_disabled_item(&menu, "Battery charging"));
+        assert!(menu_has_disabled_item(&menu, "Logo light"));
+        assert!(menu_has_disabled_item(&menu, "Fn-lock"));
         assert!(menu_has_disabled_item(
             &menu,
-            "Camera power: dashboard confirmation required"
+            "Camera power: on - open Dashboard to change"
         ));
-        assert!(menu_has_enabled_item(
-            &menu,
-            "Set platform profile: low-power"
-        ));
-        assert!(menu_has_enabled_item(
-            &menu,
-            "Set platform profile: performance"
-        ));
-        assert!(menu_has_enabled_item(
-            &menu,
-            "Set battery charge type: Conservation"
-        ));
-        assert!(menu_has_enabled_item(
-            &menu,
-            "Set battery charge type: Fast"
-        ));
-        assert!(menu_has_enabled_item(
-            &menu,
-            "Set LED state: platform::ylogo off"
-        ));
-        assert!(menu_has_enabled_item(&menu, "Set Fn-lock on"));
-        assert!(menu_has_enabled_item(
-            &menu,
-            "Open dashboard for camera power controls"
-        ));
-        assert!(menu_has_enabled_item(&menu, "Open dashboard"));
-        assert!(menu_has_enabled_item(&menu, "Refresh status"));
+        assert!(menu_has_enabled_item(&menu, "Low Power"));
+        assert!(menu_has_enabled_item(&menu, "Performance"));
+        assert!(menu_has_enabled_item(&menu, "Conservation"));
+        assert!(menu_has_enabled_item(&menu, "Fast"));
+        assert!(menu_has_enabled_item(&menu, "Turn off"));
+        assert!(menu_has_enabled_item(&menu, "Turn on"));
+        assert!(menu_has_enabled_item(&menu, "Camera settings"));
+        assert!(menu_has_enabled_item(&menu, "Dashboard"));
+        assert!(menu_has_enabled_item(&menu, "Refresh"));
         assert!(menu_has_enabled_item(&menu, "Quit"));
         assert!(!menu_has_item_starting_with(&menu, "Apply preset:"));
         assert!(!menu_has_item_starting_with(&menu, "Toggle logo LED"));
@@ -733,12 +715,9 @@ mod tests {
         let menu = tray.menu();
         assert!(menu_has_disabled_item(
             &menu,
-            "Platform profile: performance"
+            "Power mode: Performance"
         ));
-        assert!(menu_has_enabled_item(
-            &menu,
-            "Set platform profile: balanced"
-        ));
+        assert!(menu_has_enabled_item(&menu, "Balanced"));
         assert!(tray.last_error.is_none());
     }
 
@@ -775,12 +754,9 @@ mod tests {
         let menu = tray.menu();
         assert!(menu_has_disabled_item(
             &menu,
-            "Battery charge type: Conservation"
+            "Charging mode: Conservation"
         ));
-        assert!(menu_has_enabled_item(
-            &menu,
-            "Set battery charge type: Standard"
-        ));
+        assert!(menu_has_enabled_item(&menu, "Standard"));
         assert!(tray.last_error.is_none());
     }
 
@@ -819,10 +795,7 @@ mod tests {
 
         let menu = tray.menu();
         assert!(menu_has_disabled_item(&menu, "Logo LED: off"));
-        assert!(menu_has_enabled_item(
-            &menu,
-            "Set LED state: platform::ylogo on"
-        ));
+        assert!(menu_has_enabled_item(&menu, "Turn on"));
         assert!(tray.last_error.is_none());
     }
 
@@ -861,7 +834,7 @@ mod tests {
 
         let menu = tray.menu();
         assert!(menu_has_disabled_item(&menu, "Fn-lock: on"));
-        assert!(menu_has_enabled_item(&menu, "Set Fn-lock off"));
+        assert!(menu_has_enabled_item(&menu, "Turn off"));
         assert!(tray.last_error.is_none());
     }
 
@@ -892,7 +865,7 @@ mod tests {
         tray.handle_action(TrayAction::SetPlatformProfile("performance".to_owned()));
 
         let menu = tray.menu();
-        assert!(menu_has_disabled_item(&menu, "Platform profile: balanced"));
+        assert!(menu_has_disabled_item(&menu, "Power mode: Balanced"));
         assert_eq!(
             tray.last_error.as_deref(),
             Some("platform profile read-back mismatch after write")
@@ -951,7 +924,7 @@ mod tests {
         ));
         assert!(menu_has_disabled_item(
             &menu,
-            "Set platform profile: low-power"
+            "Low Power"
         ));
 
         tray.refresh_status();

@@ -82,11 +82,12 @@ impl TrayMenu {
             .and_then(|profile| profile.current.as_deref())
         {
             entries.push(TrayMenuEntry::Item(info_item(format!(
-                "Platform profile: {profile}"
+                "Power mode: {}",
+                humanize_choice(profile)
             ))));
         }
         if let Some(profile_choices) = choices_row(
-            "Profile choices",
+            "Available profiles",
             report
                 .platform_profile
                 .as_ref()
@@ -101,11 +102,12 @@ impl TrayMenu {
             .and_then(|charge_type| charge_type.current.as_deref())
         {
             entries.push(TrayMenuEntry::Item(info_item(format!(
-                "Battery charge type: {charge_type}"
+                "Charging mode: {}",
+                humanize_choice(charge_type)
             ))));
         }
         if let Some(charge_choices) = choices_row(
-            "Charge choices",
+            "Available charging modes",
             report
                 .battery_charge_type
                 .as_ref()
@@ -158,11 +160,11 @@ impl TrayMenu {
         append_quick_actions(&mut entries, report);
         entries.push(TrayMenuEntry::Separator);
         entries.push(TrayMenuEntry::Item(action_item(
-            "Open dashboard",
+            "Dashboard",
             TrayAction::OpenDashboard,
         )));
         entries.push(TrayMenuEntry::Item(action_item(
-            "Refresh status",
+            "Refresh",
             TrayAction::RefreshStatus,
         )));
         entries.push(TrayMenuEntry::Item(action_item("Quit", TrayAction::Quit)));
@@ -220,7 +222,14 @@ fn choices_row(label: &str, choices: Option<&[String]>) -> Option<String> {
     if choices.is_empty() {
         None
     } else {
-        Some(format!("{label}: {}", choices.join(", ")))
+        Some(format!(
+            "{label}: {}",
+            choices
+                .iter()
+                .map(|choice| humanize_choice(choice))
+                .collect::<Vec<_>>()
+                .join(", ")
+        ))
     }
 }
 
@@ -251,8 +260,7 @@ fn append_quick_actions(entries: &mut Vec<TrayMenuEntry>, report: &CapabilityReg
     let mut sections = Vec::new();
 
     if let Some(section) = quick_action_section(
-        "Platform profile actions",
-        "Set platform profile",
+        "Power mode",
         report
             .platform_profile
             .as_ref()
@@ -261,14 +269,14 @@ fn append_quick_actions(entries: &mut Vec<TrayMenuEntry>, report: &CapabilityReg
             .platform_profile
             .as_ref()
             .map(|profile| profile.choices.as_slice()),
+        |choice| humanize_choice(choice),
         |choice| TrayAction::SetPlatformProfile(choice.to_owned()),
     ) {
         sections.extend(section);
     }
 
     if let Some(section) = quick_action_section(
-        "Battery charge type actions",
-        "Set battery charge type",
+        "Battery charging",
         report
             .battery_charge_type
             .as_ref()
@@ -277,6 +285,7 @@ fn append_quick_actions(entries: &mut Vec<TrayMenuEntry>, report: &CapabilityReg
             .battery_charge_type
             .as_ref()
             .map(|charge_type| charge_type.choices.as_slice()),
+        |choice| humanize_choice(choice),
         |choice| TrayAction::SetBatteryChargeType(choice.to_owned()),
     ) {
         sections.extend(section);
@@ -306,9 +315,9 @@ fn append_quick_actions(entries: &mut Vec<TrayMenuEntry>, report: &CapabilityReg
 
 fn quick_action_section<F>(
     header: &str,
-    action_prefix: &str,
     current: Option<Option<&str>>,
     choices: Option<&[String]>,
+    label: impl Fn(&str) -> String,
     action: F,
 ) -> Option<Vec<TrayMenuEntry>>
 where
@@ -326,10 +335,7 @@ where
 
     let mut entries = vec![TrayMenuEntry::Item(info_item(header.to_owned()))];
     for choice in actionable {
-        entries.push(TrayMenuEntry::Item(action_item(
-            format!("{action_prefix}: {choice}"),
-            action(choice),
-        )));
+        entries.push(TrayMenuEntry::Item(action_item(label(choice), action(choice))));
     }
     Some(entries)
 }
@@ -344,22 +350,22 @@ fn led_quick_action_section(report: &CapabilityRegistry) -> Option<Vec<TrayMenuE
         return None;
     }
 
-    let mut entries = vec![TrayMenuEntry::Item(info_item("LED actions".to_owned()))];
+    let mut entries = vec![TrayMenuEntry::Item(info_item("Logo light".to_owned()))];
     entries.push(TrayMenuEntry::Item(action_item(
-        format!("Set LED state: {} off", led.name),
+        "Turn off",
         TrayAction::SetLedState(led.name.clone(), false),
     )));
     entries.push(TrayMenuEntry::Item(action_item(
-        format!("Set LED state: {} on", led.name),
+        "Turn on",
         TrayAction::SetLedState(led.name.clone(), true),
     )));
     for entry in &mut entries {
         if let TrayMenuEntry::Item(item) = entry {
-            if item.label.ends_with(" off") && current == 0 {
+            if item.label == "Turn off" && current == 0 {
                 item.enabled = false;
                 item.action = TrayAction::NoOp;
             }
-            if item.label.ends_with(" on") && current == 1 {
+            if item.label == "Turn on" && current == 1 {
                 item.enabled = false;
                 item.action = TrayAction::NoOp;
             }
@@ -434,22 +440,22 @@ fn ideapad_toggle_quick_action_section(report: &CapabilityRegistry) -> Option<Ve
     }
     let current = toggle.current_value.as_deref()?;
 
-    let mut entries = vec![TrayMenuEntry::Item(info_item("Fn-lock actions".to_owned()))];
+    let mut entries = vec![TrayMenuEntry::Item(info_item("Fn-lock".to_owned()))];
     entries.push(TrayMenuEntry::Item(action_item(
-        "Set Fn-lock off",
+        "Turn off",
         TrayAction::SetIdeapadToggle(toggle.name.clone(), false),
     )));
     entries.push(TrayMenuEntry::Item(action_item(
-        "Set Fn-lock on",
+        "Turn on",
         TrayAction::SetIdeapadToggle(toggle.name.clone(), true),
     )));
     for entry in &mut entries {
         if let TrayMenuEntry::Item(item) = entry {
-            if item.label.ends_with(" off") && current == "0" {
+            if item.label == "Turn off" && current == "0" {
                 item.enabled = false;
                 item.action = TrayAction::NoOp;
             }
-            if item.label.ends_with(" on") && current == "1" {
+            if item.label == "Turn on" && current == "1" {
                 item.enabled = false;
                 item.action = TrayAction::NoOp;
             }
@@ -469,13 +475,13 @@ fn camera_power_guidance_section(report: &CapabilityRegistry) -> Option<Vec<Tray
         TrayMenuEntry::Item(info_item(format!(
             "Camera power: {}",
             if toggle.current_value.as_deref() == Some("1") {
-                "dashboard confirmation required"
+                "on - open Dashboard to change"
             } else {
-                "currently off - dashboard confirmation required"
+                "off - open Dashboard to change"
             }
         ))),
         TrayMenuEntry::Item(action_item(
-            "Open dashboard for camera power controls",
+            "Camera settings",
             TrayAction::OpenDashboard,
         )),
     ])
@@ -492,16 +498,35 @@ fn usb_charging_guidance_section(report: &CapabilityRegistry) -> Option<Vec<Tray
         TrayMenuEntry::Item(info_item(format!(
             "USB charging: {}",
             if toggle.current_value.as_deref() == Some("1") {
-                "enabled - dashboard warning required"
+                "on - open Dashboard to change"
             } else {
-                "disabled - dashboard warning required"
+                "off - open Dashboard to change"
             }
         ))),
         TrayMenuEntry::Item(action_item(
-            "Open dashboard for USB charging controls",
+            "USB charging settings",
             TrayAction::OpenDashboard,
         )),
     ])
+}
+
+fn humanize_choice(value: &str) -> String {
+    value
+        .split(['-', '_'])
+        .filter(|segment| !segment.is_empty())
+        .map(|segment| {
+            let mut chars = segment.chars();
+            match chars.next() {
+                Some(first) => {
+                    let mut label = first.to_ascii_uppercase().to_string();
+                    label.push_str(chars.as_str());
+                    label
+                }
+                None => String::new(),
+            }
+        })
+        .collect::<Vec<_>>()
+        .join(" ")
 }
 
 fn fan_rows(sensors: &[HwmonSensor]) -> Vec<String> {
@@ -695,10 +720,10 @@ mod tests {
             disabled_labels(&menu),
             [
                 "82WM Legion Pro 5 16ARX8",
-                "Platform profile: balanced",
-                "Profile choices: low-power, balanced, performance",
-                "Battery charge type: Standard",
-                "Charge choices: Standard, Conservation, Fast",
+                "Power mode: Balanced",
+                "Available profiles: Low Power, Balanced, Performance",
+                "Charging mode: Standard",
+                "Available charging modes: Standard, Conservation, Fast",
                 "Battery: 79% / Charging / Good",
                 "Logo LED: on",
                 "Fn-lock: off",
@@ -710,29 +735,29 @@ mod tests {
                 "Fan presets: Quiet office, Balanced daily, Gaming, Max safe",
                 "Capabilities: 2 available, 1 missing",
                 "Missing: gpu",
-                "Platform profile actions",
-                "Battery charge type actions",
-                "LED actions",
-                "Set LED state: platform::ylogo on",
-                "Fn-lock actions",
-                "Set Fn-lock off",
-                "Camera power: dashboard confirmation required",
-                "USB charging: disabled - dashboard warning required",
+                "Power mode",
+                "Battery charging",
+                "Logo light",
+                "Turn on",
+                "Fn-lock",
+                "Turn off",
+                "Camera power: on - open Dashboard to change",
+                "USB charging: off - open Dashboard to change",
             ]
         );
         assert_eq!(
             enabled_labels(&menu),
             [
-                "Set platform profile: low-power",
-                "Set platform profile: performance",
-                "Set battery charge type: Conservation",
-                "Set battery charge type: Fast",
-                "Set LED state: platform::ylogo off",
-                "Set Fn-lock on",
-                "Open dashboard for camera power controls",
-                "Open dashboard for USB charging controls",
-                "Open dashboard",
-                "Refresh status",
+                "Low Power",
+                "Performance",
+                "Conservation",
+                "Fast",
+                "Turn off",
+                "Turn on",
+                "Camera settings",
+                "USB charging settings",
+                "Dashboard",
+                "Refresh",
                 "Quit",
             ]
         );
@@ -777,7 +802,7 @@ mod tests {
         );
         assert_eq!(
             enabled_labels(&menu),
-            ["Open dashboard", "Refresh status", "Quit"]
+            ["Dashboard", "Refresh", "Quit"]
         );
         assert!(!menu_labels(&menu)
             .iter()
@@ -826,19 +851,19 @@ mod tests {
 
         assert!(!menu_labels(&menu)
             .iter()
-            .any(|label| label == &"Platform profile actions"));
+            .any(|label| label == &"Power mode"));
         assert!(!menu_labels(&menu)
             .iter()
-            .any(|label| label == &"Battery charge type actions"));
+            .any(|label| label == &"Battery charging"));
         assert!(!enabled_labels(&menu)
             .iter()
-            .any(|label| label.starts_with("Set platform profile:")));
+            .any(|label| label == &"Balanced"));
         assert!(!enabled_labels(&menu)
             .iter()
-            .any(|label| label.starts_with("Set battery charge type:")));
+            .any(|label| label == &"Standard"));
         assert!(!enabled_labels(&menu)
             .iter()
-            .any(|label| label.starts_with("Set LED state:")));
+            .any(|label| label == &"Turn on" || label == &"Turn off"));
     }
 
     #[test]
@@ -847,7 +872,7 @@ mod tests {
         let enabled = enabled_labels(&menu);
         assert_eq!(
             &enabled[enabled.len().saturating_sub(3)..],
-            ["Open dashboard", "Refresh status", "Quit"]
+            ["Dashboard", "Refresh", "Quit"]
         );
     }
 
