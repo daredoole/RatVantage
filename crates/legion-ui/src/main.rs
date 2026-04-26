@@ -158,7 +158,7 @@ fn main() -> Result<()> {
 
     #[cfg(feature = "gtk-ui")]
     {
-        legion_control_ui::gtk_shell::run()
+        legion_control_ui::gtk_shell::run(args.bus_address)
     }
 
     #[cfg(not(feature = "gtk-ui"))]

@@ -7,13 +7,13 @@
 - Branch: `main`
 - Worktree at handoff: intended to be clean after the latest local tray menu diagnostics commit; run `git status --short --branch` and `git log --oneline -1` for the exact state before continuing.
 - Global Codex config: GitHub MCP is disabled, not removed, in `/home/darrian/.codex/config.toml`. New sessions should not rely on GitHub MCP unless the user explicitly re-enables it.
-- Latest local commits: run `git log --oneline -5` before continuing. Recent work includes diagnostics/export parity, compatibility bundle intake, KDE smoke report bundles, tray desktop diagnostics, the runtime-derived tray menu plus `--menu-check`, caller-aware reversible platform/battery writes, GTK/tray quick actions, reversible ylogo LED writes with tray reload improvements, the restricted `fn_lock` ideapad-toggle write path, dashboard-confirmed `camera_power` and `usb_charging` writes, GTK runtime refresh/recovery wiring, shared post-write refresh plus visible tray write-result status feedback, and a live write-validation harness.
+- Latest local commits: run `git log --oneline -5` before continuing. Recent work includes diagnostics/export parity, compatibility bundle intake, KDE smoke report bundles, tray desktop diagnostics, the runtime-derived tray menu plus `--menu-check`, caller-aware reversible platform/battery writes, GTK/tray quick actions, reversible ylogo LED writes with tray reload improvements, the restricted `fn_lock` ideapad-toggle write path, dashboard-confirmed `camera_power` and `usb_charging` writes, GTK runtime refresh/recovery wiring, shared post-write refresh plus visible tray write-result status feedback, a live write-validation harness, and a private-session frontend launcher.
 - Latest known milestone: pre-alpha scaffold with GTK smoke coverage, hardened packaging metadata, disabled high-risk write planning, runtime/current 82WM fixture and validation evidence, diagnostics log excerpts and compact summary counts, packaged fan preset assets with dry-run planning, fan restore/default dry-run planning, app-state-only GPU pending-reboot tracking, app-state-only last-known-good fan curve capture, overview/tray/GTK state visibility, diagnostics/export parity for `gpu_mode_pending` and `last_known_good_fan_curve`, StatusNotifier tray backend, tray dashboard bus-address forwarding, tray tooltip profile/fan/count details, runtime-derived tray menu rows for detected profile/charge/LED/ideapad-toggle choices plus packaged presets and pending state, GTK Profile/Battery/Appearance quick-apply controls with inline feedback plus dashboard confirmation for camera power and USB charging, tray quick actions for reversible profile, charge-type, ylogo LED, and restricted `fn_lock` writes, dashboard-routed tray guidance for `camera_power` and `usb_charging`, GNOME tray extension guidance, KDE StatusNotifier tooltip/menu/quit smoke evidence, report-capable KDE tray smoke bundles under `target/smoke/`, tray desktop diagnostics via `legion-control-tray --desktop-check`, tray menu diagnostics via `legion-control-tray --menu-check`, periodic/resume-style tray reloads, visible tray write-result status rows, a write-validation harness with private-bus plan-only report capture and explicit execute-mode evidence capture, a local 82WM plan-only validation bundle with passing KDE tray smoke under `target/validation/82wm-live-plan-2026-04-26-022807/`, documented GNOME untested path, read-only battery overview telemetry, read-only EnvyControl GPU query, UI status/overview/diagnostics/dry-run output with LED brightness and firmware toggle values, GPU dry-run planning with reboot-required messaging and rollback guidance, gated platform-profile, battery charge type, ylogo LED, restricted `fn_lock`, and dashboard-confirmed `camera_power` plus `usb_charging` execution paths with `pkcheck` authorization and rollback tests, diagnostics choice-source paths, per-capability status labels, GTK Status, Profiles, Battery, Fans, Appearance, and Diagnostics tabs, and a compatibility bundle/PR intake workflow for outside Legion hardware submissions.
 - Rust toolchain: pinned stable in `rust-toolchain.toml`; local stable installed because GTK stack requires rustc 1.92+.
 
 ## Current task
 
-- Completed slice: added `scripts/capture-write-validation-report.sh`, which captures plan-only report bundles by default using a private session-bus daemon and can also target a real privileged daemon in explicit `--execute` mode to record apply/revert evidence for the current reversible write surface. A safe plan-only run against the live 82WM machine completed locally and produced `target/validation/82wm-live-plan-2026-04-26-022807/`, including a passing KDE tray-smoke sub-bundle.
+- Completed slice: added `scripts/run-local-session-app.sh` plus GTK shell bus-address/startup fixes so local `status`, `overview`, `menu-check`, tray, and GTK runs can all share the same temporary session-bus daemon. Direct `--bus-address` GTK launches now stay running, but a KDE Wayland/NVIDIA black-window issue can still affect the full GTK surface even when tray/CLI data and taskbar thumbnails look correct.
 - The daemon now exposes:
   - `SetPlatformProfile`
   - `SetBatteryChargeType`
@@ -38,6 +38,7 @@
 - The live validation harness records `--status`, `--overview`, `--diagnostics`, tray text output, per-control `--plan-*` output, and optional tray smoke evidence in plan-only mode, then records apply/revert JSON plus before/after overview snapshots in execute mode.
 - The GTK shell now exposes quick-apply controls in the Profiles, Battery, and Appearance tabs and renders idle/success/blocked/failed write feedback inline.
 - The GTK shell now routes attempted-write refreshes through the shared dashboard runtime refresh hook when the dashboard is active, so post-write state, recovery notices, and drift notices come back through the same controller path as passive refreshes.
+- The GTK shell now accepts a custom D-Bus address in local-dev mode and avoids the earlier startup path that reparsed the option or triggered multiple immediate full-page refreshes during initial map.
 - The StatusNotifier tray now exposes runtime-derived quick actions for non-current platform profile, battery charge type, ylogo LED, and `fn_lock` choices, plus dashboard-routed guidance rows for `camera_power` and `usb_charging`, refreshes the menu after each attempted write, and keeps a visible last-write status row when a write is blocked, fails, or rolls back.
 - Tray runtime reload now uses a shared client reprobe helper, auto-refreshes after periodic intervals and suspend-like gaps, suppresses hardware-changing quick actions while refresh state is stale, and surfaces recovery/drift notices after reconnect.
 - Automated coverage exists in:
@@ -46,7 +47,7 @@
   - `crates/legion-ui/src/main.rs`
   - `crates/legion-ui/tests/dbus_client.rs`
 - This still does not enable GPU, fan preset, or fan restore writes yet.
-- Next recommended task from the updated roadmap: run the live validation harness in execute mode on supported Legion hardware one control at a time, starting with the lowest-risk reversible surfaces and attaching the resulting evidence bundles to the docs/handoff.
+- Next recommended task from the updated roadmap: either run the live validation harness in execute mode on supported Legion hardware one control at a time, starting with the lowest-risk reversible surfaces, or isolate the remaining KDE Wayland/NVIDIA GTK black-window issue now that the daemon/client/session-bus path is confirmed healthy.
 
 ## Implemented
 
@@ -108,6 +109,7 @@
 - Read-only sysfs fixture capture workflow, validated against the existing 82WM fixture in local CI.
 - Read-only compatibility bundle workflow via `scripts/capture-compat-report.sh`, validated against the existing 82WM fixture in local and GitHub CI.
 - Live write-validation harness via `scripts/capture-write-validation-report.sh`, validated against the existing 82WM fixture in local and GitHub CI.
+- Local private-session frontend launcher via `scripts/run-local-session-app.sh`, validated in local smoke runs for `status` and `menu-check` against the existing 82WM fixture.
 - Hardware compatibility PR template in `.github/PULL_REQUEST_TEMPLATE/hardware-compatibility.md`.
 - Disabled draft write-method contracts for GPU mode and fan presets, plus gated platform-profile, battery charge type, ylogo LED, and limited ideapad-toggle execution paths for `fn_lock` and `camera_power`.
 - Pure validators for platform profile, battery charge type, ylogo LED state, limited ideapad toggle writes, EnvyControl GPU mode, and packaged fan preset choices; the reversible platform/battery/LED/ideapad-toggle writes remain disabled by default unless the daemon write flags are enabled.
@@ -128,6 +130,10 @@ scripts/capture-sysfs-fixture.sh --output tests/fixtures/sysfs-<model>-<note>
 scripts/capture-compat-report.sh --output compat/<machine-label>
 scripts/capture-write-validation-report.sh --output target/validation/<machine-label>-plan
 scripts/capture-write-validation-report.sh --output target/validation/<machine-label>-live --execute --system-bus
+scripts/run-local-session-app.sh --frontend status
+scripts/run-local-session-app.sh --frontend menu-check
+scripts/run-local-session-app.sh --frontend tray
+scripts/run-local-session-app.sh --frontend ui --gsk-renderer cairo
 cargo run -p legion-probe -- --json --sysfs-root tests/fixtures/sysfs-82wm-confirmed
 cargo run -p legion-control-daemon -- --dry-run
 cargo run -p legion-control-daemon -- --session --sysfs-root tests/fixtures/sysfs-82wm-confirmed
@@ -172,10 +178,11 @@ Do not turn GitHub CI off completely yet. Use local CI before pushing, then keep
 ## Next tasks
 
 1. Run the live write-validation harness in execute mode on supported Legion hardware, one control at a time, before broadening the live write surface again.
-2. Keep tray autostart disabled until GNOME-with-extension smoke exists; KDE smoke is no longer the blocker.
-3. If no new hardware reports are available, continue with tray/UI polish and stronger smoke/report evidence.
-4. Keep progress docs current after each completed roadmap slice.
-5. Keep all higher-risk hardware mutation disabled until the safety checklist below is satisfied.
+2. Treat the remaining KDE Wayland/NVIDIA GTK black-window issue as a frontend/compositor bug: keep tray/CLI validation available through the private-session launcher while isolating the renderer path separately.
+3. Keep tray autostart disabled until GNOME-with-extension smoke exists; KDE smoke is no longer the blocker.
+4. If no new hardware reports are available, continue with tray/UI polish and stronger smoke/report evidence.
+5. Keep progress docs current after each completed roadmap slice.
+6. Keep all higher-risk hardware mutation disabled until the safety checklist below is satisfied.
 
 ## Working process
 

@@ -33,12 +33,13 @@ struct WriteFeedbackState {
     subtitle: String,
 }
 
-pub fn run() -> Result<()> {
+pub fn run(bus_address: Option<String>) -> Result<()> {
     let app = adw::Application::builder()
         .application_id("org.ratvantage.LegionControl")
         .build();
 
-    app.connect_activate(|app| {
+    let bus_address = Rc::new(bus_address);
+    app.connect_activate(move |app| {
         let window = adw::ApplicationWindow::builder()
             .application(app)
             .title("Legion Control")
@@ -47,24 +48,35 @@ pub fn run() -> Result<()> {
             .build();
 
         let root = gtk4::Box::new(gtk4::Orientation::Vertical, 0);
+        root.set_hexpand(true);
+        root.set_vexpand(true);
         root.append(&adw::HeaderBar::new());
+        let bus_address = Rc::clone(&bus_address);
         let runtime = DashboardRuntime::new(
             &root,
-            Rc::new(|| {
-                LegionControlClient::system().and_then(|client| client.refresh_runtime_snapshot())
+            Rc::new(move || {
+                let client = match bus_address.as_deref() {
+                    Some(address) => LegionControlClient::address(address),
+                    None => LegionControlClient::system(),
+                }?;
+                client.refresh_runtime_snapshot()
             }),
         );
         install_dashboard_refresh_hook({
             let runtime = Rc::clone(&runtime);
             Rc::new(move || runtime.borrow_mut().refresh_now())
         });
-        runtime.borrow_mut().refresh_now();
         install_runtime_refresh(&window, Rc::clone(&runtime));
         window.set_content(Some(&root));
         window.present();
+        window.unfullscreen();
+        window.unmaximize();
+        gtk4::glib::idle_add_local_once(move || {
+            runtime.borrow_mut().refresh_now();
+        });
     });
 
-    app.run();
+    app.run_with_args(&["legion-control-ui"]);
     Ok(())
 }
 
@@ -75,6 +87,7 @@ pub fn dashboard_page(
     fan_snapshot: Result<Option<FanCurveSnapshot>>,
 ) -> gtk4::Widget {
     let stack = gtk4::Stack::new();
+    stack.set_hexpand(true);
     stack.set_vexpand(true);
     stack.add_titled(&status_page(status, gpu_pending), Some("status"), "Status");
     stack.add_titled(
@@ -102,6 +115,7 @@ pub fn dashboard_page(
         Some("diagnostics"),
         "Diagnostics",
     );
+    stack.set_visible_child_name("status");
 
     let switcher = gtk4::StackSwitcher::new();
     switcher.set_stack(Some(&stack));
@@ -111,6 +125,8 @@ pub fn dashboard_page(
     switcher.set_margin_end(24);
 
     let page = gtk4::Box::new(gtk4::Orientation::Vertical, 0);
+    page.set_hexpand(true);
+    page.set_vexpand(true);
     page.append(&switcher);
     page.append(&stack);
     page.upcast()
@@ -122,14 +138,14 @@ fn install_runtime_refresh(
 ) {
     let runtime_for_active = Rc::clone(&runtime);
     window.connect_is_active_notify(move |window| {
-        if window.is_active() {
+        if window.is_active() && runtime_for_active.borrow().last_snapshot.is_some() {
             runtime_for_active.borrow_mut().refresh_now();
         }
     });
 
     let runtime_for_visible = Rc::clone(&runtime);
     window.connect_visible_notify(move |window| {
-        if window.is_visible() {
+        if window.is_visible() && runtime_for_visible.borrow().last_snapshot.is_some() {
             runtime_for_visible.borrow_mut().refresh_now();
         }
     });
@@ -221,6 +237,8 @@ impl DashboardRuntime {
         root.append(&banner);
 
         let host = gtk4::Box::new(gtk4::Orientation::Vertical, 0);
+        host.set_hexpand(true);
+        host.set_vexpand(true);
         root.append(&host);
 
         Rc::new(RefCell::new(Self {

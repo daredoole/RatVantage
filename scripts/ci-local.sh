@@ -60,6 +60,9 @@ scripts/capture-write-validation-report.sh \
   --output "$fixture_tmp/write-validation" \
   --skip-compat-bundle \
   --skip-tray-smoke >/tmp/ratvantage-write-validation.txt
+scripts/run-local-session-app.sh \
+  --frontend status \
+  --sysfs-root tests/fixtures/sysfs-82wm-confirmed >/tmp/ratvantage-local-session-status.txt
 cargo run -p legion-probe -- --json --sysfs-root "$fixture_tmp/captured" >/tmp/ratvantage-captured-probe.json
 cargo run -p legion-probe -- --json --sysfs-root tests/fixtures/sysfs-82wm-confirmed >/tmp/ratvantage-probe.json
 cargo run -p legion-control-daemon -- --dry-run >/tmp/ratvantage-daemon.txt

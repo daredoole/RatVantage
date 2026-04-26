@@ -49,5 +49,8 @@ jobs:
       - name: Write validation harness smoke test
         run: scripts/capture-write-validation-report.sh --sysfs-root tests/fixtures/sysfs-82wm-confirmed --output /tmp/ratvantage-write-validation --skip-compat-bundle --skip-tray-smoke
 
+      - name: Local session launcher smoke test
+        run: scripts/run-local-session-app.sh --frontend status --sysfs-root tests/fixtures/sysfs-82wm-confirmed
+
       - name: Daemon dry-run smoke test
         run: cargo run -p legion-control-daemon -- --dry-run
