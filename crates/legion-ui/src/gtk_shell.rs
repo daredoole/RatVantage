@@ -7,10 +7,11 @@ use anyhow::{anyhow, Result};
 use legion_common::{
     decode_fan_scratchpad_toml_v1, encode_fan_scratchpad_toml_v1, fan_curve_hwmon_point_pairs,
     fan_curve_snapshot_chart_pairs, fan_preset_points_as_sysfs_raw, format_fan_curve_live_vs_saved,
-    parse_fan_preset_toml, validate_fan_preset_document, validate_manual_fan_curve_pairs,
-    BatteryChargeTypeCapability, FanCurveCapability, FanCurveHwmonPointPair, FanCurveSnapshot,
-    GpuCapability, GpuModePending, IdeapadToggleCapability, LedCapability,
-    PlatformProfileCapability, WriteDryRunPlan, WriteExecutionResult, WriteExecutionStatus,
+    format_manual_fan_scratchpad_sysfs_preview, parse_fan_preset_toml,
+    validate_fan_preset_document, validate_manual_fan_curve_pairs, BatteryChargeTypeCapability,
+    FanCurveCapability, FanCurveHwmonPointPair, FanCurveSnapshot, GpuCapability, GpuModePending,
+    IdeapadToggleCapability, LedCapability, PlatformProfileCapability, WriteDryRunPlan,
+    WriteExecutionResult, WriteExecutionStatus,
 };
 use std::path::Path;
 use std::thread_local;
@@ -1829,10 +1830,12 @@ fn append_manual_fan_curve_scratchpad(page: &gtk4::Box, curve: &FanCurveCapabili
     let validate_btn = gtk4::Button::with_label("Validate pairs");
     let copy_json = gtk4::Button::with_label("Copy JSON");
     let copy_toml = gtk4::Button::with_label("Copy scratchpad TOML");
+    let preview_sysfs = gtk4::Button::with_label("Preview sysfs targets");
     actions.append(&load_live);
     actions.append(&load_saved);
     actions.append(&clear_btn);
     actions.append(&validate_btn);
+    actions.append(&preview_sysfs);
     actions.append(&copy_json);
     actions.append(&copy_toml);
     page.append(&actions);
@@ -1885,6 +1888,39 @@ fn append_manual_fan_curve_scratchpad(page: &gtk4::Box, curve: &FanCurveCapabili
     let rows_column = gtk4::Box::new(gtk4::Orientation::Vertical, 6);
     rows_column.set_margin_start(4);
     page.append(&rows_column);
+
+    let sysfs_preview_title = gtk4::Label::new(Some("Sysfs target preview (scratchpad)"));
+    sysfs_preview_title.add_css_class("title-4");
+    sysfs_preview_title.set_xalign(0.0);
+    sysfs_preview_title.set_margin_top(10);
+    page.append(&sysfs_preview_title);
+
+    let sysfs_preview_hint = gtk4::Label::new(Some(
+        "Requires every row to parse as integers and to pass the same monotonic rules as Validate pairs. Purely local text — no D-Bus call.",
+    ));
+    sysfs_preview_hint.add_css_class("dim-label");
+    sysfs_preview_hint.set_wrap(true);
+    sysfs_preview_hint.set_xalign(0.0);
+    page.append(&sysfs_preview_hint);
+
+    let sysfs_preview_view = gtk4::TextView::new();
+    sysfs_preview_view.set_wrap_mode(gtk4::WrapMode::WordChar);
+    sysfs_preview_view.set_monospace(true);
+    sysfs_preview_view.set_editable(false);
+    sysfs_preview_view.set_cursor_visible(false);
+    sysfs_preview_view.set_top_margin(4);
+    sysfs_preview_view.set_bottom_margin(4);
+    sysfs_preview_view.set_left_margin(6);
+    sysfs_preview_view.set_right_margin(6);
+    sysfs_preview_view.buffer().set_text(
+        "Click Preview sysfs targets after filling rows (or to see parse/validation errors here).",
+    );
+    let sysfs_preview_scroll = gtk4::ScrolledWindow::builder()
+        .min_content_height(100)
+        .vexpand(false)
+        .child(&sysfs_preview_view)
+        .build();
+    page.append(&sysfs_preview_scroll);
 
     let toml_title = gtk4::Label::new(Some("TOML exchange"));
     toml_title.add_css_class("title-4");
@@ -2044,6 +2080,21 @@ fn append_manual_fan_curve_scratchpad(page: &gtk4::Box, curve: &FanCurveCapabili
             Err(error) => {
                 status_for_validate.set_text(&format!("Validation failed: {error:?}"));
             }
+        }
+    });
+
+    let pairs_for_sysfs_preview = pairs_for_ui.clone();
+    let entries_for_sysfs_preview = entries.clone();
+    let sysfs_preview_buffer = sysfs_preview_view.buffer();
+    preview_sysfs.connect_clicked(move |_| {
+        let Some(parsed) = scratchpad_pairs_parsed(&entries_for_sysfs_preview) else {
+            sysfs_preview_buffer
+                .set_text(&scratchpad_first_parse_blocker(&entries_for_sysfs_preview));
+            return;
+        };
+        match format_manual_fan_scratchpad_sysfs_preview(&pairs_for_sysfs_preview, &parsed) {
+            Ok(text) => sysfs_preview_buffer.set_text(&text),
+            Err(err) => sysfs_preview_buffer.set_text(&format!("{err:?}")),
         }
     });
 

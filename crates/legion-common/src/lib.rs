@@ -1357,6 +1357,40 @@ pub fn validate_manual_fan_curve_pairs(pairs: &[(u32, u32)]) -> Result<(), Valid
     Ok(())
 }
 
+/// Multiline summary of sysfs paths and integer values implied by validated scratchpad rows.
+/// `hw_pairs` must be in the same order as the scratchpad table (typically [`fan_curve_hwmon_point_pairs`]).
+/// Performs no I/O; does not contact the daemon.
+pub fn format_manual_fan_scratchpad_sysfs_preview(
+    hw_pairs: &[FanCurveHwmonPointPair],
+    temps_pwms: &[(u32, u32)],
+) -> Result<String, ValidationError> {
+    if hw_pairs.len() != temps_pwms.len() {
+        return Err(ValidationError::BlockedChoice {
+            capability_id: "fan_curves".to_owned(),
+            requested: "manual_scratchpad".to_owned(),
+            reason: format!(
+                "hwmon pair count {} does not match scratchpad row count {}",
+                hw_pairs.len(),
+                temps_pwms.len()
+            ),
+        });
+    }
+    validate_manual_fan_curve_pairs(temps_pwms)?;
+
+    let mut out = String::from(
+        "Validated scratchpad: sysfs nodes and values that match your integers (preview only — not written by RatVantage).\n\n",
+    );
+    for (pair, (temp, pwm)) in hw_pairs.iter().zip(temps_pwms.iter()) {
+        let pwm_clamped = (*pwm).min(255);
+        out.push_str(&format!(
+            "Point {}\n  {}\n    {temp}\n  {}\n    {pwm_clamped}\n\n",
+            pair.index, pair.temp_path, pair.pwm_path,
+        ));
+    }
+    out.push_str("Monotonic temp and non-decreasing pwm rules passed for these integers.");
+    Ok(out)
+}
+
 /// Lossless import/export for the GTK fan scratchpad (raw sysfs integers + paths).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct FanScratchpadTomlV1 {
@@ -2300,6 +2334,25 @@ mod tests {
     fn validate_manual_fan_curve_pairs_accepts_monotonic_sysfs_integers() {
         let pairs: Vec<(u32, u32)> = (1..=10).map(|i| (35_000 + i * 1_000, 20 + i)).collect();
         assert_eq!(validate_manual_fan_curve_pairs(&pairs), Ok(()));
+    }
+
+    #[test]
+    fn format_manual_fan_scratchpad_sysfs_preview_lists_paths() {
+        let curve = complete_fan_curve();
+        let hw = fan_curve_hwmon_point_pairs(&curve);
+        assert!(!hw.is_empty());
+        let temps_pwms: Vec<(u32, u32)> = hw
+            .iter()
+            .enumerate()
+            .map(|(i, _)| (35_000 + (i as u32) * 5_000, 30 + i as u32))
+            .collect();
+        let out = format_manual_fan_scratchpad_sysfs_preview(&hw, &temps_pwms).unwrap();
+        assert!(out.contains("Validated scratchpad:"));
+        assert!(out.contains("preview only"));
+        for pair in &hw {
+            assert!(out.contains(&pair.temp_path));
+            assert!(out.contains(&pair.pwm_path));
+        }
     }
 
     #[test]

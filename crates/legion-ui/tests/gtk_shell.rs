@@ -67,7 +67,7 @@ fn status_and_error_pages_build_under_headless_display() {
 
     assert_eq!(page.orientation(), gtk4::Orientation::Vertical);
     assert_eq!(page.spacing(), 12);
-    assert_eq!(page.observe_children().n_items(), 33);
+    assert_eq!(page.observe_children().n_items(), 36);
 
     let page = gtk_shell::fans_page(Ok(sample_diagnostics()), Ok(Some(sample_fan_snapshot())));
     let page = page
@@ -76,7 +76,7 @@ fn status_and_error_pages_build_under_headless_display() {
 
     assert_eq!(page.orientation(), gtk4::Orientation::Vertical);
     assert_eq!(page.spacing(), 12);
-    assert_eq!(page.observe_children().n_items(), 34);
+    assert_eq!(page.observe_children().n_items(), 37);
 
     let page = gtk_shell::appearance_page(Ok(sample_diagnostics()));
     let page = page
@@ -315,6 +315,10 @@ fn dashboard_pages_render_quick_apply_and_gpu_controls() {
     }));
     assert!(fans_text.iter().any(|text| text == "Load from live"));
     assert!(fans_text.iter().any(|text| text == "Validate pairs"));
+    assert!(fans_text.iter().any(|text| text == "Preview sysfs targets"));
+    assert!(fans_text
+        .iter()
+        .any(|text| text == "Sysfs target preview (scratchpad)"));
     assert!(fans_text.iter().any(|text| text == "Copy JSON"));
     assert!(fans_text.iter().any(|text| text == "Copy scratchpad TOML"));
     assert!(fans_text.iter().any(|text| text == "TOML exchange"));
