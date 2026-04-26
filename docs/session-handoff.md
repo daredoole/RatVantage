@@ -5,9 +5,11 @@
 - Repository: `https://github.com/daredoole/RatVantage`
 - Visibility: private for now.
 - Branch: `main`
+- Worktree at handoff: clean after `5318bb8`; branch ahead of `origin/main` by 59 commits.
 - Global Codex config: GitHub MCP is disabled, not removed, in `/home/darrian/.codex/config.toml`. New sessions should not rely on GitHub MCP unless the user explicitly re-enables it.
 - Latest local commits:
   - `HEAD` (`Surface fan state in overview`; run `git log --oneline -1` for the exact hash)
+  - `187d039` (`Surface state in tray and GTK`)
   - `29fc945` (`Add fan curve state capture`)
   - `b72ff7e` (`Add GPU pending state tracking`)
   - `7ccf2c0` (`Add fan restore dry-run planning`)
@@ -21,6 +23,19 @@
   - `c61cef8` (`Polish tray tooltip details`)
 - Latest known milestone: read-only pre-alpha scaffold with GTK smoke coverage, hardened packaging metadata, disabled write planning, runtime/current 82WM fixture and validation evidence, diagnostics log excerpts and compact summary counts, packaged fan preset assets with dry-run planning, fan restore/default dry-run planning, app-state-only GPU pending-reboot tracking, app-state-only last-known-good fan curve capture, overview/tray/GTK state visibility, read-only StatusNotifier tray backend, tray dashboard bus-address forwarding, tray tooltip profile/fan/count details, disabled quick fan preset and battery charge tray entries, GNOME tray extension guidance, KDE StatusNotifier tooltip/menu/quit smoke evidence, documented GNOME untested path, read-only battery overview telemetry, read-only EnvyControl GPU query, UI status/overview/diagnostics/dry-run output with LED brightness and firmware toggle values, GPU dry-run planning with reboot-required messaging and rollback guidance, diagnostics choice-source paths, per-capability status labels, and GTK read-only Status, Profiles, Battery, Fans, Appearance, and Diagnostics tabs.
 - Rust toolchain: pinned stable in `rust-toolchain.toml`; local stable installed because GTK stack requires rustc 1.92+.
+
+## Current task
+
+- Next slice: thread durable app state into diagnostics/export surfaces so `legion-control-ui --diagnostics` and GTK Copy JSON include:
+  - `gpu_mode_pending`
+  - `last_known_good_fan_curve`
+- Keep this slice read-only. No hardware writes, no new mutation paths, no safety constraint changes.
+- Expected follow-through for the slice:
+  - add the durable state to diagnostics JSON output and any shared diagnostics bundle/model needed for GTK export parity
+  - extend focused tests plus `./scripts/ci-local.sh`
+  - run a real-device smoke for `--diagnostics` against a seeded state file
+  - update `README.md`, `docs/feature-roadmap.md`, `docs/implementation-plan.md`, and this handoff
+  - commit as a standalone slice
 
 ## Implemented
 
@@ -116,9 +131,10 @@ Do not turn GitHub CI off completely yet. Use local CI before pushing, then keep
 
 ## Next tasks
 
-1. If another supported Legion machine is available, add a captured fixture with `scripts/capture-sysfs-fixture.sh`, validate probe behavior, update docs, and commit.
-2. If no new hardware fixture is available, continue with read-only UI/tray polish.
-3. Keep all hardware mutation disabled until the safety checklist below is satisfied.
+1. Complete the current diagnostics/export parity slice: include durable GPU pending and saved fan curve state in `--diagnostics` output and GTK Copy JSON.
+2. If another supported Legion machine is available, add a captured fixture with `scripts/capture-sysfs-fixture.sh`, validate probe behavior, update docs, and commit.
+3. If no new hardware fixture is available after that, continue with read-only UI/tray polish.
+4. Keep all hardware mutation disabled until the safety checklist below is satisfied.
 
 ## Working process
 
