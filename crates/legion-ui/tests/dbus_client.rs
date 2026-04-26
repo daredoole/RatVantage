@@ -133,6 +133,11 @@ fn client_reads_daemon_contract_over_private_bus() {
     assert_eq!(json["kernel_version"], "test-kernel");
     assert_eq!(json["gpu_mode_pending"], serde_json::Value::Null);
     assert_eq!(json["last_known_good_fan_curve"], serde_json::Value::Null);
+    assert_eq!(
+        json["fan_preset_by_platform_profile"],
+        serde_json::json!({})
+    );
+    assert_eq!(json["fan_preset_reapply_after_resume"], false);
     assert_eq!(json["recent_daemon_logs"], serde_json::json!([]));
     assert_eq!(json["hardware"]["product_name"], "82WM");
     assert_eq!(json["summary"]["capability_count"], 8);
@@ -169,6 +174,7 @@ fn client_reads_daemon_contract_over_private_bus() {
     let json: serde_json::Value =
         serde_json::from_str(&render_diagnostics_json(&bundle).unwrap()).unwrap();
     assert_eq!(json["recent_daemon_logs"][0], "2026-04-25 daemon started");
+    assert_eq!(json["fan_preset_reapply_after_resume"], false);
 
     let refreshed = client.refresh_capabilities().unwrap();
     assert_eq!(refreshed, capabilities);
@@ -435,6 +441,11 @@ fn diagnostics_cli_prints_read_only_debug_bundle_json() {
             .ends_with("sys/firmware/acpi/platform_profile")));
     assert_eq!(json["gpu_mode_pending"], serde_json::Value::Null);
     assert_eq!(json["last_known_good_fan_curve"], serde_json::Value::Null);
+    assert_eq!(
+        json["fan_preset_by_platform_profile"],
+        serde_json::json!({})
+    );
+    assert_eq!(json["fan_preset_reapply_after_resume"], false);
 }
 
 #[test]
@@ -481,6 +492,11 @@ value = "42000"
         json["last_known_good_fan_curve"]["points"][0]["value"],
         "42000"
     );
+    assert_eq!(
+        json["fan_preset_by_platform_profile"],
+        serde_json::json!({})
+    );
+    assert_eq!(json["fan_preset_reapply_after_resume"], false);
     let _ = std::fs::remove_file(state_path);
 }
 

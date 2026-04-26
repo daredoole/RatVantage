@@ -59,6 +59,8 @@ pub struct DiagnosticsBundle {
     pub summary: DiagnosticsSummary,
     pub gpu_mode_pending: Option<GpuModePending>,
     pub last_known_good_fan_curve: Option<FanCurveSnapshot>,
+    pub fan_preset_by_platform_profile: BTreeMap<String, String>,
+    pub fan_preset_reapply_after_resume: bool,
     pub detected_sysfs_paths: Vec<String>,
     pub recent_daemon_logs: Vec<String>,
     pub raw_probe_report: CapabilityRegistry,
@@ -93,6 +95,8 @@ impl DiagnosticsBundle {
             summary,
             gpu_mode_pending: None,
             last_known_good_fan_curve: None,
+            fan_preset_by_platform_profile: BTreeMap::new(),
+            fan_preset_reapply_after_resume: false,
             detected_sysfs_paths,
             recent_daemon_logs,
             raw_probe_report: report,
@@ -103,9 +107,13 @@ impl DiagnosticsBundle {
         mut self,
         gpu_mode_pending: Option<GpuModePending>,
         last_known_good_fan_curve: Option<FanCurveSnapshot>,
+        fan_preset_by_platform_profile: BTreeMap<String, String>,
+        fan_preset_reapply_after_resume: bool,
     ) -> Self {
         self.gpu_mode_pending = gpu_mode_pending;
         self.last_known_good_fan_curve = last_known_good_fan_curve;
+        self.fan_preset_by_platform_profile = fan_preset_by_platform_profile;
+        self.fan_preset_reapply_after_resume = fan_preset_reapply_after_resume;
         self
     }
 }
@@ -668,7 +676,7 @@ mod tests {
             choices_path: "/tmp/charge_types".to_owned(),
         });
         let diagnostics = DiagnosticsBundle::from_report(report, Some("test-kernel".to_owned()))
-            .with_runtime_state(None, fan_snapshot);
+            .with_runtime_state(None, fan_snapshot, BTreeMap::new(), false);
 
         RuntimeSnapshot {
             status,
@@ -779,7 +787,12 @@ impl LegionControlClient {
             kernel_version(),
             recent_daemon_logs(),
         )
-        .with_runtime_state(self.gpu_mode_pending()?, self.last_known_good_fan_curve()?))
+        .with_runtime_state(
+            self.gpu_mode_pending()?,
+            self.last_known_good_fan_curve()?,
+            self.fan_preset_by_platform_profile()?,
+            self.fan_preset_reapply_after_resume()?,
+        ))
     }
 
     pub fn refresh_runtime_snapshot(&self) -> Result<RuntimeSnapshot> {
@@ -787,6 +800,7 @@ impl LegionControlClient {
         let report = self.raw_probe_report()?;
         let gpu_pending = self.gpu_mode_pending()?;
         let fan_snapshot = self.last_known_good_fan_curve()?;
+        let fan_preset_map = self.fan_preset_by_platform_profile()?;
         Ok(RuntimeSnapshot {
             status: UiStatus::from_parts(report.hardware.clone(), capabilities)?,
             diagnostics: DiagnosticsBundle::from_report_with_logs(
@@ -794,7 +808,12 @@ impl LegionControlClient {
                 kernel_version(),
                 recent_daemon_logs(),
             )
-            .with_runtime_state(gpu_pending, fan_snapshot),
+            .with_runtime_state(
+                gpu_pending,
+                fan_snapshot,
+                fan_preset_map,
+                self.fan_preset_reapply_after_resume()?,
+            ),
         })
     }
 
@@ -886,6 +905,43 @@ impl LegionControlClient {
         self.call_json("CaptureLastKnownGoodFanCurve")
     }
 
+    pub fn fan_preset_by_platform_profile(&self) -> Result<BTreeMap<String, String>> {
+        self.call_json("GetFanPresetProfileMap")
+    }
+
+    pub fn set_fan_preset_profile_map_entry(
+        &self,
+        platform_profile: &str,
+        fan_preset_id: &str,
+    ) -> Result<BTreeMap<String, String>> {
+        self.call_json_two_args(
+            "SetFanPresetProfileMapEntry",
+            platform_profile,
+            fan_preset_id,
+        )
+    }
+
+    pub fn remove_fan_preset_profile_map_entry(
+        &self,
+        platform_profile: &str,
+    ) -> Result<BTreeMap<String, String>> {
+        self.call_json_arg("RemoveFanPresetProfileMapEntry", platform_profile)
+    }
+
+    pub fn clear_fan_preset_profile_map(&self) -> Result<BTreeMap<String, String>> {
+        self.call_json("ClearFanPresetProfileMap")
+    }
+
+    pub fn fan_preset_reapply_after_resume(&self) -> Result<bool> {
+        self.call_json("GetFanPresetReapplyAfterResume")
+    }
+
+    pub fn set_fan_preset_reapply_after_resume(&self, enabled: bool) -> Result<bool> {
+        let proxy = Proxy::new(&self.connection, DBUS_INTERFACE, DBUS_PATH, DBUS_INTERFACE)?;
+        let payload: String = proxy.call("SetFanPresetReapplyAfterResume", &(enabled,))?;
+        Ok(serde_json::from_str(&payload)?)
+    }
+
     pub fn status(&self) -> Result<UiStatus> {
         UiStatus::from_client(self)
     }
@@ -905,6 +961,15 @@ impl LegionControlClient {
     {
         let proxy = Proxy::new(&self.connection, DBUS_INTERFACE, DBUS_PATH, DBUS_INTERFACE)?;
         let payload: String = proxy.call(method, &(arg,))?;
+        Ok(serde_json::from_str(&payload)?)
+    }
+
+    fn call_json_two_args<T>(&self, method: &str, first: &str, second: &str) -> Result<T>
+    where
+        T: DeserializeOwned,
+    {
+        let proxy = Proxy::new(&self.connection, DBUS_INTERFACE, DBUS_PATH, DBUS_INTERFACE)?;
+        let payload: String = proxy.call(method, &(first, second))?;
         Ok(serde_json::from_str(&payload)?)
     }
 }

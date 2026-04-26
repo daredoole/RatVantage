@@ -1,4 +1,5 @@
 use serde::{Deserialize, Serialize};
+use std::collections::BTreeMap;
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]
 pub struct CapabilityRegistry {
@@ -22,6 +23,12 @@ pub struct DaemonState {
     pub gpu_mode_pending: Option<GpuModePending>,
     #[serde(default)]
     pub last_known_good_fan_curve: Option<FanCurveSnapshot>,
+    /// Preferred packaged fan preset id when a given `platform_profile` is active (advisory app state only).
+    #[serde(default)]
+    pub fan_preset_by_platform_profile: BTreeMap<String, String>,
+    /// When true, the daemon may run resume-time fan preset planning (dry-run until fan writes ship).
+    #[serde(default)]
+    pub fan_preset_reapply_after_resume: bool,
 }
 
 impl Default for DaemonState {
@@ -30,6 +37,8 @@ impl Default for DaemonState {
             schema_version: 1,
             gpu_mode_pending: None,
             last_known_good_fan_curve: None,
+            fan_preset_by_platform_profile: BTreeMap::new(),
+            fan_preset_reapply_after_resume: false,
         }
     }
 }
@@ -804,6 +813,39 @@ pub fn validate_fan_preset_choice(
         capability_id: "fan_curves".to_owned(),
     })?;
     validate_fan_curve_supports_preset(curve, preset)
+}
+
+/// Validates storing a packaged fan preset id for a detected platform profile choice (daemon app state only).
+pub fn validate_fan_preset_platform_profile_entry(
+    platform_profile_cap: Option<&PlatformProfileCapability>,
+    fan_curves: &[FanCurveCapability],
+    presets: &[FanPreset],
+    platform_profile: &str,
+    fan_preset_id: &str,
+) -> Result<(), ValidationError> {
+    if platform_profile.trim().is_empty() {
+        return Err(ValidationError::EmptyValue {
+            field: "platform_profile".to_owned(),
+        });
+    }
+    if fan_preset_id.trim().is_empty() {
+        return Err(ValidationError::EmptyValue {
+            field: "fan_preset_id".to_owned(),
+        });
+    }
+
+    let capability = platform_profile_cap.ok_or_else(|| ValidationError::MissingCapability {
+        capability_id: "platform_profile".to_owned(),
+    })?;
+    validate_choice(
+        "platform_profile",
+        "profile",
+        platform_profile,
+        &capability.choices,
+        &[],
+    )?;
+    validate_fan_preset_choice(fan_curves, presets, fan_preset_id)?;
+    Ok(())
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -2101,6 +2143,42 @@ mod tests {
             validate_fan_preset_choice(&[curve], &[preset], "balanced-daily"),
             Ok(())
         );
+    }
+
+    #[test]
+    fn fan_preset_platform_profile_entry_requires_listed_profile_and_preset() {
+        let presets = vec![fan_preset("balanced-daily")];
+        let curve = complete_fan_curve();
+        let capability = PlatformProfileCapability {
+            current: Some("balanced".to_owned()),
+            choices: vec!["balanced".to_owned(), "performance".to_owned()],
+            path: "/tmp/platform_profile".to_owned(),
+            choices_path: "/tmp/platform_profile_choices".to_owned(),
+        };
+        assert!(validate_fan_preset_platform_profile_entry(
+            Some(&capability),
+            std::slice::from_ref(&curve),
+            &presets,
+            "balanced",
+            "balanced-daily",
+        )
+        .is_ok());
+        assert!(validate_fan_preset_platform_profile_entry(
+            Some(&capability),
+            std::slice::from_ref(&curve),
+            &presets,
+            "unknown-profile",
+            "balanced-daily",
+        )
+        .is_err());
+        assert!(validate_fan_preset_platform_profile_entry(
+            Some(&capability),
+            &[curve],
+            &presets,
+            "balanced",
+            "not-a-packaged-preset",
+        )
+        .is_err());
     }
 
     #[test]

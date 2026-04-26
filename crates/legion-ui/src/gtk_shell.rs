@@ -15,8 +15,8 @@ use legion_common::{
 use std::path::Path;
 use std::thread_local;
 use std::{
-    cell::RefCell,
-    collections::HashMap,
+    cell::{Cell, RefCell},
+    collections::{BTreeMap, HashMap},
     rc::Rc,
     time::{Duration, Instant},
 };
@@ -737,6 +737,8 @@ fn append_fans(
     curves.add(&last_known_row);
     page.append(&curves);
 
+    append_fan_preset_per_profile_section(page, bundle);
+
     let lkg_points_group =
         append_saved_lkg_curve_detail(page, &clone_result(&fan_snapshot), last_known_row.clone());
 
@@ -1017,6 +1019,155 @@ fn append_fan_live_vs_saved_compare(page: &gtk4::Box) {
             }
         }
     });
+}
+
+fn append_fan_preset_per_profile_section(page: &gtk4::Box, bundle: &DiagnosticsBundle) {
+    let Some(platform_cap) = bundle.raw_probe_report.platform_profile.as_ref() else {
+        return;
+    };
+    if bundle.raw_probe_report.fan_curves.is_empty() || platform_cap.choices.is_empty() {
+        return;
+    }
+
+    let group = adw::PreferencesGroup::new();
+    group.set_title("Fan preset per platform profile");
+    group.set_description(Some(
+        "Daemon app state only: preferred packaged fan preset per detected platform profile. Save writes durable state. Resume re-apply uses systemd-logind and currently performs probe refresh plus dry-run fan preset planning (no sysfs writes).",
+    ));
+
+    let map_state: BTreeMap<String, String> = bundle.fan_preset_by_platform_profile.clone();
+    let map_status = gtk4::Label::new(None);
+    map_status.set_wrap(true);
+    map_status.set_xalign(0.0);
+    map_status.set_margin_top(6);
+
+    let mut dropdown_labels: Vec<&str> = vec!["(none)"];
+    dropdown_labels.extend_from_slice(FAN_PRESET_IDS);
+
+    for profile in &platform_cap.choices {
+        let row = adw::ActionRow::builder()
+            .title(profile.as_str())
+            .subtitle("Packaged fan preset for this platform profile")
+            .selectable(false)
+            .build();
+
+        let model = gtk4::StringList::new(&dropdown_labels);
+        let dropdown = gtk4::DropDown::builder().model(&model).build();
+        dropdown.set_hexpand(true);
+        let selected = if let Some(saved_id) = map_state.get(profile) {
+            FAN_PRESET_IDS
+                .iter()
+                .position(|id| *id == saved_id.as_str())
+                .map(|idx| (idx + 1) as u32)
+                .unwrap_or(0)
+        } else {
+            0
+        };
+        dropdown.set_selected(selected);
+
+        let save = gtk4::Button::with_label("Save");
+        row.add_suffix(&dropdown);
+        row.add_suffix(&save);
+
+        let profile_for_save = profile.clone();
+        let status_for_save = map_status.clone();
+        save.connect_clicked(move |_| {
+            let sel = dropdown.selected() as usize;
+            let result = if sel == 0 {
+                LegionControlClient::system()
+                    .and_then(|client| client.remove_fan_preset_profile_map_entry(&profile_for_save))
+            } else if let Some(preset_id) = FAN_PRESET_IDS.get(sel.saturating_sub(1)) {
+                LegionControlClient::system().and_then(|client| {
+                    client.set_fan_preset_profile_map_entry(&profile_for_save, preset_id)
+                })
+            } else {
+                status_for_save.set_text("Invalid preset selection.");
+                return;
+            };
+            match result {
+                Ok(_) => {
+                    if sel == 0 {
+                        status_for_save.set_text(&format!(
+                            "Removed mapping for profile `{profile_for_save}`."
+                        ));
+                    } else {
+                        let preset_id = FAN_PRESET_IDS[sel - 1];
+                        status_for_save.set_text(&format!(
+                            "Saved `{profile_for_save}` → `{preset_id}` (dashboard refresh requested)."
+                        ));
+                    }
+                    let _ = request_dashboard_refresh();
+                }
+                Err(error) => {
+                    status_for_save.set_text(&format!("Update failed: {error}"));
+                }
+            }
+        });
+
+        group.add(&row);
+    }
+
+    let resume_row = adw::ActionRow::builder()
+        .title("Re-apply mapped fan preset after resume")
+        .subtitle("Listens for systemd resume; logs a dry-run plan for the preset mapped to the active platform profile. Fan curve writes stay disabled in RatVantage.")
+        .selectable(false)
+        .build();
+    let resume_switch = gtk4::Switch::builder()
+        .valign(gtk4::Align::Center)
+        .active(bundle.fan_preset_reapply_after_resume)
+        .build();
+    resume_row.add_suffix(&resume_switch);
+    let skip_resume_notify = Rc::new(Cell::new(true));
+    let skip_resume_for_connect = skip_resume_notify.clone();
+    let map_status_for_resume = map_status.clone();
+    resume_switch.connect_active_notify(move |switch| {
+        if skip_resume_for_connect.get() {
+            skip_resume_for_connect.set(false);
+            return;
+        }
+        let on = switch.is_active();
+        match LegionControlClient::system()
+            .and_then(|client| client.set_fan_preset_reapply_after_resume(on))
+        {
+            Ok(confirmed) => {
+                switch.set_active(confirmed);
+                map_status_for_resume
+                    .set_text("Resume fan re-apply policy updated (dashboard refresh requested).");
+                let _ = request_dashboard_refresh();
+            }
+            Err(error) => {
+                switch.set_active(!on);
+                map_status_for_resume.set_text(&format!("Resume policy update failed: {error}"));
+            }
+        }
+    });
+    group.add(&resume_row);
+
+    let clear_all = gtk4::Button::with_label("Clear all profile mappings");
+    let bulk_row = adw::ActionRow::builder()
+        .title("All platform profiles")
+        .subtitle("Remove every stored profile→preset pair from daemon state.")
+        .selectable(false)
+        .build();
+    bulk_row.add_suffix(&clear_all);
+    group.add(&bulk_row);
+
+    let status_for_clear = map_status.clone();
+    clear_all.connect_clicked(move |_| {
+        match LegionControlClient::system().and_then(|client| client.clear_fan_preset_profile_map())
+        {
+            Ok(_) => {
+                status_for_clear.set_text("Cleared every profile→preset mapping.");
+                let _ = request_dashboard_refresh();
+            }
+            Err(error) => {
+                status_for_clear.set_text(&format!("Clear failed: {error}"));
+            }
+        }
+    });
+
+    page.append(&group);
+    page.append(&map_status);
 }
 
 type ManualFanScratchRows = Rc<RefCell<Vec<(FanCurveHwmonPointPair, gtk4::Entry, gtk4::Entry)>>>;

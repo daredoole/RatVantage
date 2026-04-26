@@ -1447,7 +1447,12 @@ mod tests {
                     report.clone(),
                     Some("test-kernel".to_owned()),
                 )
-                .with_runtime_state(None, None),
+                .with_runtime_state(
+                    None,
+                    None,
+                    std::collections::BTreeMap::new(),
+                    false,
+                ),
             },
             summary: TraySummary::from_status_and_report(&status, &report, None, None),
             menu: TrayMenu::from_status_and_report(&status, &report, None, None),

@@ -20,10 +20,12 @@
 - Completed slice: default GTK smoke capture includes the `gpu` page alongside `fans`; `scripts/run-local-session-app.sh` documents `--gtk-page gpu`.
 - Completed slice: GTK Fans manual scratchpad TOML exchange (`ratvantage_fan_scratchpad_v1` encode/decode in `legion-common`, clipboard copy, multiline editor import for scratchpad or packaged preset TOML when hwmon pair count matches); still read-only (no daemon apply).
 - Completed slice: read-only live vs last-known-good fan curve comparison (`format_fan_curve_live_vs_saved` in `legion-common`, GTK Fans “Compare live to saved” with monospace report); still no writes.
+- Completed slice: durable per-platform-profile fan preset map in daemon state (`GetFanPresetProfileMap` / setters), diagnostics JSON parity, GTK Fans “Fan preset per platform profile” section with per-choice save and clear-all.
+- Completed slice: `fan_preset_reapply_after_resume` policy in daemon state with `GetFanPresetReapplyAfterResume` / `SetFanPresetReapplyAfterResume`, GTK Fans switch, and a system-bus logind `PrepareForSleep` background observer on the production daemon that refreshes the probe after resume and prints a dry-run fan preset plan when a mapping exists (still no fan sysfs execution).
 - Validation for the latest slices passed with `cargo fmt --all`, `xvfb-run -a cargo test -p legion-control-ui --features gtk-ui --test gtk_shell`, and `./scripts/ci-local.sh`.
 - Current user-visible GTK surface now includes `Status`, `Profiles`, `Battery`, `GPU`, `Fans`, `Appearance`, and `Diagnostics`.
 - Direct GPU-mode execution is still disabled in the dashboard; the GTK GPU tab is planning-only and app-state-only, matching the daemon safety policy.
-- Next recommended roadmap slice: per-profile fan preset mapping (v0.2 app state + GTK), then resume re-apply policy — still without enabling `ApplyFanPreset` / `RestoreAutoFan` in the dashboard until execute-mode validation evidence exists.
+- Next recommended roadmap slice: GTK Fans manual curve editor / v0.2 visual editor groundwork (still no `ApplyFanPreset` / `RestoreAutoFan` in the dashboard until execute-mode validation evidence exists).
 - If the KDE Wayland/NVIDIA black-window bug returns, treat it as a compositor/frontend issue and keep the private-session launcher plus `--gdk-backend x11` fallback available while continuing tray/CLI validation.
 
 ## Implemented
@@ -46,7 +48,7 @@
 - Platform profile and battery charge type models include both current-value paths and choice-list paths for diagnostics.
 - UI status output includes per-capability status and risk labels.
 - Optional GTK Profiles, Battery, and Appearance tabs render the diagnostics bundle data and expose gated quick-apply controls with inline write-result feedback where the write surface is currently allowed.
-- Optional GTK Fans tab renders fan telemetry, fan curve paths, last-known-good snapshot status, packaged preset selection with dry-run plan previews for fan preset and restore-to-auto flows, capture for the durable last-known-good curve, read-only live sysfs curve readings with a per-point `ActionRow` list after refresh, a matching read-only saved last-known-good point list with daemon refresh, a raw multiline live dump, a read-only live-vs-saved sysfs diff report, a manual scratchpad with monotonic validation plus JSON and lossless TOML (`ratvantage_fan_scratchpad_v1`) export and editor import (including packaged preset TOML when point counts match), still with no `ApplyFanPreset` / `RestoreAutoFan` execution in the dashboard.
+- Optional GTK Fans tab renders fan telemetry, fan curve paths, last-known-good snapshot status, packaged preset selection with dry-run plan previews for fan preset and restore-to-auto flows, capture for the durable last-known-good curve, read-only live sysfs curve readings with a per-point `ActionRow` list after refresh, a matching read-only saved last-known-good point list with daemon refresh, a raw multiline live dump, a read-only live-vs-saved sysfs diff report, a manual scratchpad with monotonic validation plus JSON and lossless TOML (`ratvantage_fan_scratchpad_v1`) export and editor import (including packaged preset TOML when point counts match), per-platform-profile fan preset mapping rows plus a resume re-apply policy switch, still with no `ApplyFanPreset` / `RestoreAutoFan` execution in the dashboard.
 - Optional GTK Appearance tab renders LED brightness and firmware toggle values and now exposes gated quick-apply controls for ylogo LED, restricted `fn_lock`, and dashboard-confirmed `camera_power` plus `usb_charging`.
 - Optional GTK diagnostics tab for the same read-only hardware/debug bundle, with compact counts and Copy JSON parity for durable app-state fields.
 - Packaged read-only fan preset TOML assets in `data/presets/`, validated by `scripts/validate-packaging.sh`, installed by the RPM spec, and validated at runtime for dry-run fan preset planning.
@@ -62,6 +64,8 @@
   - `PlanIdeapadToggleWrite`
   - `PlanGpuModeWrite`
   - `PlanFanPresetWrite`
+  - `GetFanPresetProfileMap` / `SetFanPresetProfileMapEntry` / `RemoveFanPresetProfileMapEntry` / `ClearFanPresetProfileMap`
+  - `GetFanPresetReapplyAfterResume` / `SetFanPresetReapplyAfterResume`
   - `SetPlatformProfile`
   - `SetBatteryChargeType`
   - `SetLedState`

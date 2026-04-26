@@ -1,4 +1,4 @@
-use std::{fs, sync::Arc};
+use std::{collections::BTreeMap, fs, sync::Arc};
 
 use legion_common::{
     Capability, CapabilityRegistry, FanCurveSnapshot, GpuModePending, HardwareSummary,
@@ -82,6 +82,12 @@ fn read_only_methods_return_expected_json_contracts() {
         "expected pwm auto point paths in live readings: {:?}",
         live.points
     );
+
+    let fan_map: BTreeMap<String, String> = call_json(&proxy, "GetFanPresetProfileMap");
+    assert!(fan_map.is_empty());
+
+    let reapply: bool = call_json(&proxy, "GetFanPresetReapplyAfterResume");
+    assert!(!reapply);
 
     let payload: String = proxy
         .call("PlanPlatformProfileWrite", &("performance",))
@@ -167,8 +173,11 @@ fn introspection_exposes_gated_reversible_write_methods_only() {
         methods,
         [
             "CaptureLastKnownGoodFanCurve",
+            "ClearFanPresetProfileMap",
             "ClearGpuModePending",
             "GetCapabilities",
+            "GetFanPresetProfileMap",
+            "GetFanPresetReapplyAfterResume",
             "GetGpuModePending",
             "GetHardwareSummary",
             "GetLastKnownGoodFanCurve",
@@ -183,7 +192,10 @@ fn introspection_exposes_gated_reversible_write_methods_only() {
             "PlanPlatformProfileWrite",
             "PlanRestoreAutoFanWrite",
             "RefreshCapabilities",
+            "RemoveFanPresetProfileMapEntry",
             "SetBatteryChargeType",
+            "SetFanPresetProfileMapEntry",
+            "SetFanPresetReapplyAfterResume",
             "SetGpuModePending",
             "SetIdeapadToggle",
             "SetLedState",
@@ -960,6 +972,92 @@ fn daemon_builds_fan_preset_plan_from_runtime_fixture() {
         .iter()
         .any(|point| point.path.ends_with("pwm1_auto_point1_temp") && !point.value.is_empty()));
     assert_eq!(service.last_known_good_fan_curve().unwrap(), Some(captured));
+    let _ = fs::remove_file(state_path);
+}
+
+#[test]
+fn fan_preset_profile_map_round_trips_through_state_file() {
+    let state_path = unique_state_path("fan-profile-map");
+    let service = LegionControl::new_with_state_path(
+        ProbeOptions {
+            sysfs_root: runtime_fixture_root(),
+        },
+        &state_path,
+    );
+    assert!(service.fan_preset_by_platform_profile().unwrap().is_empty());
+    let updated = service
+        .set_fan_preset_profile_map_entry("performance", "gaming")
+        .unwrap();
+    assert_eq!(
+        updated.get("performance").map(String::as_str),
+        Some("gaming")
+    );
+    let reloaded = LegionControl::new_with_state_path(
+        ProbeOptions {
+            sysfs_root: runtime_fixture_root(),
+        },
+        &state_path,
+    );
+    assert_eq!(
+        reloaded
+            .fan_preset_by_platform_profile()
+            .unwrap()
+            .get("performance")
+            .map(String::as_str),
+        Some("gaming")
+    );
+    let after_remove = reloaded
+        .remove_fan_preset_profile_map_entry("performance")
+        .unwrap();
+    assert!(!after_remove.contains_key("performance"));
+    let persisted = LegionControl::new_with_state_path(
+        ProbeOptions {
+            sysfs_root: runtime_fixture_root(),
+        },
+        &state_path,
+    );
+    assert!(persisted
+        .fan_preset_by_platform_profile()
+        .unwrap()
+        .is_empty());
+    let _ = fs::remove_file(state_path);
+}
+
+#[test]
+fn fan_preset_reapply_after_resume_round_trips_over_dbus_and_state_file() {
+    let state_path = unique_state_path("fan-reapply-dbus");
+    let service = LegionControl::new_with_state_path(
+        ProbeOptions {
+            sysfs_root: fixture_root(),
+        },
+        &state_path,
+    );
+    let (_bus, _service_connection, proxy) = test_proxy_with_service(service);
+
+    let reapply: bool = call_json(&proxy, "GetFanPresetReapplyAfterResume");
+    assert!(!reapply);
+    let payload: String = proxy
+        .call("SetFanPresetReapplyAfterResume", &(true,))
+        .unwrap();
+    let reapply: bool = serde_json::from_str(&payload).unwrap();
+    assert!(reapply);
+    let reapply: bool = call_json(&proxy, "GetFanPresetReapplyAfterResume");
+    assert!(reapply);
+    let payload: String = proxy
+        .call("SetFanPresetReapplyAfterResume", &(false,))
+        .unwrap();
+    let reapply: bool = serde_json::from_str(&payload).unwrap();
+    assert!(!reapply);
+
+    drop(proxy);
+    drop(_service_connection);
+    let reloaded = LegionControl::new_with_state_path(
+        ProbeOptions {
+            sysfs_root: fixture_root(),
+        },
+        &state_path,
+    );
+    assert!(!reloaded.fan_preset_reapply_after_resume().unwrap());
     let _ = fs::remove_file(state_path);
 }
 

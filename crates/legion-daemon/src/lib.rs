@@ -1,4 +1,5 @@
 use std::{
+    collections::BTreeMap,
     fs,
     path::{Path, PathBuf},
     process::Command,
@@ -11,17 +12,23 @@ use legion_common::{
     plan_fan_preset_write as plan_fan_preset, plan_gpu_mode_write as plan_gpu_mode,
     plan_ideapad_toggle_write as plan_ideapad_toggle, plan_led_state_write as plan_led_state,
     plan_platform_profile_write as plan_platform_profile,
-    plan_restore_auto_fan_write as plan_restore_auto_fan, validate_gpu_mode_choice,
-    CapabilityRegistry, DaemonState, FanCurveSnapshot, FanPreset, GpuModePending,
-    IdeapadToggleCapability, LedCapability, ValidationError, WriteDryRunPlan, WriteExecutionResult,
+    plan_restore_auto_fan_write as plan_restore_auto_fan,
+    validate_fan_preset_platform_profile_entry, validate_gpu_mode_choice, CapabilityRegistry,
+    DaemonState, FanCurveSnapshot, FanPreset, GpuModePending, IdeapadToggleCapability,
+    LedCapability, ValidationError, WriteDryRunPlan, WriteExecutionResult,
 };
 use legion_probe::{probe, ProbeOptions};
 use serde::Serialize;
-use zbus::{blocking::Connection, blocking::ConnectionBuilder, fdo, interface, message::Header};
+use zbus::{
+    blocking::{Connection, ConnectionBuilder, MessageIterator},
+    fdo, interface,
+    message::{Header, Type},
+    MatchRule,
+};
 
 pub const DBUS_INTERFACE: &str = "org.ratvantage.LegionControl1";
 pub const DBUS_PATH: &str = "/org/ratvantage/LegionControl1";
-pub const READ_ONLY_METHODS: &str = "GetHardwareSummary,GetCapabilities,RefreshCapabilities,GetTelemetry,GetRawProbeReport,GetGpuModePending,GetLastKnownGoodFanCurve,GetLiveFanCurveReadings,PlanPlatformProfileWrite,PlanBatteryChargeTypeWrite,PlanLedStateWrite,PlanIdeapadToggleWrite,PlanGpuModeWrite,PlanFanPresetWrite,PlanRestoreAutoFanWrite,SetGpuModePending,ClearGpuModePending,CaptureLastKnownGoodFanCurve";
+pub const READ_ONLY_METHODS: &str = "CaptureLastKnownGoodFanCurve,ClearFanPresetProfileMap,ClearGpuModePending,GetCapabilities,GetFanPresetProfileMap,GetFanPresetReapplyAfterResume,GetGpuModePending,GetHardwareSummary,GetLastKnownGoodFanCurve,GetLiveFanCurveReadings,GetRawProbeReport,GetTelemetry,PlanBatteryChargeTypeWrite,PlanFanPresetWrite,PlanGpuModeWrite,PlanIdeapadToggleWrite,PlanLedStateWrite,PlanPlatformProfileWrite,PlanRestoreAutoFanWrite,RefreshCapabilities,RemoveFanPresetProfileMapEntry,SetFanPresetProfileMapEntry,SetFanPresetReapplyAfterResume,SetGpuModePending";
 pub const GATED_WRITE_METHODS: &str =
     "SetPlatformProfile,SetBatteryChargeType,SetLedState,SetIdeapadToggle";
 pub const DEFAULT_STATE_PATH: &str = "/var/lib/legion-control/state.toml";
@@ -643,6 +650,90 @@ impl LegionControl {
         Ok(snapshot)
     }
 
+    pub fn fan_preset_by_platform_profile(&self) -> fdo::Result<BTreeMap<String, String>> {
+        self.state
+            .lock()
+            .map(|state| state.fan_preset_by_platform_profile.clone())
+            .map_err(|_| fdo::Error::Failed("daemon state lock poisoned".to_owned()))
+    }
+
+    pub fn set_fan_preset_profile_map_entry(
+        &self,
+        platform_profile: &str,
+        fan_preset_id: &str,
+    ) -> fdo::Result<BTreeMap<String, String>> {
+        let registry = self.planning_snapshot().map_err(planning_to_fdo)?;
+        let presets = packaged_fan_presets().map_err(planning_to_fdo)?;
+        validate_fan_preset_platform_profile_entry(
+            registry.platform_profile.as_ref(),
+            &registry.fan_curves,
+            &presets,
+            platform_profile,
+            fan_preset_id,
+        )
+        .map_err(validation_to_fdo)?;
+        let mut state = self
+            .state
+            .lock()
+            .map_err(|_| fdo::Error::Failed("daemon state lock poisoned".to_owned()))?;
+        state
+            .fan_preset_by_platform_profile
+            .insert(platform_profile.to_owned(), fan_preset_id.to_owned());
+        save_state(&self.state_path, &state)
+            .map_err(|error| fdo::Error::Failed(format!("failed to save daemon state: {error}")))?;
+        Ok(state.fan_preset_by_platform_profile.clone())
+    }
+
+    pub fn remove_fan_preset_profile_map_entry(
+        &self,
+        platform_profile: &str,
+    ) -> fdo::Result<BTreeMap<String, String>> {
+        if platform_profile.trim().is_empty() {
+            return Err(fdo::Error::InvalidArgs(
+                "platform_profile must be non-empty".to_owned(),
+            ));
+        }
+        let mut state = self
+            .state
+            .lock()
+            .map_err(|_| fdo::Error::Failed("daemon state lock poisoned".to_owned()))?;
+        state
+            .fan_preset_by_platform_profile
+            .remove(platform_profile);
+        save_state(&self.state_path, &state)
+            .map_err(|error| fdo::Error::Failed(format!("failed to save daemon state: {error}")))?;
+        Ok(state.fan_preset_by_platform_profile.clone())
+    }
+
+    pub fn clear_fan_preset_profile_map(&self) -> fdo::Result<BTreeMap<String, String>> {
+        let mut state = self
+            .state
+            .lock()
+            .map_err(|_| fdo::Error::Failed("daemon state lock poisoned".to_owned()))?;
+        state.fan_preset_by_platform_profile.clear();
+        save_state(&self.state_path, &state)
+            .map_err(|error| fdo::Error::Failed(format!("failed to save daemon state: {error}")))?;
+        Ok(state.fan_preset_by_platform_profile.clone())
+    }
+
+    pub fn fan_preset_reapply_after_resume(&self) -> fdo::Result<bool> {
+        self.state
+            .lock()
+            .map(|state| state.fan_preset_reapply_after_resume)
+            .map_err(|_| fdo::Error::Failed("daemon state lock poisoned".to_owned()))
+    }
+
+    pub fn set_fan_preset_reapply_after_resume(&self, enabled: bool) -> fdo::Result<bool> {
+        let mut state = self
+            .state
+            .lock()
+            .map_err(|_| fdo::Error::Failed("daemon state lock poisoned".to_owned()))?;
+        state.fan_preset_reapply_after_resume = enabled;
+        save_state(&self.state_path, &state)
+            .map_err(|error| fdo::Error::Failed(format!("failed to save daemon state: {error}")))?;
+        Ok(state.fan_preset_reapply_after_resume)
+    }
+
     fn refresh(&self) -> fdo::Result<CapabilityRegistry> {
         let registry = probe(&self.options);
         let mut cached = self
@@ -770,6 +861,34 @@ impl LegionControl {
         to_json(&self.live_fan_curve_readings()?)
     }
 
+    fn GetFanPresetProfileMap(&self) -> fdo::Result<String> {
+        to_json(&self.fan_preset_by_platform_profile()?)
+    }
+
+    fn SetFanPresetProfileMapEntry(
+        &self,
+        platform_profile: &str,
+        fan_preset_id: &str,
+    ) -> fdo::Result<String> {
+        to_json(&self.set_fan_preset_profile_map_entry(platform_profile, fan_preset_id)?)
+    }
+
+    fn RemoveFanPresetProfileMapEntry(&self, platform_profile: &str) -> fdo::Result<String> {
+        to_json(&self.remove_fan_preset_profile_map_entry(platform_profile)?)
+    }
+
+    fn ClearFanPresetProfileMap(&self) -> fdo::Result<String> {
+        to_json(&self.clear_fan_preset_profile_map()?)
+    }
+
+    fn GetFanPresetReapplyAfterResume(&self) -> fdo::Result<String> {
+        to_json(&self.fan_preset_reapply_after_resume()?)
+    }
+
+    fn SetFanPresetReapplyAfterResume(&self, enabled: bool) -> fdo::Result<String> {
+        to_json(&self.set_fan_preset_reapply_after_resume(enabled)?)
+    }
+
     fn PlanPlatformProfileWrite(&self, requested: &str) -> fdo::Result<String> {
         to_plan_json(self.plan_platform_profile_write(requested))
     }
@@ -861,6 +980,97 @@ pub fn session_connection(service: LegionControl) -> Result<Connection> {
         .name(DBUS_INTERFACE)?
         .serve_at(DBUS_PATH, service)?
         .build()?)
+}
+
+/// Subscribes to systemd-logind `PrepareForSleep` on the system bus and, after resume, optionally
+/// refreshes the probe cache and prints a **dry-run** fan preset plan when resume re-apply is enabled
+/// and a per-profile mapping exists. Does not perform fan sysfs writes.
+pub fn spawn_fan_preset_resume_observer(state_path: PathBuf, options: ProbeOptions) {
+    let _ = std::thread::Builder::new()
+        .name("ratvantage-fan-resume".to_owned())
+        .spawn(move || {
+            if let Err(error) = run_fan_preset_resume_observer(state_path, options) {
+                eprintln!("legion-control-daemon: fan resume observer exit: {error}");
+            }
+        });
+}
+
+fn run_fan_preset_resume_observer(
+    state_path: PathBuf,
+    options: ProbeOptions,
+) -> Result<(), String> {
+    let conn = Connection::system().map_err(|e| e.to_string())?;
+    let rule = MatchRule::builder()
+        .msg_type(Type::Signal)
+        .path("/org/freedesktop/login1")
+        .map_err(|e: zbus::Error| e.to_string())?
+        .interface("org.freedesktop.login1.Manager")
+        .map_err(|e: zbus::Error| e.to_string())?
+        .member("PrepareForSleep")
+        .map_err(|e: zbus::Error| e.to_string())?
+        .build();
+    let iter = MessageIterator::for_match_rule(rule, &conn, Some(32)).map_err(|e| e.to_string())?;
+    for msg in iter {
+        let msg = msg.map_err(|e| e.to_string())?;
+        if msg.message_type() != Type::Signal {
+            continue;
+        }
+        let start = match msg.body().deserialize::<bool>() {
+            Ok(value) => value,
+            Err(_) => continue,
+        };
+        if start {
+            continue;
+        }
+        if let Err(error) = handle_login1_resume_fan_tick(&state_path, &options) {
+            eprintln!("legion-control-daemon: resume fan policy tick: {error}");
+        }
+    }
+    Ok(())
+}
+
+fn handle_login1_resume_fan_tick(state_path: &Path, options: &ProbeOptions) -> Result<(), String> {
+    let ctl = LegionControl::new_with_state_path(options.clone(), state_path.to_path_buf());
+    ctl.refresh()
+        .map_err(|e| format!("resume fan reapply: probe refresh failed: {e}"))?;
+    let enabled = ctl
+        .state
+        .lock()
+        .map_err(|_| "daemon state lock poisoned".to_owned())?
+        .fan_preset_reapply_after_resume;
+    if !enabled {
+        return Ok(());
+    }
+    let map = ctl
+        .fan_preset_by_platform_profile()
+        .map_err(|e| format!("resume fan reapply: {e}"))?;
+    let profile = ctl
+        .snapshot()
+        .map_err(|e| format!("resume fan reapply: {e}"))?
+        .platform_profile
+        .as_ref()
+        .and_then(|p| p.current.clone())
+        .ok_or_else(|| "resume fan reapply: platform profile unknown".to_owned())?;
+    let Some(preset_id) = map.get(&profile) else {
+        eprintln!(
+            "legion-control-daemon: resume fan reapply enabled but no preset mapping for profile `{profile}`"
+        );
+        return Ok(());
+    };
+    match ctl.plan_fan_preset_write(preset_id.as_str()) {
+        Ok(plan) => {
+            eprintln!(
+                "legion-control-daemon: resume fan reapply (dry-run): profile={profile} preset={preset_id} plan_method={} requested={}",
+                plan.method, plan.requested_value
+            );
+        }
+        Err(error) => {
+            eprintln!(
+                "legion-control-daemon: resume fan reapply plan failed: profile={profile} preset={preset_id}: {error:?}"
+            );
+        }
+    }
+    Ok(())
 }
 
 fn to_json<T: Serialize>(value: &T) -> fdo::Result<String> {

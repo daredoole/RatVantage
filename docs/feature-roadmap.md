@@ -36,7 +36,7 @@ Current pre-alpha code provides the safe read-only base:
 - UI overview includes app-state-only GPU pending-reboot status and saved fan curve snapshots when recorded by the daemon.
 - Tray/status output and GTK pages surface app-state-only GPU pending-reboot state and saved fan curve snapshots.
 - Read-only UI `--diagnostics` JSON bundle with hardware summary, compact counts, kernel version, detected sysfs paths, recent daemon log excerpts, and raw probe report.
-- Diagnostics/export parity for durable app state, so CLI `--diagnostics` output and GTK Diagnostics Copy JSON include `gpu_mode_pending` and `last_known_good_fan_curve`.
+- Diagnostics/export parity for durable app state, so CLI `--diagnostics` output and GTK Diagnostics Copy JSON include `gpu_mode_pending`, `last_known_good_fan_curve`, `fan_preset_by_platform_profile`, and `fan_preset_reapply_after_resume`.
 - Diagnostics include `platform_profile_choices` and `charge_types` source paths.
 - UI dry-run plan previews for platform profile, battery charge type, LED state, ideapad toggle, GPU mode, fan preset, and fan restore/default writes, plus gated execution output for the currently enabled reversible methods.
 - UI status output includes per-capability status and risk labels.
@@ -147,8 +147,8 @@ Goal: make the confirmed controls more complete and user-friendly.
 - Warn if readback is incomplete, zeroed, or inconsistent. [GTK Fans: optional read-only “Compare live to saved” report when both snapshots exist]
 - Validate full curve before applying.
 - Export/import fan presets as TOML. [GTK Fans scratchpad: lossless `ratvantage_fan_scratchpad_v1` clipboard TOML plus paste-import of packaged `data/presets/*.toml` when point counts match; still no apply]
-- Assign fan preset per platform profile.
-- Re-apply selected fan preset after resume if enabled.
+- Assign fan preset per platform profile. [implemented as durable daemon state + D-Bus + GTK Fans + diagnostics JSON]
+- Re-apply selected fan preset after resume if enabled. [implemented: policy flag + GTK switch + logind `PrepareForSleep` observer on the system daemon; resume path refreshes probe cache and prints dry-run fan preset plan only — sysfs fan writes remain disabled]
 
 ### Tray polish
 

@@ -1,8 +1,8 @@
 use anyhow::Result;
 use clap::Parser;
 use legion_control_daemon::{
-    session_connection, system_connection, LegionControl, PkcheckAuthorizer,
-    SysfsBatteryChargeTypeWriter, SysfsIdeapadToggleWriter, SysfsLedStateWriter,
+    session_connection, spawn_fan_preset_resume_observer, system_connection, LegionControl,
+    PkcheckAuthorizer, SysfsBatteryChargeTypeWriter, SysfsIdeapadToggleWriter, SysfsLedStateWriter,
     SysfsPlatformProfileWriter, WriteAccessPolicy, DBUS_INTERFACE, DBUS_PATH, DEFAULT_STATE_PATH,
     GATED_WRITE_METHODS, READ_ONLY_METHODS,
 };
@@ -48,7 +48,7 @@ fn main() -> Result<()> {
     };
     let service = LegionControl::new_with_runtime(
         options.clone(),
-        args.state_path,
+        args.state_path.clone(),
         WriteAccessPolicy {
             platform_profile_enabled: args.enable_platform_profile_write,
             battery_charge_type_enabled: args.enable_battery_charge_type_write,
@@ -105,6 +105,7 @@ fn main() -> Result<()> {
         println!("serving development session bus");
         connection
     } else {
+        spawn_fan_preset_resume_observer(args.state_path, options.clone());
         let connection = system_connection(service)?;
         println!("serving system bus");
         connection

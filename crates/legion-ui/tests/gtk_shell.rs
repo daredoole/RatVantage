@@ -2,6 +2,7 @@
 
 use adw::prelude::*;
 use std::{
+    collections::BTreeMap,
     sync::Once,
     time::{Duration, Instant},
 };
@@ -66,7 +67,7 @@ fn status_and_error_pages_build_under_headless_display() {
 
     assert_eq!(page.orientation(), gtk4::Orientation::Vertical);
     assert_eq!(page.spacing(), 12);
-    assert_eq!(page.observe_children().n_items(), 29);
+    assert_eq!(page.observe_children().n_items(), 31);
 
     let page = gtk_shell::fans_page(Ok(sample_diagnostics()), Ok(Some(sample_fan_snapshot())));
     let page = page
@@ -75,7 +76,7 @@ fn status_and_error_pages_build_under_headless_display() {
 
     assert_eq!(page.orientation(), gtk4::Orientation::Vertical);
     assert_eq!(page.spacing(), 12);
-    assert_eq!(page.observe_children().n_items(), 29);
+    assert_eq!(page.observe_children().n_items(), 31);
 
     let page = gtk_shell::appearance_page(Ok(sample_diagnostics()));
     let page = page
@@ -317,6 +318,15 @@ fn dashboard_pages_render_quick_apply_and_gpu_controls() {
         .iter()
         .any(|text| text == "Live vs saved comparison"));
     assert!(fans_text.iter().any(|text| text == "Compare live to saved"));
+    assert!(fans_text
+        .iter()
+        .any(|text| text == "Fan preset per platform profile"));
+    assert!(fans_text
+        .iter()
+        .any(|text| text == "Clear all profile mappings"));
+    assert!(fans_text
+        .iter()
+        .any(|text| text == "Re-apply mapped fan preset after resume"));
 
     let gpu_text = collect_widget_text(&gpu.clone().upcast());
     assert!(gpu_text.iter().any(|text| text == "GPU Mode"));
@@ -651,7 +661,12 @@ fn sample_diagnostics() -> DiagnosticsBundle {
         Some("6.17.0-test".to_owned()),
         vec!["2026-04-25T17:44:00 legion-control-daemon started".to_owned()],
     )
-    .with_runtime_state(Some(sample_gpu_pending()), Some(sample_fan_snapshot()))
+    .with_runtime_state(
+        Some(sample_gpu_pending()),
+        Some(sample_fan_snapshot()),
+        BTreeMap::new(),
+        false,
+    )
 }
 
 fn sample_gpu_pending() -> GpuModePending {
