@@ -8,7 +8,7 @@ Current pre-alpha code provides the safe read-only base:
 - Root-capable daemon shape with read-only D-Bus APIs plus gated reversible execution for `SetPlatformProfile`, `SetBatteryChargeType`, `SetLedState`, and restricted `SetIdeapadToggle`.
 - UI status client and optional GTK4/libadwaita shell with Status, Profiles, Battery, Fans, Appearance, and Diagnostics tabs; the Profiles, Battery, and Appearance tabs now include gated quick-apply controls with inline execution feedback.
 - Tray/status helper with a state-driven menu derived from detected profile choices, battery charge choices, LED state, ideapad toggle state, packaged preset labels, pending runtime state, reversible quick actions for platform profile, battery charge type, ylogo LED, and `fn_lock`, plus dashboard-routed guidance rows for warning-gated `camera_power` and `usb_charging`.
-- StatusNotifier tray backend with dashboard, refresh, auto-refresh/resume reloads, write action execution, and `--menu-check` diagnostics for the runtime-derived menu.
+- StatusNotifier tray backend with dashboard, refresh, auto-refresh/resume reloads, write action execution, stale-state write-action suppression, recovery notices, and `--menu-check` diagnostics for the runtime-derived menu.
 - StatusNotifier dashboard launch forwards custom D-Bus addresses for private/session-bus workflows.
 - Tray tooltip reports platform profile, fan RPM, and available/missing capabilities.
 - Disabled tray autostart packaging placeholder.
@@ -38,6 +38,7 @@ Current pre-alpha code provides the safe read-only base:
 - UI dry-run plan previews for platform profile, battery charge type, LED state, ideapad toggle, GPU mode, fan preset, and fan restore/default writes, plus gated execution output for the currently enabled reversible methods.
 - UI status output includes per-capability status and risk labels.
 - Read-only GTK Profiles, Battery, and Fans tabs show platform profile choices, battery charge choices, fan telemetry, fan curve paths, packaged preset IDs, sysfs source paths, and battery telemetry from the diagnostics bundle.
+- GTK runtime refresh loop now reprobes on focus/visibility, keeps the last good page during daemon outages, and surfaces recovery/drift notices after reconnect.
 - Read-only GTK Appearance tab shows LED brightness nodes and firmware toggle values from the diagnostics bundle.
 - Read-only GTK diagnostics tab for the same hardware/debug bundle, including Copy JSON.
 - Packaged read-only fan preset TOML assets with CI schema validation and runtime dry-run planning.
@@ -183,7 +184,8 @@ Expose only when probed and with warnings:
 
 - camera power via VPC2004 `camera_power`; [implemented with dashboard confirmation and no direct tray toggle]
 - touchpad hardware toggle via VPC2004 `touchpad`; [intentionally blocked for now pending fixture capture, recovery validation, and user-lockout handling]
-- legacy conservation mode as compatibility diagnostic if `charge_types` is absent;
+- legacy conservation mode as compatibility diagnostic if `charge_types` is absent; [keep out of the live write surface while `charge_types` exists]
+- legacy ideapad fan mode as compatibility diagnostic only if modern platform profile/fan-curve controls are absent; [keep out of the live write surface while current Legion controls exist]
 - backlight readout or `brightnessctl` wrapper only if users ask for it.
 
 ### Desktop integration

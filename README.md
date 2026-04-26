@@ -21,10 +21,12 @@ Pre-alpha implementation scaffold exists:
 - `legion-control-tray --desktop-check` reports desktop/session state, watcher availability, and autostart gating for read-only tray diagnostics.
 - `legion-control-tray --menu-check` prints the same derived tray menu, including quick-action entries, so private-bus tests and smoke bundles can verify the exact runtime menu content.
 - Tray runtime state now reloads from a reprobe helper and auto-refreshes after idle intervals and suspend-like gaps.
+- Tray recovery now marks stale state, suppresses hardware-changing quick actions until refresh succeeds again, and surfaces recovery/drift notices in the live menu/tooltip.
 - UI status output includes per-capability status and risk labels.
 - Disabled tray autostart packaging placeholder.
 - Runtime-captured 82WM fixture coverage, including bracketed battery `charge_types` current-value parsing.
 - Headless GTK smoke coverage for the optional shell.
+- GTK runtime refresh now reprobes on focus/visibility, keeps the last good page during daemon outages, and surfaces recovery/drift notices after reconnect.
 - Fedora packaging metadata and validation for systemd, D-Bus, polkit, desktop, AppStream, and RPM assets.
 - Read-only sysfs fixture capture workflow for adding more real hardware reports.
 - Read-only compatibility bundle workflow for outside Legion contributors, including generated probe summaries and PR body text.
@@ -42,7 +44,7 @@ Pre-alpha implementation scaffold exists:
 - Read-only diagnostics/export surfaces now include the same durable app-state fields, including `gpu_mode_pending` and `last_known_good_fan_curve`.
 - Local CI script and GitHub Actions CI.
 
-Only reversible platform-profile, battery charge-type, ylogo LED, and three ideapad-toggle executions exist so far: restricted `fn_lock` plus warning-gated `camera_power` and `usb_charging`. All remain disabled by default unless the daemon is started with their explicit enable flags. `fn_lock` requires the paired `platform::fnlock` LED for corroborating read-back before the UI or tray exposes quick actions, while `camera_power` and `usb_charging` are intentionally dashboard-confirmed and not exposed as one-click tray writes. `touchpad` remains probe-only and explicitly blocked until dedicated fixture coverage, recovery validation, and user-lockout handling exist.
+Only reversible platform-profile, battery charge-type, ylogo LED, and three ideapad-toggle executions exist so far: restricted `fn_lock` plus warning-gated `camera_power` and `usb_charging`. All remain disabled by default unless the daemon is started with their explicit enable flags. `fn_lock` requires the paired `platform::fnlock` LED for corroborating read-back before the UI or tray exposes quick actions, while `camera_power` and `usb_charging` are intentionally dashboard-confirmed and not exposed as one-click tray writes. `touchpad` remains probe-only and explicitly blocked until dedicated fixture coverage, recovery validation, and user-lockout handling exist, and legacy `conservation_mode`/`fan_mode` stay in compatibility-diagnostic scope instead of the live write surface.
 
 For continuation work, start from [docs/session-handoff.md](docs/session-handoff.md). It records the latest commits, next roadmap slice, safety constraints, validation commands, and the expected orchestrator/agent workflow for new Codex sessions.
 

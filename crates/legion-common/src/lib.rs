@@ -1401,6 +1401,32 @@ mod tests {
         assert!(matches!(
             validate_ideapad_toggle_request(
                 &[IdeapadToggleCapability {
+                    name: "conservation_mode".to_owned(),
+                    status: CapabilityStatus::ProbeOnly,
+                    path: Some("/tmp/conservation_mode".to_owned()),
+                    current_value: Some("1".to_owned()),
+                }],
+                &[],
+                "conservation_mode"
+            ),
+            Err(ValidationError::BlockedChoice { .. })
+        ));
+        assert!(matches!(
+            validate_ideapad_toggle_request(
+                &[IdeapadToggleCapability {
+                    name: "fan_mode".to_owned(),
+                    status: CapabilityStatus::ProbeOnly,
+                    path: Some("/tmp/fan_mode".to_owned()),
+                    current_value: Some("1".to_owned()),
+                }],
+                &[],
+                "fan_mode"
+            ),
+            Err(ValidationError::BlockedChoice { .. })
+        ));
+        assert!(matches!(
+            validate_ideapad_toggle_request(
+                &[IdeapadToggleCapability {
                     name: "touchpad".to_owned(),
                     status: CapabilityStatus::ProbeOnly,
                     path: Some("/tmp/touchpad".to_owned()),

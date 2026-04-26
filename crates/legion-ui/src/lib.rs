@@ -26,6 +26,11 @@ pub struct RuntimeSnapshot {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RuntimeRefreshNotice {
+    pub message: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct UiStatus {
     pub hardware: UiHardwareStatus,
     pub capabilities: Vec<UiCapabilityStatus>,
@@ -405,6 +410,96 @@ pub fn render_write_plan_json<T: Serialize>(value: &T) -> Result<String> {
     Ok(serde_json::to_string_pretty(value)?)
 }
 
+pub fn runtime_refresh_notice(
+    previous: Option<&RuntimeSnapshot>,
+    current: &RuntimeSnapshot,
+    recovered_from_error: bool,
+) -> Option<RuntimeRefreshNotice> {
+    let mut messages = Vec::new();
+    if recovered_from_error {
+        messages.push("Daemon communication recovered; live state is available again.".to_owned());
+    }
+
+    if let Some(previous) = previous {
+        let previous_profile = previous
+            .diagnostics
+            .raw_probe_report
+            .platform_profile
+            .as_ref()
+            .and_then(|profile| profile.current.as_deref())
+            .unwrap_or("unknown");
+        let current_profile = current
+            .diagnostics
+            .raw_probe_report
+            .platform_profile
+            .as_ref()
+            .and_then(|profile| profile.current.as_deref())
+            .unwrap_or("unknown");
+        if previous_profile != current_profile {
+            messages.push(format!(
+                "Platform profile changed from `{previous_profile}` to `{current_profile}`; re-check fan behavior because profile changes can reset thermal behavior."
+            ));
+        }
+
+        let previous_available = previous.diagnostics.summary.available_capability_count;
+        let previous_missing = previous.diagnostics.summary.missing_capability_count;
+        let current_available = current.diagnostics.summary.available_capability_count;
+        let current_missing = current.diagnostics.summary.missing_capability_count;
+        if previous_available != current_available || previous_missing != current_missing {
+            messages.push(format!(
+                "Capability probe changed from {previous_available} available/{previous_missing} missing to {current_available} available/{current_missing} missing."
+            ));
+        }
+
+        let previous_snapshot =
+            previous
+                .diagnostics
+                .last_known_good_fan_curve
+                .as_ref()
+                .map(|snapshot| {
+                    format!(
+                        "{} values from {}",
+                        snapshot.points.len(),
+                        snapshot.curve_id
+                    )
+                });
+        let current_snapshot =
+            current
+                .diagnostics
+                .last_known_good_fan_curve
+                .as_ref()
+                .map(|snapshot| {
+                    format!(
+                        "{} values from {}",
+                        snapshot.points.len(),
+                        snapshot.curve_id
+                    )
+                });
+        if previous_snapshot != current_snapshot {
+            match (previous_snapshot, current_snapshot) {
+                (Some(previous_snapshot), Some(current_snapshot)) => messages.push(format!(
+                    "Saved fan-curve snapshot changed from {previous_snapshot} to {current_snapshot}."
+                )),
+                (Some(previous_snapshot), None) => messages.push(format!(
+                    "Saved fan-curve snapshot `{previous_snapshot}` is no longer present in daemon state."
+                )),
+                (None, Some(current_snapshot)) => messages.push(format!(
+                    "Saved fan-curve snapshot is now available: {current_snapshot}."
+                )),
+                (None, None) => {}
+            }
+        }
+    }
+
+    if messages.is_empty() {
+        None
+    } else {
+        Some(RuntimeRefreshNotice {
+            message: messages.join(" "),
+        })
+    }
+}
+
 fn detected_sysfs_paths(report: &CapabilityRegistry) -> Vec<String> {
     let mut paths = Vec::new();
     push_path(&mut paths, &report.hardware.sysfs_root);
@@ -449,6 +544,107 @@ fn detected_sysfs_paths(report: &CapabilityRegistry) -> Vec<String> {
     paths.sort();
     paths.dedup();
     paths
+}
+
+#[cfg(test)]
+#[allow(clippy::items_after_test_module)]
+mod tests {
+    use super::*;
+    use legion_common::{
+        Capability, CapabilityStatus, FanCurvePointSnapshot, FanCurveSnapshot, HardwareSummary,
+        PlatformProfileCapability, RiskLevel,
+    };
+
+    #[test]
+    fn runtime_refresh_notice_reports_recovery_profile_and_capability_drift() {
+        let previous = sample_runtime_snapshot("balanced", 2, 0, Some(sample_fan_snapshot("a")));
+        let current = sample_runtime_snapshot("performance", 1, 1, Some(sample_fan_snapshot("b")));
+
+        let notice = runtime_refresh_notice(Some(&previous), &current, true).unwrap();
+
+        assert!(notice.message.contains("Daemon communication recovered"));
+        assert!(notice
+            .message
+            .contains("Platform profile changed from `balanced` to `performance`"));
+        assert!(notice.message.contains(
+            "Capability probe changed from 2 available/0 missing to 1 available/1 missing"
+        ));
+        assert!(notice
+            .message
+            .contains("Saved fan-curve snapshot changed from 1 values from a to 1 values from b"));
+    }
+
+    #[test]
+    fn runtime_refresh_notice_is_empty_for_steady_state() {
+        let snapshot = sample_runtime_snapshot("balanced", 2, 0, None);
+        assert_eq!(
+            runtime_refresh_notice(Some(&snapshot), &snapshot, false),
+            None
+        );
+    }
+
+    fn sample_runtime_snapshot(
+        profile: &str,
+        available: usize,
+        missing: usize,
+        fan_snapshot: Option<FanCurveSnapshot>,
+    ) -> RuntimeSnapshot {
+        let hardware = HardwareSummary {
+            sysfs_root: "/tmp/fixture".to_owned(),
+            vendor: Some("LENOVO".to_owned()),
+            product_name: Some("82WM".to_owned()),
+            product_version: Some("Legion Pro 5 16ARX8".to_owned()),
+            product_sku: None,
+        };
+        let capabilities = (0..available)
+            .map(|index| Capability {
+                id: format!("available-{index}"),
+                label: format!("Available {index}"),
+                status: CapabilityStatus::ProbeOnly,
+                risk: RiskLevel::ReadOnly,
+                evidence: vec![],
+                details: serde_json::Value::Null,
+            })
+            .chain((0..missing).map(|index| Capability {
+                id: format!("missing-{index}"),
+                label: format!("Missing {index}"),
+                status: CapabilityStatus::Missing,
+                risk: RiskLevel::ReadOnly,
+                evidence: vec![],
+                details: serde_json::Value::Null,
+            }))
+            .collect::<Vec<_>>();
+        let status = UiStatus::from_parts(hardware.clone(), capabilities.clone()).unwrap();
+        let mut report = CapabilityRegistry {
+            hardware,
+            capabilities,
+            ..Default::default()
+        };
+        report.platform_profile = Some(PlatformProfileCapability {
+            current: Some(profile.to_owned()),
+            choices: vec!["balanced".to_owned(), "performance".to_owned()],
+            path: "/tmp/platform_profile".to_owned(),
+            choices_path: "/tmp/platform_profile_choices".to_owned(),
+        });
+        let diagnostics = DiagnosticsBundle::from_report(report, Some("test-kernel".to_owned()))
+            .with_runtime_state(None, fan_snapshot);
+
+        RuntimeSnapshot {
+            status,
+            diagnostics,
+        }
+    }
+
+    fn sample_fan_snapshot(curve_id: &str) -> FanCurveSnapshot {
+        FanCurveSnapshot {
+            curve_id: curve_id.to_owned(),
+            path: Some("/tmp/hwmon".to_owned()),
+            points: vec![FanCurvePointSnapshot {
+                path: "/tmp/hwmon/pwm1_auto_point1_temp".to_owned(),
+                value: "42000".to_owned(),
+            }],
+        }
+    }
 }
 
 fn push_path(paths: &mut Vec<String>, path: &str) {

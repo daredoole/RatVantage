@@ -241,6 +241,12 @@ fn daemon_builds_dry_run_plans_without_other_dbus_write_methods() {
     assert!(service
         .plan_ideapad_toggle_write("touchpad", false)
         .is_err());
+    assert!(service
+        .plan_ideapad_toggle_write("conservation_mode", false)
+        .is_err());
+    assert!(service
+        .plan_ideapad_toggle_write("fan_mode", false)
+        .is_err());
     assert!(service.plan_gpu_mode_write("hybrid").is_err());
     assert!(service.plan_fan_preset_write("balanced-daily").is_err());
 

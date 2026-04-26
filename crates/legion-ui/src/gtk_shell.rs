@@ -1,6 +1,6 @@
 use crate::{
-    capability_status_label, render_diagnostics_json, risk_level_label, DiagnosticsBundle,
-    LegionControlClient, RuntimeSnapshot, UiStatus,
+    capability_status_label, render_diagnostics_json, risk_level_label, runtime_refresh_notice,
+    DiagnosticsBundle, LegionControlClient, RuntimeSnapshot, UiStatus,
 };
 use adw::prelude::*;
 use anyhow::{anyhow, Result};
@@ -132,6 +132,7 @@ struct DashboardRuntime {
     banner: gtk4::Label,
     loader: SnapshotLoader,
     last_snapshot: Option<RuntimeSnapshot>,
+    degraded: bool,
     last_refresh: Instant,
     last_tick: Instant,
 }
@@ -155,6 +156,7 @@ impl DashboardRuntime {
             banner,
             loader,
             last_snapshot: None,
+            degraded: false,
             last_refresh: Instant::now(),
             last_tick: Instant::now(),
         }))
@@ -163,13 +165,26 @@ impl DashboardRuntime {
     fn refresh_now(&mut self) {
         match (self.loader)() {
             Ok(snapshot) => {
+                let recovered_from_error = self.degraded;
+                let notice = runtime_refresh_notice(
+                    self.last_snapshot.as_ref(),
+                    &snapshot,
+                    recovered_from_error,
+                );
                 self.last_snapshot = Some(snapshot.clone());
+                self.degraded = false;
                 self.last_refresh = Instant::now();
                 self.last_tick = self.last_refresh;
-                self.banner.set_visible(false);
+                if let Some(notice) = notice {
+                    self.banner.set_label(&notice.message);
+                    self.banner.set_visible(true);
+                } else {
+                    self.banner.set_visible(false);
+                }
                 self.replace_page(snapshot_page(Ok(snapshot)));
             }
             Err(error) => {
+                self.degraded = true;
                 self.last_tick = Instant::now();
                 let message = format!(
                     "Runtime refresh degraded. Keeping the last known dashboard state until the daemon responds again: {error}"

@@ -11,7 +11,7 @@ use ksni::blocking::TrayMethods;
 use ksni::menu::StandardItem;
 use ksni::{Category, MenuItem, Status, ToolTip, Tray};
 use legion_common::WriteExecutionResult;
-use legion_control_ui::LegionControlClient;
+use legion_control_ui::{runtime_refresh_notice, LegionControlClient, RuntimeSnapshot};
 
 use crate::{DesktopSession, TrayAction, TrayMenu, TrayMenuEntry, TrayMenuItem, TraySummary};
 
@@ -26,6 +26,9 @@ pub struct StatusNotifierTray {
     bus_address: Option<String>,
     shutdown_requested: Arc<AtomicBool>,
     last_error: Option<String>,
+    last_notice: Option<String>,
+    last_snapshot: Option<RuntimeSnapshot>,
+    state_stale: bool,
     state_loader: StateLoader,
     action_executor: ActionExecutor,
 }
@@ -65,9 +68,17 @@ impl StatusNotifierTray {
             bus_address,
             shutdown_requested,
             last_error: None,
+            last_notice: None,
+            last_snapshot: None,
+            state_stale: false,
             state_loader,
             action_executor,
         }
+    }
+
+    fn with_snapshot(mut self, snapshot: RuntimeSnapshot) -> Self {
+        self.last_snapshot = Some(snapshot);
+        self
     }
 
     pub fn summary(&self) -> &TraySummary {
@@ -77,12 +88,22 @@ impl StatusNotifierTray {
     fn refresh_status(&mut self) {
         match (self.state_loader)(self.bus_address.as_deref()) {
             Ok(state) => {
+                let recovered_from_error = self.last_error.is_some();
+                self.last_notice = runtime_refresh_notice(
+                    self.last_snapshot.as_ref(),
+                    &state.snapshot,
+                    recovered_from_error,
+                )
+                .map(|notice| notice.message);
                 self.summary = state.summary;
                 self.menu = state.menu;
+                self.last_snapshot = Some(state.snapshot);
                 self.last_error = None;
+                self.state_stale = false;
             }
             Err(error) => {
                 self.last_error = Some(error.to_string());
+                self.state_stale = true;
             }
         }
     }
@@ -123,23 +144,31 @@ impl StatusNotifierTray {
             Ok(state) => {
                 self.summary = state.summary;
                 self.menu = state.menu;
+                self.last_snapshot = Some(state.snapshot);
+                self.state_stale = false;
             }
             Err(refresh_error) => {
                 error = Some(match error {
                     Some(previous) => format!("{previous}; refresh failed: {refresh_error}"),
                     None => format!("failed to refresh tray state: {refresh_error}"),
                 });
+                self.state_stale = true;
             }
         }
 
         self.last_error = error;
+        self.last_notice = None;
     }
 
     fn tooltip_description(&self) -> String {
-        match &self.last_error {
-            Some(error) => format!("{}\nLast tray error: {error}", self.summary.tooltip),
-            None => self.summary.tooltip.clone(),
+        let mut lines = vec![self.summary.tooltip.clone()];
+        if let Some(notice) = &self.last_notice {
+            lines.push(format!("Last tray notice: {notice}"));
         }
+        if let Some(error) = &self.last_error {
+            lines.push(format!("Last tray error: {error}"));
+        }
+        lines.join("\n")
     }
 }
 
@@ -176,7 +205,31 @@ impl Tray for StatusNotifierTray {
     }
 
     fn menu(&self) -> Vec<MenuItem<Self>> {
-        self.menu.entries.iter().cloned().map(menu_entry).collect()
+        let mut entries = Vec::new();
+        if self.state_stale {
+            entries.push(MenuItem::Standard(StandardItem {
+                label: "Tray status unavailable, retrying refresh.".to_owned(),
+                enabled: false,
+                ..StandardItem::default()
+            }));
+            entries.push(MenuItem::Separator);
+        }
+        if let Some(notice) = &self.last_notice {
+            entries.push(MenuItem::Standard(StandardItem {
+                label: format!("Tray notice: {notice}"),
+                enabled: false,
+                ..StandardItem::default()
+            }));
+            entries.push(MenuItem::Separator);
+        }
+        entries.extend(
+            self.menu
+                .entries
+                .iter()
+                .cloned()
+                .map(|entry| menu_entry(entry, self.state_stale)),
+        );
+        entries
     }
 }
 
@@ -192,7 +245,8 @@ pub fn run_status_notifier_tray(bus_address: Option<String>) -> Result<()> {
         state.menu,
         bus_address,
         Arc::clone(&shutdown_requested),
-    );
+    )
+    .with_snapshot(state.snapshot);
     let handle = tray
         .spawn()
         .context("failed to register StatusNotifier tray item")?;
@@ -217,6 +271,7 @@ pub fn run_status_notifier_tray(bus_address: Option<String>) -> Result<()> {
 struct LoadedTrayState {
     summary: TraySummary,
     menu: TrayMenu,
+    snapshot: RuntimeSnapshot,
 }
 
 fn load_tray_state(bus_address: Option<&str>) -> Result<LoadedTrayState> {
@@ -225,10 +280,10 @@ fn load_tray_state(bus_address: Option<&str>) -> Result<LoadedTrayState> {
         None => LegionControlClient::system()?,
     };
     let snapshot = client.refresh_runtime_snapshot()?;
-    let status = snapshot.status;
-    let report = snapshot.diagnostics.raw_probe_report;
-    let gpu_pending = snapshot.diagnostics.gpu_mode_pending;
-    let fan_snapshot = snapshot.diagnostics.last_known_good_fan_curve;
+    let status = snapshot.status.clone();
+    let report = snapshot.diagnostics.raw_probe_report.clone();
+    let gpu_pending = snapshot.diagnostics.gpu_mode_pending.clone();
+    let fan_snapshot = snapshot.diagnostics.last_known_good_fan_curve.clone();
     Ok(LoadedTrayState {
         summary: TraySummary::from_status_and_report(
             &status,
@@ -242,6 +297,7 @@ fn load_tray_state(bus_address: Option<&str>) -> Result<LoadedTrayState> {
             gpu_pending.as_ref(),
             fan_snapshot.as_ref(),
         ),
+        snapshot,
     })
 }
 
@@ -279,19 +335,26 @@ fn dashboard_command_args(bus_address: Option<&str>) -> Vec<String> {
     }
 }
 
-fn menu_entry(entry: TrayMenuEntry) -> MenuItem<StatusNotifierTray> {
+fn menu_entry(entry: TrayMenuEntry, stale_state: bool) -> MenuItem<StatusNotifierTray> {
     match entry {
         TrayMenuEntry::Separator => MenuItem::Separator,
-        TrayMenuEntry::Item(item) => menu_item(item),
+        TrayMenuEntry::Item(item) => menu_item(item, stale_state),
     }
 }
 
-fn menu_item(item: TrayMenuItem) -> MenuItem<StatusNotifierTray> {
+fn menu_item(item: TrayMenuItem, stale_state: bool) -> MenuItem<StatusNotifierTray> {
     let TrayMenuItem {
         label,
         action,
         enabled,
     } = item;
+    let disable_for_stale_state = stale_state && is_write_action(&action);
+    let enabled = enabled && !disable_for_stale_state;
+    let action = if disable_for_stale_state {
+        TrayAction::NoOp
+    } else {
+        action
+    };
 
     StandardItem {
         label,
@@ -302,10 +365,20 @@ fn menu_item(item: TrayMenuItem) -> MenuItem<StatusNotifierTray> {
     .into()
 }
 
+fn is_write_action(action: &TrayAction) -> bool {
+    matches!(
+        action,
+        TrayAction::SetPlatformProfile(_)
+            | TrayAction::SetBatteryChargeType(_)
+            | TrayAction::SetLedState(_, _)
+            | TrayAction::SetIdeapadToggle(_, _)
+    )
+}
+
 #[cfg(test)]
 mod tests {
     use legion_common::{Capability, CapabilityStatus, HardwareSummary, RiskLevel};
-    use legion_control_ui::UiStatus;
+    use legion_control_ui::{DiagnosticsBundle, RuntimeSnapshot, UiStatus};
 
     use super::*;
 
@@ -607,6 +680,70 @@ mod tests {
             tray.last_error.as_deref(),
             Some("platform profile read-back mismatch after write")
         );
+        assert!(tray.last_notice.is_none());
+    }
+
+    #[test]
+    fn refresh_status_records_recovery_and_profile_drift_notice() {
+        let shutdown_requested = Arc::new(AtomicBool::new(false));
+        let state = Arc::new(std::sync::Mutex::new(tray_state_fixture(
+            "balanced", "Standard", true, false,
+        )));
+        let menu = state.lock().unwrap().menu.clone();
+        let snapshot = state.lock().unwrap().snapshot.clone();
+        let loader_calls = Arc::new(std::sync::Mutex::new(0usize));
+        let tray = StatusNotifierTray::new_with_runtime(
+            summary(),
+            menu,
+            None,
+            shutdown_requested,
+            Arc::new({
+                let state = Arc::clone(&state);
+                let loader_calls = Arc::clone(&loader_calls);
+                move |_| {
+                    let mut calls = loader_calls.lock().unwrap();
+                    *calls += 1;
+                    if *calls == 1 {
+                        anyhow::bail!("daemon temporarily unavailable");
+                    }
+                    let mut guard = state.lock().unwrap();
+                    *guard = tray_state_fixture("performance", "Standard", true, false);
+                    Ok(guard.clone())
+                }
+            }),
+            Arc::new(|_, _| anyhow::bail!("unexpected action")),
+        )
+        .with_snapshot(snapshot);
+        let mut tray = tray;
+
+        tray.refresh_status();
+        assert_eq!(
+            tray.last_error.as_deref(),
+            Some("daemon temporarily unavailable")
+        );
+        let menu = tray.menu();
+        assert!(menu_has_disabled_item(
+            &menu,
+            "Tray status unavailable, retrying refresh."
+        ));
+        assert!(menu_has_disabled_item(
+            &menu,
+            "Set platform profile: low-power"
+        ));
+
+        tray.refresh_status();
+
+        assert!(tray.last_error.is_none());
+        let notice = tray.last_notice.as_deref().unwrap();
+        assert!(notice.contains("Daemon communication recovered"));
+        assert!(notice.contains("Platform profile changed from `balanced` to `performance`"));
+        let tooltip = tray.tool_tip().description;
+        assert!(tooltip.contains("Last tray notice:"));
+        let menu = tray.menu();
+        assert!(menu_has_disabled_item(
+            &menu,
+            &format!("Tray notice: {notice}")
+        ));
     }
 
     #[test]
@@ -892,6 +1029,14 @@ mod tests {
             ..Default::default()
         };
         LoadedTrayState {
+            snapshot: RuntimeSnapshot {
+                status: status.clone(),
+                diagnostics: DiagnosticsBundle::from_report(
+                    report.clone(),
+                    Some("test-kernel".to_owned()),
+                )
+                .with_runtime_state(None, None),
+            },
             summary: TraySummary::from_status_and_report(&status, &report, None, None),
             menu: TrayMenu::from_status_and_report(&status, &report, None, None),
         }

@@ -32,19 +32,19 @@
   - refreshes and reads back
   - restores the previous value if read-back does not match
 - Default behavior is still blocked unless the daemon is started with the explicit write-enable flags.
-- The current ideapad-toggle rollout is intentionally restricted to `fn_lock`, `camera_power`, and `usb_charging`; validator/planning/execution still reject other ideapad toggles, and `touchpad` is explicitly blocked pending fixture capture plus recovery validation.
+- The current ideapad-toggle rollout is intentionally restricted to `fn_lock`, `camera_power`, and `usb_charging`; validator/planning/execution still reject other ideapad toggles, `touchpad` is explicitly blocked pending fixture capture plus recovery validation, and legacy `conservation_mode`/`fan_mode` remain compatibility diagnostics instead of live write targets.
 - `fn_lock` writes require the paired `platform::fnlock` LED to exist, be binary, and match the toggle state before the UI or tray exposes quick actions; post-write read-back also requires both the toggle and indicator LED to match, otherwise rollback runs.
 - `camera_power` and `usb_charging` writes use binary toggle read-back plus rollback, but the frontend policy is stricter: GTK requires explicit confirmation with recovery guidance, and the tray intentionally does not expose direct on/off actions for either toggle.
 - The GTK shell now exposes quick-apply controls in the Profiles, Battery, and Appearance tabs and renders idle/success/blocked/failed write feedback inline.
 - The StatusNotifier tray now exposes runtime-derived quick actions for non-current platform profile, battery charge type, ylogo LED, and `fn_lock` choices, plus dashboard-routed guidance rows for `camera_power` and `usb_charging`, then refreshes the menu after each attempted write.
-- Tray runtime reload now uses a shared client reprobe helper and auto-refreshes after periodic intervals and suspend-like gaps.
+- Tray runtime reload now uses a shared client reprobe helper, auto-refreshes after periodic intervals and suspend-like gaps, suppresses hardware-changing quick actions while refresh state is stale, and surfaces recovery/drift notices after reconnect.
 - Automated coverage exists in:
   - `crates/legion-daemon/src/lib.rs`
   - `crates/legion-daemon/tests/dbus_contract.rs`
   - `crates/legion-ui/src/main.rs`
   - `crates/legion-ui/tests/dbus_client.rs`
 - This still does not enable GPU, fan preset, or fan restore writes yet.
-- Next recommended task from the updated roadmap: deepen resume/recovery behavior around the existing reversible write set, then decide whether another bounded toggle is worth exposing at all.
+- Next recommended task from the updated roadmap: deepen resume/recovery behavior around the existing reversible write set, especially passive refresh drift messaging and any future write-result recovery UX that should be shared between GTK and tray.
 
 ## Implemented
 

@@ -36,7 +36,7 @@ is started with the matching write-enable flags.
 | `SetPlatformProfile` | `platform_profile` | `org.ratvantage.LegionControl1.set-platform-profile` | `{"profile":"string"}` | exact runtime choice validation, read-back, rollback |
 | `SetBatteryChargeType` | `battery_charge_type` | `org.ratvantage.LegionControl1.set-battery-charge-type` | `{"charge_type":"string"}` | exact runtime choice validation, read-back, rollback |
 | `SetLedState` | `leds` | `org.ratvantage.LegionControl1.set-led-state` | `{"led_id":"platform::ylogo","enabled":"bool"}` | currently restricted to `platform::ylogo`, binary LED only |
-| `SetIdeapadToggle` | `ideapad_toggles` | `org.ratvantage.LegionControl1.set-ideapad-toggle` | `{"toggle_id":"fn_lock|camera_power|usb_charging","enabled":"bool"}` | currently restricted to `fn_lock` with paired `platform::fnlock` LED corroboration, plus `camera_power` and `usb_charging` with explicit dashboard confirmation |
+| `SetIdeapadToggle` | `ideapad_toggles` | `org.ratvantage.LegionControl1.set-ideapad-toggle` | `{"toggle_id":"fn_lock|camera_power|usb_charging","enabled":"bool"}` | currently restricted to `fn_lock` with paired `platform::fnlock` LED corroboration, plus `camera_power` and `usb_charging` with explicit dashboard confirmation; legacy `conservation_mode`, `fan_mode`, and `touchpad` remain intentionally excluded |
 
 ## Disabled Drafts
 

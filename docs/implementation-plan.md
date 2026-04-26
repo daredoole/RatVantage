@@ -625,6 +625,7 @@ Read-only evidence from the current 82WM target on 2026-04-25:
 - Sensors: 2 fan RPM sensors and 15 temperature sensors; one fan curve capability.
 - LEDs: `platform::fnlock`, `platform::ylogo`.
 - Firmware toggles: `camera_power`, `conservation_mode`, `fan_mode`, `fn_lock`, `usb_charging`.
+  Current live write surface remains intentionally narrower: `fn_lock`, `camera_power`, and `usb_charging`. Keep `conservation_mode` and `fan_mode` in compatibility/diagnostic scope while `charge_types`, platform profiles, and Legion fan curves are present.
 - GPU: EnvyControl reports `nvidia`.
 
 #### Platform profile write
