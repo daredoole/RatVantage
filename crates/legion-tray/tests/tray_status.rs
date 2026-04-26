@@ -83,9 +83,9 @@ value = "42000"
     assert!(stdout.contains("label=Battery charge type: Standard"));
     assert!(stdout.contains("label=Charge choices: Standard, Conservation, Fast"));
     assert!(stdout.contains("label=Battery: 79% / Charging / Good"));
-    assert!(stdout.contains("label=LED: platform::ylogo on"));
-    assert!(stdout.contains("label=Toggle: fn_lock off"));
-    assert!(stdout.contains("label=Toggle: camera_power on"));
+    assert!(stdout.contains("label=Logo LED: on"));
+    assert!(stdout.contains("label=Fn-lock: off"));
+    assert!(stdout.contains("label=Camera power: on"));
     assert!(stdout.contains("label=Fan: CPU Fan 2410 RPM"));
     assert!(stdout.contains("label=GPU pending: hybrid (previous nvidia, reboot required)"));
     assert!(stdout.contains("label=Saved fan curve: 1 values from legion_hwmon"));
@@ -118,6 +118,10 @@ value = "42000"
     assert!(stdout.contains("enabled action=open_dashboard label=Open dashboard"));
     assert!(stdout.contains("enabled action=refresh_status label=Refresh status"));
     assert!(stdout.contains("enabled action=quit label=Quit"));
+    assert!(!stdout.contains("input12::capslock"));
+    assert!(!stdout.contains("enp5s0-0::lan"));
+    assert!(!stdout.contains("label=Toggle: conservation_mode"));
+    assert!(!stdout.contains("label=Toggle: fan_mode"));
     assert!(!stdout.contains("Apply preset:"));
     assert!(!stdout.contains("Toggle logo LED"));
 

@@ -14,13 +14,13 @@ Pre-alpha implementation scaffold exists:
 - Probe fixture coverage for confirmed and runtime-captured 82WM-style sysfs paths.
 - Private D-Bus contract tests for read-only daemon methods.
 - UI `--status`, `--overview`, and `--diagnostics` commands plus optional GTK4/libadwaita shell with Status, Profiles, Battery, Fans, Appearance, and Diagnostics tabs behind `gtk-ui`; the Profiles, Battery, and Appearance tabs now expose gated quick-apply controls with inline execution feedback for the currently supported reversible writes.
-- Tray/status helper with a state-driven menu derived from detected profile choices, battery charge choices, LED state, ideapad toggle state, packaged fan presets, pending runtime state, gated quick actions for reversible profile, charge-type, ylogo LED, and `fn_lock` writes, plus dashboard-routed guidance for warning-gated `camera_power` and `usb_charging`.
+- Tray/status helper with a state-driven menu derived from detected profile choices, battery charge choices, Legion-relevant indicator state, packaged fan presets, pending runtime state, gated quick actions for reversible profile, charge-type, ylogo LED, and `fn_lock` writes, plus dashboard-routed guidance for warning-gated `camera_power` and `usb_charging`.
 - Tray dashboard launch forwards custom D-Bus addresses for private/session-bus smoke workflows.
 - Tray status separates available and missing capabilities in tooltips.
 - KDE StatusNotifier smoke can emit a reusable report bundle with environment, watcher, and tray summary data.
 - `legion-control-tray --desktop-check` reports desktop/session state, watcher availability, and autostart gating for read-only tray diagnostics.
 - `legion-control-tray --menu-check` prints the same derived tray menu, including quick-action entries, so private-bus tests and smoke bundles can verify the exact runtime menu content.
-- Tray runtime state now reloads from a reprobe helper and auto-refreshes after idle intervals and suspend-like gaps.
+- Tray runtime state now reloads from a reprobe helper, auto-refreshes after short idle intervals and suspend-like gaps, and sends native desktop notifications when an external platform-profile change is detected.
 - Tray recovery now marks stale state, suppresses hardware-changing quick actions until refresh succeeds again, surfaces recovery/drift notices in the live menu/tooltip, and shows visible last-write blocked/failed/rollback status rows in the menu itself.
 - UI status output includes per-capability status and risk labels.
 - Disabled tray autostart packaging placeholder.

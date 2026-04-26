@@ -244,19 +244,7 @@ fn battery_row(report: &CapabilityRegistry) -> Option<String> {
 }
 
 fn led_rows(report: &CapabilityRegistry) -> Vec<String> {
-    report
-        .leds
-        .iter()
-        .filter_map(|led| {
-            led.brightness.map(|brightness| {
-                format!(
-                    "LED: {} {}",
-                    led.name,
-                    if brightness == 0 { "off" } else { "on" }
-                )
-            })
-        })
-        .collect()
+    report.leds.iter().filter_map(legion_led_row).collect()
 }
 
 fn append_quick_actions(entries: &mut Vec<TrayMenuEntry>, report: &CapabilityRegistry) {
@@ -384,16 +372,46 @@ fn ideapad_toggle_rows(report: &CapabilityRegistry) -> Vec<String> {
     report
         .ideapad_toggles
         .iter()
-        .filter_map(|toggle| {
-            toggle.current_value.as_deref().map(|value| {
-                format!(
-                    "Toggle: {} {}",
-                    toggle.name,
-                    if value == "0" { "off" } else { "on" }
-                )
-            })
-        })
+        .filter_map(legion_toggle_row)
         .collect()
+}
+
+fn legion_led_row(led: &legion_common::LedCapability) -> Option<String> {
+    let brightness = led.brightness?;
+    let state = binary_state_label(brightness)?;
+
+    match led.name.as_str() {
+        "platform::ylogo" => Some(format!("Logo LED: {state}")),
+        _ => None,
+    }
+}
+
+fn legion_toggle_row(toggle: &legion_common::IdeapadToggleCapability) -> Option<String> {
+    let value = toggle.current_value.as_deref()?;
+    let state = binary_toggle_state_label(value)?;
+
+    match toggle.name.as_str() {
+        "fn_lock" => Some(format!("Fn-lock: {state}")),
+        "camera_power" => Some(format!("Camera power: {state}")),
+        "usb_charging" => Some(format!("USB charging: {state}")),
+        _ => None,
+    }
+}
+
+fn binary_state_label(value: i64) -> Option<&'static str> {
+    match value {
+        0 => Some("off"),
+        1 => Some("on"),
+        _ => None,
+    }
+}
+
+fn binary_toggle_state_label(value: &str) -> Option<&'static str> {
+    match value {
+        "0" => Some("off"),
+        "1" => Some("on"),
+        _ => None,
+    }
 }
 
 fn ideapad_toggle_quick_action_section(report: &CapabilityRegistry) -> Option<Vec<TrayMenuEntry>> {
@@ -606,6 +624,12 @@ mod tests {
             },
             leds: vec![
                 LedCapability {
+                    name: "input12::capslock".to_owned(),
+                    path: "/tmp/input12::capslock/brightness".to_owned(),
+                    brightness: Some(1),
+                    max_brightness: Some(1),
+                },
+                LedCapability {
                     name: "platform::fnlock".to_owned(),
                     path: "/tmp/platform::fnlock/brightness".to_owned(),
                     brightness: Some(0),
@@ -629,6 +653,12 @@ mod tests {
                     name: "camera_power".to_owned(),
                     status: CapabilityStatus::ProbeOnly,
                     path: Some("/tmp/camera_power".to_owned()),
+                    current_value: Some("1".to_owned()),
+                },
+                IdeapadToggleCapability {
+                    name: "conservation_mode".to_owned(),
+                    status: CapabilityStatus::ProbeOnly,
+                    path: Some("/tmp/conservation_mode".to_owned()),
                     current_value: Some("1".to_owned()),
                 },
                 IdeapadToggleCapability {
@@ -670,11 +700,10 @@ mod tests {
                 "Battery charge type: Standard",
                 "Charge choices: Standard, Conservation, Fast",
                 "Battery: 79% / Charging / Good",
-                "LED: platform::fnlock off",
-                "LED: platform::ylogo on",
-                "Toggle: fn_lock off",
-                "Toggle: camera_power on",
-                "Toggle: usb_charging off",
+                "Logo LED: on",
+                "Fn-lock: off",
+                "Camera power: on",
+                "USB charging: off",
                 "Fan: CPU Fan 2410 RPM",
                 "GPU pending: hybrid (previous nvidia, reboot required)",
                 "Saved fan curve: 1 values from legion_hwmon",
@@ -713,6 +742,12 @@ mod tests {
         assert!(!menu_labels(&menu)
             .iter()
             .any(|label| label.starts_with("Toggle logo LED")));
+        assert!(!menu_labels(&menu)
+            .iter()
+            .any(|label| label.contains("input12::capslock")));
+        assert!(!menu_labels(&menu)
+            .iter()
+            .any(|label| label.contains("conservation_mode")));
     }
 
     #[test]

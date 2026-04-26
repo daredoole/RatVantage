@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use std::process::Command;
 use std::sync::{
     atomic::{AtomicBool, Ordering},
@@ -12,12 +13,14 @@ use ksni::menu::StandardItem;
 use ksni::{Category, MenuItem, Status, ToolTip, Tray};
 use legion_common::WriteExecutionResult;
 use legion_control_ui::{runtime_refresh_notice, LegionControlClient, RuntimeSnapshot};
+use zbus::blocking::{Connection, Proxy};
+use zbus::zvariant::OwnedValue;
 
 use crate::{DesktopSession, TrayAction, TrayMenu, TrayMenuEntry, TrayMenuItem, TraySummary};
 
 const TRAY_ID: &str = "org.ratvantage.LegionControl";
 const ICON_NAME: &str = "applications-system";
-const AUTO_REFRESH_INTERVAL: Duration = Duration::from_secs(30);
+const AUTO_REFRESH_INTERVAL: Duration = Duration::from_secs(5);
 const RESUME_REFRESH_GAP: Duration = Duration::from_secs(90);
 
 pub struct StatusNotifierTray {
@@ -32,11 +35,19 @@ pub struct StatusNotifierTray {
     state_stale: bool,
     state_loader: StateLoader,
     action_executor: ActionExecutor,
+    notification_sender: NotificationSender,
 }
 
 type StateLoader = Arc<dyn Fn(Option<&str>) -> Result<LoadedTrayState> + Send + Sync>;
 type ActionExecutor =
     Arc<dyn Fn(Option<&str>, &TrayAction) -> Result<WriteExecutionResult> + Send + Sync>;
+type NotificationSender = Arc<dyn Fn(&DesktopNotification) -> Result<()> + Send + Sync>;
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct DesktopNotification {
+    title: String,
+    body: String,
+}
 
 impl StatusNotifierTray {
     pub fn new(
@@ -52,6 +63,7 @@ impl StatusNotifierTray {
             shutdown_requested,
             Arc::new(load_tray_state),
             Arc::new(execute_tray_action),
+            Arc::new(send_desktop_notification),
         )
     }
 
@@ -62,6 +74,7 @@ impl StatusNotifierTray {
         shutdown_requested: Arc<AtomicBool>,
         state_loader: StateLoader,
         action_executor: ActionExecutor,
+        notification_sender: NotificationSender,
     ) -> Self {
         Self {
             summary,
@@ -75,6 +88,7 @@ impl StatusNotifierTray {
             state_stale: false,
             state_loader,
             action_executor,
+            notification_sender,
         }
     }
 
@@ -91,6 +105,8 @@ impl StatusNotifierTray {
         match (self.state_loader)(self.bus_address.as_deref()) {
             Ok(state) => {
                 let recovered_from_error = self.last_error.is_some();
+                let profile_notification =
+                    profile_change_notification(self.last_snapshot.as_ref(), &state.snapshot);
                 self.last_notice = runtime_refresh_notice(
                     self.last_snapshot.as_ref(),
                     &state.snapshot,
@@ -103,6 +119,9 @@ impl StatusNotifierTray {
                 self.last_error = None;
                 self.last_write_status = None;
                 self.state_stale = false;
+                if let Some(notification) = profile_notification {
+                    let _ = (self.notification_sender)(&notification);
+                }
             }
             Err(error) => {
                 self.last_error = Some(error.to_string());
@@ -352,6 +371,94 @@ fn should_auto_refresh(now: Instant, last_refresh: Instant, last_tick: Instant) 
         || now.duration_since(last_tick) >= RESUME_REFRESH_GAP
 }
 
+fn profile_change_notification(
+    previous: Option<&RuntimeSnapshot>,
+    current: &RuntimeSnapshot,
+) -> Option<DesktopNotification> {
+    let previous_profile = previous.and_then(current_platform_profile)?;
+    let current_profile = current_platform_profile(current)?;
+    if previous_profile == current_profile {
+        return None;
+    }
+
+    Some(DesktopNotification {
+        title: "Legion profile changed".to_owned(),
+        body: format!(
+            "{} switched from {} to {}.",
+            notification_machine_label(current),
+            humanize_profile(previous_profile),
+            humanize_profile(current_profile),
+        ),
+    })
+}
+
+fn current_platform_profile(snapshot: &RuntimeSnapshot) -> Option<&str> {
+    snapshot
+        .diagnostics
+        .raw_probe_report
+        .platform_profile
+        .as_ref()
+        .and_then(|profile| profile.current.as_deref())
+}
+
+fn notification_machine_label(snapshot: &RuntimeSnapshot) -> String {
+    match (
+        snapshot.status.hardware.product_name.trim(),
+        snapshot.status.hardware.product_version.trim(),
+    ) {
+        ("", "") => "This Legion system".to_owned(),
+        ("", version) => version.to_owned(),
+        (name, "") => name.to_owned(),
+        (name, version) => format!("{name} {version}"),
+    }
+}
+
+fn humanize_profile(profile: &str) -> String {
+    profile
+        .split('-')
+        .filter(|segment| !segment.is_empty())
+        .map(|segment| {
+            let mut chars = segment.chars();
+            match chars.next() {
+                Some(first) => {
+                    let mut label = first.to_ascii_uppercase().to_string();
+                    label.push_str(chars.as_str());
+                    label
+                }
+                None => String::new(),
+            }
+        })
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+
+fn send_desktop_notification(notification: &DesktopNotification) -> Result<()> {
+    let connection = Connection::session().context("failed to connect to desktop session bus")?;
+    let proxy = Proxy::new(
+        &connection,
+        "org.freedesktop.Notifications",
+        "/org/freedesktop/Notifications",
+        "org.freedesktop.Notifications",
+    )
+    .context("failed to bind desktop notification proxy")?;
+    let _: u32 = proxy
+        .call(
+            "Notify",
+            &(
+                "Legion Control",
+                0u32,
+                ICON_NAME,
+                notification.title.as_str(),
+                notification.body.as_str(),
+                Vec::<String>::new(),
+                HashMap::<String, OwnedValue>::new(),
+                5000i32,
+            ),
+        )
+        .context("failed to send desktop notification")?;
+    Ok(())
+}
+
 fn dashboard_command_args(bus_address: Option<&str>) -> Vec<String> {
     match bus_address {
         Some(address) => vec!["--bus-address".to_owned(), address.to_owned()],
@@ -470,9 +577,9 @@ mod tests {
             &menu,
             "Battery: 79% / Charging / Good"
         ));
-        assert!(menu_has_disabled_item(&menu, "LED: platform::ylogo on"));
-        assert!(menu_has_disabled_item(&menu, "Toggle: fn_lock off"));
-        assert!(menu_has_disabled_item(&menu, "Toggle: camera_power on"));
+        assert!(menu_has_disabled_item(&menu, "Logo LED: on"));
+        assert!(menu_has_disabled_item(&menu, "Fn-lock: off"));
+        assert!(menu_has_disabled_item(&menu, "Camera power: on"));
         assert!(menu_has_disabled_item(&menu, "Fan: CPU Fan 2410 RPM"));
         assert!(menu_has_disabled_item(
             &menu,
@@ -555,6 +662,7 @@ mod tests {
                     other => anyhow::bail!("unexpected action {other:?}"),
                 }
             }),
+            noop_notification_sender(),
         );
         let mut tray = tray;
 
@@ -596,6 +704,7 @@ mod tests {
                     other => anyhow::bail!("unexpected action {other:?}"),
                 }
             }),
+            noop_notification_sender(),
         );
         let mut tray = tray;
 
@@ -640,13 +749,14 @@ mod tests {
                     other => anyhow::bail!("unexpected action {other:?}"),
                 }
             }),
+            noop_notification_sender(),
         );
         let mut tray = tray;
 
         tray.handle_action(TrayAction::SetLedState("platform::ylogo".to_owned(), false));
 
         let menu = tray.menu();
-        assert!(menu_has_disabled_item(&menu, "LED: platform::ylogo off"));
+        assert!(menu_has_disabled_item(&menu, "Logo LED: off"));
         assert!(menu_has_enabled_item(
             &menu,
             "Set LED state: platform::ylogo on"
@@ -681,13 +791,14 @@ mod tests {
                     other => anyhow::bail!("unexpected action {other:?}"),
                 }
             }),
+            noop_notification_sender(),
         );
         let mut tray = tray;
 
         tray.handle_action(TrayAction::SetIdeapadToggle("fn_lock".to_owned(), true));
 
         let menu = tray.menu();
-        assert!(menu_has_disabled_item(&menu, "Toggle: fn_lock on"));
+        assert!(menu_has_disabled_item(&menu, "Fn-lock: on"));
         assert!(menu_has_enabled_item(&menu, "Set Fn-lock off"));
         assert!(tray.last_error.is_none());
     }
@@ -712,6 +823,7 @@ mod tests {
                     Some("balanced".to_owned()),
                 ))
             }),
+            noop_notification_sender(),
         );
         let mut tray = tray;
 
@@ -739,6 +851,7 @@ mod tests {
         let menu = state.lock().unwrap().menu.clone();
         let snapshot = state.lock().unwrap().snapshot.clone();
         let loader_calls = Arc::new(std::sync::Mutex::new(0usize));
+        let notifications = Arc::new(std::sync::Mutex::new(Vec::<DesktopNotification>::new()));
         let tray = StatusNotifierTray::new_with_runtime(
             summary(),
             menu,
@@ -759,6 +872,7 @@ mod tests {
                 }
             }),
             Arc::new(|_, _| anyhow::bail!("unexpected action")),
+            recording_notification_sender(Arc::clone(&notifications)),
         )
         .with_snapshot(snapshot);
         let mut tray = tray;
@@ -784,6 +898,13 @@ mod tests {
         let notice = tray.last_notice.as_deref().unwrap();
         assert!(notice.contains("Daemon communication recovered"));
         assert!(notice.contains("Platform profile changed from `balanced` to `performance`"));
+        assert_eq!(
+            notifications.lock().unwrap().as_slice(),
+            &[DesktopNotification {
+                title: "Legion profile changed".to_owned(),
+                body: "82WM Legion Pro 5 16ARX8 switched from Balanced to Performance.".to_owned(),
+            }]
+        );
         let tooltip = tray.tool_tip().description;
         assert!(tooltip.contains("Last tray notice:"));
         let menu = tray.menu();
@@ -816,6 +937,7 @@ mod tests {
                     "platform profile writes are disabled by daemon policy",
                 ))
             }),
+            noop_notification_sender(),
         );
         let mut tray = tray;
 
@@ -842,6 +964,7 @@ mod tests {
             shutdown_requested,
             loader_for_state(state),
             Arc::new(|_, _| anyhow::bail!("transport unavailable")),
+            noop_notification_sender(),
         );
         let mut tray = tray;
 
@@ -879,6 +1002,7 @@ mod tests {
                     Ok(applied_result("SetPlatformProfile", "performance"))
                 }
             }),
+            noop_notification_sender(),
         );
         let mut tray = tray;
 
@@ -1039,9 +1163,9 @@ mod tests {
     fn auto_refresh_triggers_for_periodic_and_resume_gaps() {
         let base = Instant::now();
         assert!(!should_auto_refresh(
-            base + Duration::from_secs(5),
+            base + Duration::from_secs(4),
             base,
-            base + Duration::from_secs(4)
+            base + Duration::from_secs(3)
         ));
         assert!(should_auto_refresh(
             base + AUTO_REFRESH_INTERVAL,
@@ -1156,6 +1280,19 @@ mod tests {
 
     fn loader_for_state(state: Arc<std::sync::Mutex<LoadedTrayState>>) -> StateLoader {
         Arc::new(move |_| Ok(state.lock().unwrap().clone()))
+    }
+
+    fn noop_notification_sender() -> NotificationSender {
+        Arc::new(|_| Ok(()))
+    }
+
+    fn recording_notification_sender(
+        notifications: Arc<std::sync::Mutex<Vec<DesktopNotification>>>,
+    ) -> NotificationSender {
+        Arc::new(move |notification| {
+            notifications.lock().unwrap().push(notification.clone());
+            Ok(())
+        })
     }
 
     fn applied_result(method: &'static str, requested: &str) -> WriteExecutionResult {
