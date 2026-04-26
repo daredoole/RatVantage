@@ -18,6 +18,7 @@ Pre-alpha implementation scaffold exists:
 - Tray dashboard launch forwards custom D-Bus addresses for private/session-bus smoke workflows.
 - Tray status separates available and missing capabilities in tooltips.
 - KDE StatusNotifier smoke can emit a reusable report bundle with environment, watcher, and tray summary data.
+- GTK dashboard smoke can emit a reusable screenshot/report bundle under Xvfb with page-specific PNG captures and supporting status/overview/diagnostics text.
 - `legion-control-tray --desktop-check` reports desktop/session state, watcher availability, and autostart gating for read-only tray diagnostics.
 - `legion-control-tray --menu-check` prints the same derived tray menu, including quick-action entries, so private-bus tests and smoke bundles can verify the exact runtime menu content.
 - Tray runtime state now reloads from a reprobe helper, auto-refreshes after short idle intervals and suspend-like gaps, and sends native desktop notifications when an external platform-profile change is detected.
@@ -32,6 +33,7 @@ Pre-alpha implementation scaffold exists:
 - Read-only compatibility bundle workflow for outside Legion contributors, including generated probe summaries and PR body text.
 - Live write-validation harness with plan-only report capture by default and explicit execute-mode evidence capture for the current reversible write surface.
 - Local private-session launcher for daemon/UI/tray development with a shared temporary D-Bus bus and optional GTK renderer env overrides.
+- GTK smoke/report script for deterministic page screenshots through a private session bus and Xvfb.
 - Read-only validation evidence for the current 82WM target is recorded in `docs/implementation-plan.md`.
 - Packaged read-only fan preset TOML assets with CI schema validation and dry-run planning.
 - Disabled write-method contract drafts for platform profile, battery charge type, GPU mode, fan presets, and fan restore/default.

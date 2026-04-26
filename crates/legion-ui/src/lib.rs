@@ -441,6 +441,26 @@ pub fn runtime_refresh_notice(
             ));
         }
 
+        let previous_charge_type = previous
+            .diagnostics
+            .raw_probe_report
+            .battery_charge_type
+            .as_ref()
+            .and_then(|charge_type| charge_type.current.as_deref())
+            .unwrap_or("unknown");
+        let current_charge_type = current
+            .diagnostics
+            .raw_probe_report
+            .battery_charge_type
+            .as_ref()
+            .and_then(|charge_type| charge_type.current.as_deref())
+            .unwrap_or("unknown");
+        if previous_charge_type != current_charge_type {
+            messages.push(format!(
+                "Battery charge type changed from `{previous_charge_type}` to `{current_charge_type}`."
+            ));
+        }
+
         let previous_available = previous.diagnostics.summary.available_capability_count;
         let previous_missing = previous.diagnostics.summary.missing_capability_count;
         let current_available = current.diagnostics.summary.available_capability_count;
@@ -557,8 +577,15 @@ mod tests {
 
     #[test]
     fn runtime_refresh_notice_reports_recovery_profile_and_capability_drift() {
-        let previous = sample_runtime_snapshot("balanced", 2, 0, Some(sample_fan_snapshot("a")));
-        let current = sample_runtime_snapshot("performance", 1, 1, Some(sample_fan_snapshot("b")));
+        let previous =
+            sample_runtime_snapshot("balanced", "Standard", 2, 0, Some(sample_fan_snapshot("a")));
+        let current = sample_runtime_snapshot(
+            "performance",
+            "Long_Life",
+            1,
+            1,
+            Some(sample_fan_snapshot("b")),
+        );
 
         let notice = runtime_refresh_notice(Some(&previous), &current, true).unwrap();
 
@@ -566,6 +593,9 @@ mod tests {
         assert!(notice
             .message
             .contains("Platform profile changed from `balanced` to `performance`"));
+        assert!(notice
+            .message
+            .contains("Battery charge type changed from `Standard` to `Long_Life`"));
         assert!(notice.message.contains(
             "Capability probe changed from 2 available/0 missing to 1 available/1 missing"
         ));
@@ -576,7 +606,7 @@ mod tests {
 
     #[test]
     fn runtime_refresh_notice_is_empty_for_steady_state() {
-        let snapshot = sample_runtime_snapshot("balanced", 2, 0, None);
+        let snapshot = sample_runtime_snapshot("balanced", "Standard", 2, 0, None);
         assert_eq!(
             runtime_refresh_notice(Some(&snapshot), &snapshot, false),
             None
@@ -585,6 +615,7 @@ mod tests {
 
     fn sample_runtime_snapshot(
         profile: &str,
+        charge_type: &str,
         available: usize,
         missing: usize,
         fan_snapshot: Option<FanCurveSnapshot>,
@@ -625,6 +656,16 @@ mod tests {
             choices: vec!["balanced".to_owned(), "performance".to_owned()],
             path: "/tmp/platform_profile".to_owned(),
             choices_path: "/tmp/platform_profile_choices".to_owned(),
+        });
+        report.battery_charge_type = Some(legion_common::BatteryChargeTypeCapability {
+            current: Some(charge_type.to_owned()),
+            choices: vec![
+                "Standard".to_owned(),
+                "Long_Life".to_owned(),
+                "Fast".to_owned(),
+            ],
+            path: "/tmp/charge_type".to_owned(),
+            choices_path: "/tmp/charge_types".to_owned(),
         });
         let diagnostics = DiagnosticsBundle::from_report(report, Some("test-kernel".to_owned()))
             .with_runtime_state(None, fan_snapshot);

@@ -23,7 +23,7 @@ jobs:
       - name: Install system test dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y dbus libgtk-4-dev libadwaita-1-dev pkg-config xvfb
+          sudo apt-get install -y dbus imagemagick libgtk-4-dev libadwaita-1-dev pkg-config xvfb
 
       - name: Check formatting
         run: cargo fmt --all --check
@@ -51,6 +51,9 @@ jobs:
 
       - name: Local session launcher smoke test
         run: scripts/run-local-session-app.sh --frontend status --sysfs-root tests/fixtures/sysfs-82wm-confirmed
+
+      - name: GTK screenshot smoke test
+        run: scripts/capture-gtk-smoke-report.sh --sysfs-root tests/fixtures/sysfs-82wm-confirmed --pages status,battery --output /tmp/ratvantage-gtk-smoke
 
       - name: Daemon dry-run smoke test
         run: cargo run -p legion-control-daemon -- --dry-run

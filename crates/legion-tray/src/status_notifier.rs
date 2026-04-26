@@ -105,8 +105,8 @@ impl StatusNotifierTray {
         match (self.state_loader)(self.bus_address.as_deref()) {
             Ok(state) => {
                 let recovered_from_error = self.last_error.is_some();
-                let profile_notification =
-                    profile_change_notification(self.last_snapshot.as_ref(), &state.snapshot);
+                let state_notifications =
+                    state_change_notifications(self.last_snapshot.as_ref(), &state.snapshot);
                 self.last_notice = runtime_refresh_notice(
                     self.last_snapshot.as_ref(),
                     &state.snapshot,
@@ -119,7 +119,7 @@ impl StatusNotifierTray {
                 self.last_error = None;
                 self.last_write_status = None;
                 self.state_stale = false;
-                if let Some(notification) = profile_notification {
+                for notification in state_notifications {
                     let _ = (self.notification_sender)(&notification);
                 }
             }
@@ -371,17 +371,27 @@ fn should_auto_refresh(now: Instant, last_refresh: Instant, last_tick: Instant) 
         || now.duration_since(last_tick) >= RESUME_REFRESH_GAP
 }
 
+fn state_change_notifications(
+    previous: Option<&RuntimeSnapshot>,
+    current: &RuntimeSnapshot,
+) -> Vec<DesktopNotification> {
+    let mut notifications = Vec::new();
+    if let Some(notification) = profile_change_notification(previous, current) {
+        notifications.push(notification);
+    }
+    if let Some(notification) = battery_charge_type_change_notification(previous, current) {
+        notifications.push(notification);
+    }
+    notifications
+}
+
 fn profile_change_notification(
     previous: Option<&RuntimeSnapshot>,
     current: &RuntimeSnapshot,
 ) -> Option<DesktopNotification> {
     let previous_profile = previous.and_then(current_platform_profile)?;
     let current_profile = current_platform_profile(current)?;
-    if previous_profile == current_profile {
-        return None;
-    }
-
-    Some(DesktopNotification {
+    (previous_profile != current_profile).then(|| DesktopNotification {
         title: "Legion profile changed".to_owned(),
         body: format!(
             "{} switched from {} to {}.",
@@ -399,6 +409,32 @@ fn current_platform_profile(snapshot: &RuntimeSnapshot) -> Option<&str> {
         .platform_profile
         .as_ref()
         .and_then(|profile| profile.current.as_deref())
+}
+
+fn battery_charge_type_change_notification(
+    previous: Option<&RuntimeSnapshot>,
+    current: &RuntimeSnapshot,
+) -> Option<DesktopNotification> {
+    let previous_charge_type = previous.and_then(current_battery_charge_type)?;
+    let current_charge_type = current_battery_charge_type(current)?;
+    (previous_charge_type != current_charge_type).then(|| DesktopNotification {
+        title: "Battery charge type changed".to_owned(),
+        body: format!(
+            "{} switched from {} to {}.",
+            notification_machine_label(current),
+            humanize_charge_type(previous_charge_type),
+            humanize_charge_type(current_charge_type),
+        ),
+    })
+}
+
+fn current_battery_charge_type(snapshot: &RuntimeSnapshot) -> Option<&str> {
+    snapshot
+        .diagnostics
+        .raw_probe_report
+        .battery_charge_type
+        .as_ref()
+        .and_then(|charge_type| charge_type.current.as_deref())
 }
 
 fn notification_machine_label(snapshot: &RuntimeSnapshot) -> String {
@@ -430,6 +466,10 @@ fn humanize_profile(profile: &str) -> String {
         })
         .collect::<Vec<_>>()
         .join(" ")
+}
+
+fn humanize_charge_type(charge_type: &str) -> String {
+    charge_type.replace('_', " ")
 }
 
 fn send_desktop_notification(notification: &DesktopNotification) -> Result<()> {
@@ -916,6 +956,45 @@ mod tests {
             &menu,
             "Last write blocked by daemon policy."
         ));
+    }
+
+    #[test]
+    fn refresh_status_records_battery_charge_type_drift_notification() {
+        let shutdown_requested = Arc::new(AtomicBool::new(false));
+        let state = Arc::new(std::sync::Mutex::new(tray_state_fixture(
+            "balanced", "Standard", true, false,
+        )));
+        let menu = state.lock().unwrap().menu.clone();
+        let snapshot = state.lock().unwrap().snapshot.clone();
+        let notifications = Arc::new(std::sync::Mutex::new(Vec::<DesktopNotification>::new()));
+        let tray = StatusNotifierTray::new_with_runtime(
+            summary(),
+            menu,
+            None,
+            shutdown_requested,
+            Arc::new({
+                let state = Arc::clone(&state);
+                move |_| {
+                    let mut guard = state.lock().unwrap();
+                    *guard = tray_state_fixture("balanced", "Long_Life", true, false);
+                    Ok(guard.clone())
+                }
+            }),
+            Arc::new(|_, _| anyhow::bail!("unexpected action")),
+            recording_notification_sender(Arc::clone(&notifications)),
+        )
+        .with_snapshot(snapshot);
+        let mut tray = tray;
+
+        tray.refresh_status();
+
+        assert_eq!(
+            notifications.lock().unwrap().as_slice(),
+            &[DesktopNotification {
+                title: "Battery charge type changed".to_owned(),
+                body: "82WM Legion Pro 5 16ARX8 switched from Standard to Long Life.".to_owned(),
+            }]
+        );
     }
 
     #[test]

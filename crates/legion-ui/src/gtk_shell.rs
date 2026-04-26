@@ -18,6 +18,7 @@ use std::{
 
 const AUTO_REFRESH_INTERVAL: Duration = Duration::from_secs(30);
 const RESUME_REFRESH_GAP: Duration = Duration::from_secs(90);
+const DEFAULT_DASHBOARD_PAGE: &str = "status";
 
 type SnapshotLoader = Rc<dyn Fn() -> Result<RuntimeSnapshot>>;
 
@@ -33,12 +34,17 @@ struct WriteFeedbackState {
     subtitle: String,
 }
 
-pub fn run(bus_address: Option<String>) -> Result<()> {
+pub fn run(
+    bus_address: Option<String>,
+    initial_page: Option<String>,
+    auto_quit_ms: Option<u64>,
+) -> Result<()> {
     let app = adw::Application::builder()
         .application_id("org.ratvantage.LegionControl")
         .build();
 
     let bus_address = Rc::new(bus_address);
+    let initial_page = Rc::new(normalize_dashboard_page_name(initial_page.as_deref()));
     app.connect_activate(move |app| {
         let window = adw::ApplicationWindow::builder()
             .application(app)
@@ -52,8 +58,10 @@ pub fn run(bus_address: Option<String>) -> Result<()> {
         root.set_vexpand(true);
         root.append(&adw::HeaderBar::new());
         let bus_address = Rc::clone(&bus_address);
+        let initial_page = Rc::clone(&initial_page);
         let runtime = DashboardRuntime::new(
             &root,
+            initial_page.as_ref().as_str(),
             Rc::new(move || {
                 let client = match bus_address.as_deref() {
                     Some(address) => LegionControlClient::address(address),
@@ -71,6 +79,14 @@ pub fn run(bus_address: Option<String>) -> Result<()> {
         window.present();
         window.unfullscreen();
         window.unmaximize();
+        if let Some(auto_quit_ms) = auto_quit_ms {
+            let app = app.clone();
+            let window = window.clone();
+            gtk4::glib::timeout_add_local_once(Duration::from_millis(auto_quit_ms), move || {
+                window.close();
+                app.quit();
+            });
+        }
         gtk4::glib::idle_add_local_once(move || {
             runtime.borrow_mut().refresh_now();
         });
@@ -85,6 +101,7 @@ pub fn dashboard_page(
     diagnostics: Result<DiagnosticsBundle>,
     gpu_pending: Result<Option<GpuModePending>>,
     fan_snapshot: Result<Option<FanCurveSnapshot>>,
+    initial_page: Option<&str>,
 ) -> gtk4::Widget {
     let stack = gtk4::Stack::new();
     stack.set_hexpand(true);
@@ -115,7 +132,7 @@ pub fn dashboard_page(
         Some("diagnostics"),
         "Diagnostics",
     );
-    stack.set_visible_child_name("status");
+    stack.set_visible_child_name(initial_page.unwrap_or(DEFAULT_DASHBOARD_PAGE));
 
     let switcher = gtk4::StackSwitcher::new();
     switcher.set_stack(Some(&stack));
@@ -218,6 +235,7 @@ pub fn should_auto_refresh(now: Instant, last_refresh: Instant, last_tick: Insta
 struct DashboardRuntime {
     host: gtk4::Box,
     banner: gtk4::Label,
+    initial_page: String,
     loader: SnapshotLoader,
     last_snapshot: Option<RuntimeSnapshot>,
     degraded: bool,
@@ -226,7 +244,7 @@ struct DashboardRuntime {
 }
 
 impl DashboardRuntime {
-    fn new(root: &gtk4::Box, loader: SnapshotLoader) -> Rc<RefCell<Self>> {
+    fn new(root: &gtk4::Box, initial_page: &str, loader: SnapshotLoader) -> Rc<RefCell<Self>> {
         let banner = gtk4::Label::new(None);
         banner.set_xalign(0.0);
         banner.set_wrap(true);
@@ -244,6 +262,7 @@ impl DashboardRuntime {
         Rc::new(RefCell::new(Self {
             host,
             banner,
+            initial_page: initial_page.to_owned(),
             loader,
             last_snapshot: None,
             degraded: false,
@@ -271,7 +290,7 @@ impl DashboardRuntime {
                 } else {
                     self.banner.set_visible(false);
                 }
-                self.replace_page(snapshot_page(Ok(snapshot)));
+                self.replace_page(snapshot_page(Ok(snapshot), Some(&self.initial_page)));
             }
             Err(error) => {
                 self.degraded = true;
@@ -280,7 +299,10 @@ impl DashboardRuntime {
                     "Runtime refresh degraded. Keeping the last known dashboard state until the daemon responds again: {error}"
                 );
                 if self.last_snapshot.is_none() {
-                    self.replace_page(snapshot_page(Err(anyhow!(error.to_string()))));
+                    self.replace_page(snapshot_page(
+                        Err(anyhow!(error.to_string())),
+                        Some(&self.initial_page),
+                    ));
                 }
                 self.banner.set_label(&message);
                 self.banner.set_visible(self.last_snapshot.is_some());
@@ -305,7 +327,7 @@ impl DashboardRuntime {
     }
 }
 
-fn snapshot_page(snapshot: Result<RuntimeSnapshot>) -> gtk4::Widget {
+fn snapshot_page(snapshot: Result<RuntimeSnapshot>, initial_page: Option<&str>) -> gtk4::Widget {
     let status = snapshot
         .as_ref()
         .map(|snapshot| snapshot.status.clone())
@@ -316,7 +338,16 @@ fn snapshot_page(snapshot: Result<RuntimeSnapshot>) -> gtk4::Widget {
         .map_err(clone_error);
     let gpu_pending = runtime_snapshot_gpu_pending(&snapshot);
     let fan_snapshot = runtime_snapshot_fan_snapshot(&snapshot);
-    dashboard_page(status, diagnostics, gpu_pending, fan_snapshot)
+    dashboard_page(status, diagnostics, gpu_pending, fan_snapshot, initial_page)
+}
+
+pub fn normalize_dashboard_page_name(page: Option<&str>) -> String {
+    match page {
+        Some("status" | "profiles" | "battery" | "fans" | "appearance" | "diagnostics") => {
+            page.unwrap().to_owned()
+        }
+        _ => DEFAULT_DASHBOARD_PAGE.to_owned(),
+    }
 }
 
 pub fn status_page(

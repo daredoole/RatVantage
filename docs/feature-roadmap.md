@@ -20,6 +20,7 @@ Current pre-alpha code provides the safe read-only base:
 - Live write-validation harness with plan-only bundle capture by default and explicit execute-mode evidence capture for the current reversible controls.
 - Local private-session frontend launcher for `status`, `overview`, `menu-check`, tray, and GTK smoke against the same temporary daemon.
 - StatusNotifier tray smoke script and manual checklist.
+- GTK screenshot smoke/report workflow under Xvfb.
 - KDE StatusNotifier smoke report workflow with reusable report bundles.
 - Read-only tray desktop diagnostics via `legion-control-tray --desktop-check`.
 - Disabled draft write-method contracts for platform profile, battery charge type, GPU mode, and fan presets.
@@ -52,6 +53,7 @@ Current pre-alpha code provides the safe read-only base:
 - Collect more captured fixtures through the compatibility bundle workflow when additional supported Legion machines are available.
 - If no new hardware reports are available, use the live write-validation harness to capture execute-mode evidence on supported Legion hardware one control at a time; tray/UI refresh behavior is now aligned on the shared reload path, KDE-specific smoke/reporting is in place, and GNOME validation remains blocked.
 - Treat the remaining KDE Wayland/NVIDIA GTK black-window issue as a frontend/compositor problem while using the private-session launcher plus tray/CLI validation to keep local development moving.
+- Use the GTK smoke/report workflow for deterministic screenshot evidence even while the live KDE Wayland/NVIDIA session remains compositor-sensitive.
 - Keep progress docs current after each completed roadmap slice.
 - Keep GitHub CI as remote guard; run `./scripts/ci-local.sh` before pushing to reduce failed CI minutes.
 

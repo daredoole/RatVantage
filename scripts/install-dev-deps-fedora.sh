@@ -14,6 +14,7 @@ sudo dnf install -y \
   desktop-file-utils \
   glib2-devel \
   gtk4-devel \
+  ImageMagick \
   libadwaita-devel \
   polkit-devel \
   pkgconf-pkg-config \

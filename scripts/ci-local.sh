@@ -22,6 +22,11 @@ command -v xvfb-run >/dev/null 2>&1 || {
   exit 1
 }
 
+command -v import >/dev/null 2>&1 || {
+  echo "missing import; run: scripts/install-dev-deps-fedora.sh" >&2
+  exit 1
+}
+
 command -v desktop-file-validate >/dev/null 2>&1 || {
   echo "missing desktop-file-validate; run: scripts/install-dev-deps-fedora.sh" >&2
   exit 1
@@ -63,6 +68,10 @@ scripts/capture-write-validation-report.sh \
 scripts/run-local-session-app.sh \
   --frontend status \
   --sysfs-root tests/fixtures/sysfs-82wm-confirmed >/tmp/ratvantage-local-session-status.txt
+scripts/capture-gtk-smoke-report.sh \
+  --sysfs-root tests/fixtures/sysfs-82wm-confirmed \
+  --pages status,battery \
+  --output "$fixture_tmp/gtk-smoke" >/tmp/ratvantage-gtk-smoke.txt
 cargo run -p legion-probe -- --json --sysfs-root "$fixture_tmp/captured" >/tmp/ratvantage-captured-probe.json
 cargo run -p legion-probe -- --json --sysfs-root tests/fixtures/sysfs-82wm-confirmed >/tmp/ratvantage-probe.json
 cargo run -p legion-control-daemon -- --dry-run >/tmp/ratvantage-daemon.txt

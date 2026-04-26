@@ -68,6 +68,14 @@ struct Args {
 
     #[arg(long)]
     bus_address: Option<String>,
+
+    #[cfg(feature = "gtk-ui")]
+    #[arg(long, value_name = "PAGE")]
+    gtk_page: Option<String>,
+
+    #[cfg(feature = "gtk-ui")]
+    #[arg(long, value_name = "MILLISECONDS")]
+    gtk_auto_quit_ms: Option<u64>,
 }
 
 fn main() -> Result<()> {
@@ -158,7 +166,7 @@ fn main() -> Result<()> {
 
     #[cfg(feature = "gtk-ui")]
     {
-        legion_control_ui::gtk_shell::run(args.bus_address)
+        legion_control_ui::gtk_shell::run(args.bus_address, args.gtk_page, args.gtk_auto_quit_ms)
     }
 
     #[cfg(not(feature = "gtk-ui"))]

@@ -134,6 +134,7 @@ fn status_and_error_pages_build_under_headless_display() {
         Ok(sample_diagnostics()),
         Ok(None),
         Ok(None),
+        None,
     );
     let page = page
         .downcast::<gtk4::Box>()
@@ -189,6 +190,19 @@ fn status_and_error_pages_build_under_headless_display() {
 
     assert_eq!(page.orientation(), gtk4::Orientation::Vertical);
     assert_eq!(page.observe_children().n_items(), 2);
+}
+
+#[test]
+fn dashboard_page_name_normalization_accepts_known_pages_only() {
+    assert_eq!(
+        gtk_shell::normalize_dashboard_page_name(Some("battery")),
+        "battery"
+    );
+    assert_eq!(
+        gtk_shell::normalize_dashboard_page_name(Some("not-a-page")),
+        "status"
+    );
+    assert_eq!(gtk_shell::normalize_dashboard_page_name(None), "status");
 }
 
 #[gtk4::test]
