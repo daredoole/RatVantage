@@ -1291,6 +1291,29 @@ pub fn fan_curve_hwmon_point_pairs(curve: &FanCurveCapability) -> Vec<FanCurveHw
         .collect()
 }
 
+fn sysfs_u32_from_snapshot_points(points: &[FanCurvePointSnapshot], path: &str) -> Option<u32> {
+    points
+        .iter()
+        .find(|point| point.path == path)
+        .and_then(|point| point.value.trim().parse::<u32>().ok())
+}
+
+/// Temperature and PWM sysfs integers from a [`FanCurveSnapshot`], aligned to `curve` auto-point
+/// indices (same pairing rules as [`fan_curve_hwmon_point_pairs`]). Incomplete indices are skipped.
+pub fn fan_curve_snapshot_chart_pairs(
+    curve: &FanCurveCapability,
+    snapshot: &FanCurveSnapshot,
+) -> Vec<(u32, u32)> {
+    fan_curve_hwmon_point_pairs(curve)
+        .into_iter()
+        .filter_map(|pair| {
+            let temp = sysfs_u32_from_snapshot_points(&snapshot.points, &pair.temp_path)?;
+            let pwm = sysfs_u32_from_snapshot_points(&snapshot.points, &pair.pwm_path)?;
+            Some((temp, pwm))
+        })
+        .collect()
+}
+
 /// Validates raw sysfs integers for a manual curve scratchpad (e.g. millidegree temps, 0–255 pwm).
 /// Rules mirror packaged presets: strictly increasing temperature channel values, non-decreasing pwm, pwm ≤ 255.
 pub fn validate_manual_fan_curve_pairs(pairs: &[(u32, u32)]) -> Result<(), ValidationError> {
@@ -2244,6 +2267,33 @@ mod tests {
         let pairs = fan_curve_hwmon_point_pairs(&curve);
         assert_eq!(pairs.len(), 1);
         assert_eq!(pairs[0].index, 1);
+    }
+
+    #[test]
+    fn fan_curve_snapshot_chart_pairs_aligns_temp_and_pwm_paths() {
+        let curve = FanCurveCapability {
+            point_paths: vec![
+                "/tmp/hwmon7/pwm1_auto_point1_temp".to_owned(),
+                "/tmp/hwmon7/pwm1_auto_point1_pwm".to_owned(),
+            ],
+            ..complete_fan_curve()
+        };
+        let snapshot = FanCurveSnapshot {
+            curve_id: "x".to_owned(),
+            path: None,
+            points: vec![
+                FanCurvePointSnapshot {
+                    path: "/tmp/hwmon7/pwm1_auto_point1_temp".to_owned(),
+                    value: " 50000 ".to_owned(),
+                },
+                FanCurvePointSnapshot {
+                    path: "/tmp/hwmon7/pwm1_auto_point1_pwm".to_owned(),
+                    value: "120".to_owned(),
+                },
+            ],
+        };
+        let pairs = fan_curve_snapshot_chart_pairs(&curve, &snapshot);
+        assert_eq!(pairs, vec![(50000, 120)]);
     }
 
     #[test]

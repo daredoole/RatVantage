@@ -6,11 +6,11 @@ use adw::prelude::*;
 use anyhow::{anyhow, Result};
 use legion_common::{
     decode_fan_scratchpad_toml_v1, encode_fan_scratchpad_toml_v1, fan_curve_hwmon_point_pairs,
-    fan_preset_points_as_sysfs_raw, format_fan_curve_live_vs_saved, parse_fan_preset_toml,
-    validate_fan_preset_document, validate_manual_fan_curve_pairs, BatteryChargeTypeCapability,
-    FanCurveCapability, FanCurveHwmonPointPair, FanCurveSnapshot, GpuCapability, GpuModePending,
-    IdeapadToggleCapability, LedCapability, PlatformProfileCapability, WriteDryRunPlan,
-    WriteExecutionResult, WriteExecutionStatus,
+    fan_curve_snapshot_chart_pairs, fan_preset_points_as_sysfs_raw, format_fan_curve_live_vs_saved,
+    parse_fan_preset_toml, validate_fan_preset_document, validate_manual_fan_curve_pairs,
+    BatteryChargeTypeCapability, FanCurveCapability, FanCurveHwmonPointPair, FanCurveSnapshot,
+    GpuCapability, GpuModePending, IdeapadToggleCapability, LedCapability,
+    PlatformProfileCapability, WriteDryRunPlan, WriteExecutionResult, WriteExecutionStatus,
 };
 use std::path::Path;
 use std::thread_local;
@@ -737,6 +737,8 @@ fn append_fans(
     curves.add(&last_known_row);
     page.append(&curves);
 
+    append_fan_curve_readonly_preview(page, bundle, &fan_snapshot);
+
     append_fan_preset_per_profile_section(page, bundle);
 
     let lkg_points_group =
@@ -1019,6 +1021,51 @@ fn append_fan_live_vs_saved_compare(page: &gtk4::Box) {
             }
         }
     });
+}
+
+fn append_fan_curve_readonly_preview(
+    page: &gtk4::Box,
+    bundle: &DiagnosticsBundle,
+    fan_snapshot: &Result<Option<FanCurveSnapshot>>,
+) {
+    let Some(curve) = bundle.raw_probe_report.fan_curves.first() else {
+        return;
+    };
+    let Ok(Some(snapshot)) = fan_snapshot else {
+        return;
+    };
+    let pairs = fan_curve_snapshot_chart_pairs(curve, snapshot);
+    if pairs.is_empty() {
+        return;
+    }
+
+    let group = adw::PreferencesGroup::new();
+    group.set_title("Curve shape (read-only preview)");
+    group.set_description(Some(
+        "v0.2 groundwork: PWM bars per auto-point index from the saved last-known-good snapshot (visual editor still to come).",
+    ));
+
+    for (pair_index, (temp, pwm)) in pairs.iter().enumerate() {
+        let pwm_clamped = (*pwm).min(255);
+        let pwm_fraction = pwm_clamped as f64 / 255.0;
+        let row = adw::ActionRow::builder()
+            .title(format!("Auto point {}", pair_index + 1))
+            .subtitle(format!(
+                "Raw sysfs temp {temp} (often millidegree), PWM {pwm} / 255"
+            ))
+            .selectable(false)
+            .build();
+        let bar = gtk4::ProgressBar::builder()
+            .fraction(pwm_fraction)
+            .show_text(true)
+            .text(format!("PWM {pwm}"))
+            .width_request(140)
+            .build();
+        row.add_suffix(&bar);
+        group.add(&row);
+    }
+
+    page.append(&group);
 }
 
 fn append_fan_preset_per_profile_section(page: &gtk4::Box, bundle: &DiagnosticsBundle) {

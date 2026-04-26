@@ -76,7 +76,7 @@ fn status_and_error_pages_build_under_headless_display() {
 
     assert_eq!(page.orientation(), gtk4::Orientation::Vertical);
     assert_eq!(page.spacing(), 12);
-    assert_eq!(page.observe_children().n_items(), 31);
+    assert_eq!(page.observe_children().n_items(), 32);
 
     let page = gtk_shell::appearance_page(Ok(sample_diagnostics()));
     let page = page
@@ -318,6 +318,9 @@ fn dashboard_pages_render_quick_apply_and_gpu_controls() {
         .iter()
         .any(|text| text == "Live vs saved comparison"));
     assert!(fans_text.iter().any(|text| text == "Compare live to saved"));
+    assert!(fans_text
+        .iter()
+        .any(|text| text == "Curve shape (read-only preview)"));
     assert!(fans_text
         .iter()
         .any(|text| text == "Fan preset per platform profile"));
@@ -681,10 +684,16 @@ fn sample_fan_snapshot() -> FanCurveSnapshot {
     FanCurveSnapshot {
         curve_id: "legion_hwmon".to_owned(),
         path: Some("/tmp/fixture/sys/class/hwmon/hwmon7".to_owned()),
-        points: vec![FanCurvePointSnapshot {
-            path: "/tmp/fixture/sys/class/hwmon/hwmon7/pwm1_auto_point1_temp".to_owned(),
-            value: "42000".to_owned(),
-        }],
+        points: vec![
+            FanCurvePointSnapshot {
+                path: "/tmp/fixture/sys/class/hwmon/hwmon7/pwm1_auto_point1_temp".to_owned(),
+                value: "42000".to_owned(),
+            },
+            FanCurvePointSnapshot {
+                path: "/tmp/fixture/sys/class/hwmon/hwmon7/pwm1_auto_point1_pwm".to_owned(),
+                value: "88".to_owned(),
+            },
+        ],
     }
 }
 
