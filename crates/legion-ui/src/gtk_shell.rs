@@ -5,8 +5,8 @@ use crate::{
 use adw::prelude::*;
 use anyhow::{anyhow, Result};
 use legion_common::{
-    BatteryChargeTypeCapability, FanCurveSnapshot, GpuModePending, LedCapability,
-    PlatformProfileCapability, WriteExecutionResult, WriteExecutionStatus,
+    BatteryChargeTypeCapability, FanCurveSnapshot, GpuModePending, IdeapadToggleCapability,
+    LedCapability, PlatformProfileCapability, WriteExecutionResult, WriteExecutionStatus,
 };
 
 pub fn run() -> Result<()> {
@@ -434,14 +434,27 @@ fn append_appearance(page: &gtk4::Box, bundle: &DiagnosticsBundle) {
     toggles.set_title("Firmware Toggles");
     if bundle.raw_probe_report.ideapad_toggles.is_empty() {
         toggles.add(&info_row("Firmware toggles", "unavailable"));
+        page.append(&toggles);
+        page.append(&build_ideapad_toggle_controls(None, None));
     } else {
+        let mut fn_lock_row = None;
         for toggle in &bundle.raw_probe_report.ideapad_toggles {
-            let value = toggle.current_value.as_deref().unwrap_or("unknown");
-            let path = toggle.path.as_deref().unwrap_or("unknown");
-            toggles.add(&info_row(&toggle.name, &format!("{value} - {path}")));
+            let row = info_row(&toggle.name, &render_ideapad_toggle_row(toggle));
+            if toggle.name == "fn_lock" {
+                fn_lock_row = Some(row.clone());
+            }
+            toggles.add(&row);
         }
+        page.append(&toggles);
+        page.append(&build_ideapad_toggle_controls(
+            writable_fn_lock_toggle(
+                bundle.raw_probe_report.ideapad_toggles.as_slice(),
+                bundle.raw_probe_report.leds.as_slice(),
+            ),
+            fn_lock_row,
+        ));
     }
-    page.append(&toggles);
+    page.append(&build_write_feedback_group("Fn-lock"));
 }
 
 fn append_diagnostics(page: &gtk4::Box, bundle: &DiagnosticsBundle) {
@@ -701,6 +714,69 @@ fn build_led_state_controls(
     group
 }
 
+fn build_ideapad_toggle_controls(
+    toggle: Option<&IdeapadToggleCapability>,
+    current_row: Option<adw::ActionRow>,
+) -> adw::PreferencesGroup {
+    let group = adw::PreferencesGroup::new();
+    group.set_title("Fn-lock quick apply");
+
+    let Some(toggle) = toggle else {
+        group.add(&info_row(
+            "Functional Fn-lock",
+            "unavailable - quick apply disabled",
+        ));
+        return group;
+    };
+
+    let row = adw::ActionRow::builder()
+        .title("Functional Fn-lock")
+        .subtitle("Apply a reversible on/off change to the detected fn_lock ideapad toggle.")
+        .selectable(false)
+        .build();
+
+    let off = gtk4::Button::with_label("Turn off");
+    let on = gtk4::Button::with_label("Turn on");
+    off.set_sensitive(toggle.current_value.as_deref() != Some("0"));
+    on.set_sensitive(toggle.current_value.as_deref() != Some("1"));
+    row.add_suffix(&off);
+    row.add_suffix(&on);
+    group.add(&row);
+
+    let feedback_row = write_feedback_row(None);
+    group.add(&feedback_row);
+
+    let toggle_id = toggle.name.clone();
+    let path = toggle.path.clone().unwrap_or_else(|| "unknown".to_owned());
+    let feedback_row_for_off = feedback_row.clone();
+    let current_row_for_off = current_row.clone();
+    off.connect_clicked(move |_| {
+        handle_ideapad_toggle_button_click(
+            &feedback_row_for_off,
+            current_row_for_off.as_ref(),
+            &toggle_id,
+            &path,
+            false,
+        );
+    });
+
+    let toggle_id = toggle.name.clone();
+    let path = toggle.path.clone().unwrap_or_else(|| "unknown".to_owned());
+    let feedback_row_for_on = feedback_row.clone();
+    let current_row_for_on = current_row.clone();
+    on.connect_clicked(move |_| {
+        handle_ideapad_toggle_button_click(
+            &feedback_row_for_on,
+            current_row_for_on.as_ref(),
+            &toggle_id,
+            &path,
+            true,
+        );
+    });
+
+    group
+}
+
 #[allow(clippy::too_many_arguments)]
 fn build_write_controls<F, G>(
     title: &str,
@@ -881,6 +957,35 @@ fn handle_led_button_click(
     }
 }
 
+fn handle_ideapad_toggle_button_click(
+    feedback_row: &adw::ActionRow,
+    current_row: Option<&adw::ActionRow>,
+    toggle_id: &str,
+    path: &str,
+    enabled: bool,
+) {
+    feedback_row.set_title("Apply result");
+    feedback_row.set_subtitle("Applying write request...");
+
+    match LegionControlClient::system()
+        .and_then(|client| client.set_ideapad_toggle(toggle_id, enabled))
+    {
+        Ok(result) => {
+            feedback_row.set_title(write_feedback_title(Some(&result)));
+            feedback_row.set_subtitle(&write_feedback_subtitle(Some(&result)));
+            if let Some(row) = current_row {
+                refresh_ideapad_toggle_row(row, toggle_id, path, &result);
+            }
+        }
+        Err(error) => {
+            feedback_row.set_title("Apply error");
+            feedback_row.set_subtitle(&format!(
+                "Failed - daemon call could not be completed: {error}"
+            ));
+        }
+    }
+}
+
 fn refresh_led_row(
     row: &adw::ActionRow,
     led_id: &str,
@@ -911,11 +1016,63 @@ fn refresh_led_row(
     }
 }
 
+fn refresh_ideapad_toggle_row(
+    row: &adw::ActionRow,
+    toggle_id: &str,
+    path: &str,
+    result: &WriteExecutionResult,
+) {
+    if let Ok(snapshot) =
+        LegionControlClient::system().and_then(|client| client.refresh_runtime_snapshot())
+    {
+        if let Some(toggle) = snapshot
+            .diagnostics
+            .raw_probe_report
+            .ideapad_toggles
+            .into_iter()
+            .find(|toggle| toggle.name == toggle_id)
+        {
+            row.set_subtitle(&render_ideapad_toggle_row(&toggle));
+            return;
+        }
+    }
+
+    if let Some(readback) = result.readback_value.as_deref() {
+        row.set_subtitle(&format!("{readback} - {path}"));
+    }
+}
+
 fn writable_ylogo(leds: &[LedCapability]) -> Option<&LedCapability> {
     leds.iter().find(|led| {
         led.name == "platform::ylogo"
             && led.max_brightness == Some(1)
             && matches!(led.brightness, Some(0 | 1))
+    })
+}
+
+fn writable_fn_lock_toggle<'a>(
+    toggles: &'a [IdeapadToggleCapability],
+    leds: &[LedCapability],
+) -> Option<&'a IdeapadToggleCapability> {
+    toggles.iter().find(|toggle| {
+        if toggle.name != "fn_lock" || !matches!(toggle.current_value.as_deref(), Some("0" | "1")) {
+            return false;
+        }
+        let Some(path) = toggle.path.as_deref() else {
+            return false;
+        };
+        if path.is_empty() {
+            return false;
+        }
+        leds.iter().any(|led| {
+            led.name == "platform::fnlock"
+                && led.max_brightness == Some(1)
+                && matches!(led.brightness, Some(0 | 1))
+                && toggle.current_value.as_deref()
+                    == led
+                        .brightness
+                        .map(|brightness| if brightness == 0 { "0" } else { "1" })
+        })
     })
 }
 
@@ -929,4 +1086,10 @@ fn render_led_row(led: &LedCapability) -> String {
         .map(|max| max.to_string())
         .unwrap_or_else(|| "unknown".to_owned());
     format!("brightness {brightness} / max {max} - {}", led.path)
+}
+
+fn render_ideapad_toggle_row(toggle: &IdeapadToggleCapability) -> String {
+    let value = toggle.current_value.as_deref().unwrap_or("unknown");
+    let path = toggle.path.as_deref().unwrap_or("unknown");
+    format!("{value} - {path}")
 }

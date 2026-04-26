@@ -2,9 +2,9 @@ use anyhow::Result;
 use clap::Parser;
 use legion_control_daemon::{
     session_connection, system_connection, LegionControl, PkcheckAuthorizer,
-    SysfsBatteryChargeTypeWriter, SysfsLedStateWriter, SysfsPlatformProfileWriter,
-    WriteAccessPolicy, DBUS_INTERFACE, DBUS_PATH, DEFAULT_STATE_PATH, GATED_WRITE_METHODS,
-    READ_ONLY_METHODS,
+    SysfsBatteryChargeTypeWriter, SysfsIdeapadToggleWriter, SysfsLedStateWriter,
+    SysfsPlatformProfileWriter, WriteAccessPolicy, DBUS_INTERFACE, DBUS_PATH, DEFAULT_STATE_PATH,
+    GATED_WRITE_METHODS, READ_ONLY_METHODS,
 };
 use legion_probe::{probe, ProbeOptions};
 
@@ -30,6 +30,9 @@ struct Args {
 
     #[arg(long)]
     enable_led_state_write: bool,
+
+    #[arg(long)]
+    enable_ideapad_toggle_write: bool,
 }
 
 fn main() -> Result<()> {
@@ -44,11 +47,13 @@ fn main() -> Result<()> {
             platform_profile_enabled: args.enable_platform_profile_write,
             battery_charge_type_enabled: args.enable_battery_charge_type_write,
             led_state_enabled: args.enable_led_state_write,
+            ideapad_toggle_enabled: args.enable_ideapad_toggle_write,
         },
         std::sync::Arc::new(PkcheckAuthorizer),
         std::sync::Arc::new(SysfsPlatformProfileWriter),
         std::sync::Arc::new(SysfsBatteryChargeTypeWriter),
         std::sync::Arc::new(SysfsLedStateWriter),
+        std::sync::Arc::new(SysfsIdeapadToggleWriter),
     );
 
     if args.dry_run {
@@ -68,6 +73,9 @@ fn main() -> Result<()> {
             }
             if args.enable_led_state_write {
                 methods.push("SetLedState");
+            }
+            if args.enable_ideapad_toggle_write {
+                methods.push("SetIdeapadToggle");
             }
             if methods.is_empty() {
                 "none".to_owned()

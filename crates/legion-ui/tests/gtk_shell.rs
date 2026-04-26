@@ -61,7 +61,7 @@ fn status_and_error_pages_build_under_headless_display() {
 
     assert_eq!(page.orientation(), gtk4::Orientation::Vertical);
     assert_eq!(page.spacing(), 12);
-    assert_eq!(page.observe_children().n_items(), 5);
+    assert_eq!(page.observe_children().n_items(), 7);
 
     let page = gtk_shell::diagnostics_page(Ok(sample_diagnostics()));
     let page = page
@@ -211,6 +211,12 @@ fn profiles_and_battery_pages_render_quick_apply_controls() {
     assert!(appearance_text.iter().any(|text| text == "Y-logo LED"));
     assert!(appearance_text.iter().any(|text| text == "Turn off"));
     assert!(appearance_text.iter().any(|text| text == "Turn on"));
+    assert!(appearance_text
+        .iter()
+        .any(|text| text == "Fn-lock quick apply"));
+    assert!(appearance_text
+        .iter()
+        .any(|text| text == "Functional Fn-lock"));
 }
 
 #[gtk4::test]
@@ -252,6 +258,9 @@ fn profiles_and_battery_pages_disable_quick_apply_when_capability_is_unavailable
         .expect("appearance page should be a vertical box");
     let appearance_text = collect_widget_text(&appearance.clone().upcast());
     assert!(appearance_text.iter().any(|text| text == "LED quick apply"));
+    assert!(appearance_text
+        .iter()
+        .any(|text| text == "Fn-lock quick apply"));
     assert!(appearance_text
         .iter()
         .any(|text| text == "unavailable - quick apply disabled"));
@@ -406,19 +415,27 @@ fn sample_diagnostics() -> DiagnosticsBundle {
             "/tmp/fixture/sys/class/hwmon/hwmon7/pwm1_auto_point1_pwm".to_owned(),
         ],
     }];
-    report.leds = vec![LedCapability {
-        name: "platform::ylogo".to_owned(),
-        path: "/tmp/fixture/sys/class/leds/platform::ylogo/brightness".to_owned(),
-        brightness: Some(0),
-        max_brightness: Some(1),
-    }];
+    report.leds = vec![
+        LedCapability {
+            name: "platform::fnlock".to_owned(),
+            path: "/tmp/fixture/sys/class/leds/platform::fnlock/brightness".to_owned(),
+            brightness: Some(0),
+            max_brightness: Some(1),
+        },
+        LedCapability {
+            name: "platform::ylogo".to_owned(),
+            path: "/tmp/fixture/sys/class/leds/platform::ylogo/brightness".to_owned(),
+            brightness: Some(0),
+            max_brightness: Some(1),
+        },
+    ];
     report.ideapad_toggles = vec![IdeapadToggleCapability {
         name: "fn_lock".to_owned(),
         status: CapabilityStatus::ProbeOnly,
         path: Some(
             "/tmp/fixture/sys/bus/platform/drivers/ideapad_acpi/VPC2004:00/fn_lock".to_owned(),
         ),
-        current_value: Some("1".to_owned()),
+        current_value: Some("0".to_owned()),
     }];
 
     DiagnosticsBundle::from_report_with_logs(

@@ -5,9 +5,9 @@
 Current pre-alpha code provides the safe read-only base:
 
 - Runtime probe for hardware summary, capabilities, telemetry, and raw probe report.
-- Root-capable daemon shape with read-only D-Bus APIs plus gated reversible execution for `SetPlatformProfile`, `SetBatteryChargeType`, and `SetLedState`.
+- Root-capable daemon shape with read-only D-Bus APIs plus gated reversible execution for `SetPlatformProfile`, `SetBatteryChargeType`, `SetLedState`, and restricted `SetIdeapadToggle`.
 - UI status client and optional GTK4/libadwaita shell with Status, Profiles, Battery, Fans, Appearance, and Diagnostics tabs; the Profiles, Battery, and Appearance tabs now include gated quick-apply controls with inline execution feedback.
-- Tray/status helper with a state-driven menu derived from detected profile choices, battery charge choices, LED state, packaged preset labels, pending runtime state, and reversible quick actions for platform profile, battery charge type, and ylogo LED.
+- Tray/status helper with a state-driven menu derived from detected profile choices, battery charge choices, LED state, ideapad toggle state, packaged preset labels, pending runtime state, and reversible quick actions for platform profile, battery charge type, ylogo LED, and `fn_lock`.
 - StatusNotifier tray backend with dashboard, refresh, auto-refresh/resume reloads, write action execution, and `--menu-check` diagnostics for the runtime-derived menu.
 - StatusNotifier dashboard launch forwards custom D-Bus addresses for private/session-bus workflows.
 - Tray tooltip reports platform profile, fan RPM, and available/missing capabilities.
@@ -23,8 +23,8 @@ Current pre-alpha code provides the safe read-only base:
 - Disabled draft write-method contracts for platform profile, battery charge type, GPU mode, and fan presets.
 - Pure validators for platform profile, battery charge type, EnvyControl GPU mode, and packaged fan preset choices.
 - Validator-backed dry-run planning for platform profile, battery charge type, GPU mode, and fan presets.
-- Gated platform-profile, battery charge type, and ylogo LED write execution paths with rollback-on-readback-mismatch tests and matching UI CLI entry points. [implemented, still disabled by default unless daemon write flags are enabled]
-- Daemon-side Rust adapters for dry-run planning, plus gated `SetPlatformProfile` and `SetBatteryChargeType` execution while other D-Bus write methods remain absent.
+- Gated platform-profile, battery charge type, ylogo LED, and restricted `fn_lock` write execution paths with rollback-on-readback-mismatch tests and matching UI CLI entry points. [implemented, still disabled by default unless daemon write flags are enabled]
+- Daemon-side Rust adapters for dry-run planning, plus gated `SetPlatformProfile`, `SetBatteryChargeType`, `SetLedState`, and restricted `SetIdeapadToggle` execution while higher-risk D-Bus write methods remain absent.
 - Runtime-captured 82WM fixture coverage, including bracketed battery `charge_types` current-value parsing.
 - Current 82WM read-only validation evidence for DMI, platform profiles, charge choices, sensors, LEDs, firmware toggles, and EnvyControl.
 - Read-only battery telemetry for capacity, status, and health where `BAT0` exposes it.
@@ -35,7 +35,7 @@ Current pre-alpha code provides the safe read-only base:
 - Read-only UI `--diagnostics` JSON bundle with hardware summary, compact counts, kernel version, detected sysfs paths, recent daemon log excerpts, and raw probe report.
 - Diagnostics/export parity for durable app state, so CLI `--diagnostics` output and GTK Diagnostics Copy JSON include `gpu_mode_pending` and `last_known_good_fan_curve`.
 - Diagnostics include `platform_profile_choices` and `charge_types` source paths.
-- UI dry-run plan previews for platform profile, battery charge type, GPU mode, fan preset, and fan restore/default writes, plus gated `--set-platform-profile` and `--set-battery-charge-type` execution output.
+- UI dry-run plan previews for platform profile, battery charge type, LED state, ideapad toggle, GPU mode, fan preset, and fan restore/default writes, plus gated execution output for the currently enabled reversible methods.
 - UI status output includes per-capability status and risk labels.
 - Read-only GTK Profiles, Battery, and Fans tabs show platform profile choices, battery charge choices, fan telemetry, fan curve paths, packaged preset IDs, sysfs source paths, and battery telemetry from the diagnostics bundle.
 - Read-only GTK Appearance tab shows LED brightness nodes and firmware toggle values from the diagnostics bundle.
@@ -47,7 +47,7 @@ Current pre-alpha code provides the safe read-only base:
 
 - Keep tray autostart disabled; GNOME AppIndicator extension path is still untested.
 - Collect more captured fixtures through the compatibility bundle workflow when additional supported Legion machines are available.
-- If no new hardware reports are available, continue with write-path expansion for other low-risk controls after ylogo LED, while keeping tray/UI refresh and resume behavior aligned with the new shared reload path; KDE-specific smoke/reporting is now in place, while GNOME validation remains blocked.
+- If no new hardware reports are available, continue with the next carefully bounded write-path slice after `fn_lock`, preferably a control with explicit warning UX and recovery guidance such as `camera_power`, while keeping tray/UI refresh and resume behavior aligned with the shared reload path; KDE-specific smoke/reporting is now in place, while GNOME validation remains blocked.
 - Keep progress docs current after each completed roadmap slice.
 - Keep GitHub CI as remote guard; run `./scripts/ci-local.sh` before pushing to reduce failed CI minutes.
 
@@ -125,6 +125,7 @@ Suggested labels:
 
 - Y-logo LED toggle if `/sys/class/leds/platform::ylogo/brightness` exists. [implemented as gated daemon/UI/tray/GTK write path, disabled by default unless the daemon write flag is enabled]
 - Fn-lock LED display only if `/sys/class/leds/platform::fnlock/brightness` exists. [implemented as read-only GTK Appearance and `--overview` data]
+- Functional Fn-lock toggle via VPC2004 `fn_lock` with paired `platform::fnlock` LED corroboration. [implemented as gated daemon/UI/tray/GTK write path, disabled by default unless the daemon write flag is enabled]
 
 ## Version 0.2
 
@@ -152,7 +153,6 @@ Goal: make the confirmed controls more complete and user-friendly.
 
 Expose only if present:
 
-- functional Fn-lock via VPC2004 `fn_lock`; [implemented as read-only GTK Appearance and `--overview` data]
 - always-on USB charging via VPC2004 `usb_charging`; [implemented as read-only GTK Appearance and `--overview` data when exposed]
 - IO-port LED if a stable LED node exists.
 

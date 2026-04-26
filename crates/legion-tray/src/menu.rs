@@ -14,6 +14,7 @@ pub enum TrayAction {
     SetPlatformProfile(String),
     SetBatteryChargeType(String),
     SetLedState(String, bool),
+    SetIdeapadToggle(String, bool),
     OpenDashboard,
     RefreshStatus,
     Quit,
@@ -30,6 +31,12 @@ impl TrayAction {
             Self::SetLedState(led_id, enabled) => {
                 format!(
                     "set_led_state:{led_id}:{}",
+                    if *enabled { "on" } else { "off" }
+                )
+            }
+            Self::SetIdeapadToggle(toggle_id, enabled) => {
+                format!(
+                    "set_ideapad_toggle:{toggle_id}:{}",
                     if *enabled { "on" } else { "off" }
                 )
             }
@@ -111,6 +118,9 @@ impl TrayMenu {
         }
         for led_row in led_rows(report) {
             entries.push(TrayMenuEntry::Item(info_item(led_row)));
+        }
+        for toggle_row in ideapad_toggle_rows(report) {
+            entries.push(TrayMenuEntry::Item(info_item(toggle_row)));
         }
 
         for fan_row in fan_rows(&report.telemetry.sensors) {
@@ -288,6 +298,10 @@ fn append_quick_actions(entries: &mut Vec<TrayMenuEntry>, report: &CapabilityReg
         sections.extend(section);
     }
 
+    if let Some(section) = ideapad_toggle_quick_action_section(report) {
+        sections.extend(section);
+    }
+
     if !sections.is_empty() {
         entries.push(TrayMenuEntry::Separator);
         entries.extend(sections);
@@ -358,6 +372,66 @@ fn led_quick_action_section(report: &CapabilityRegistry) -> Option<Vec<TrayMenuE
     Some(entries)
 }
 
+fn ideapad_toggle_rows(report: &CapabilityRegistry) -> Vec<String> {
+    report
+        .ideapad_toggles
+        .iter()
+        .filter_map(|toggle| {
+            toggle.current_value.as_deref().map(|value| {
+                format!(
+                    "Toggle: {} {}",
+                    toggle.name,
+                    if value == "0" { "off" } else { "on" }
+                )
+            })
+        })
+        .collect()
+}
+
+fn ideapad_toggle_quick_action_section(report: &CapabilityRegistry) -> Option<Vec<TrayMenuEntry>> {
+    let toggle = report.ideapad_toggles.iter().find(|toggle| {
+        toggle.name == "fn_lock"
+            && matches!(toggle.current_value.as_deref(), Some("0" | "1"))
+            && toggle.path.as_deref().is_some_and(|path| !path.is_empty())
+    })?;
+    let indicator_ok = report.leds.iter().any(|led| {
+        led.name == "platform::fnlock"
+            && led.max_brightness == Some(1)
+            && matches!(led.brightness, Some(0 | 1))
+            && toggle.current_value.as_deref()
+                == led
+                    .brightness
+                    .map(|brightness| if brightness == 0 { "0" } else { "1" })
+    });
+    if !indicator_ok {
+        return None;
+    }
+    let current = toggle.current_value.as_deref()?;
+
+    let mut entries = vec![TrayMenuEntry::Item(info_item("Fn-lock actions".to_owned()))];
+    entries.push(TrayMenuEntry::Item(action_item(
+        "Set Fn-lock off",
+        TrayAction::SetIdeapadToggle(toggle.name.clone(), false),
+    )));
+    entries.push(TrayMenuEntry::Item(action_item(
+        "Set Fn-lock on",
+        TrayAction::SetIdeapadToggle(toggle.name.clone(), true),
+    )));
+    for entry in &mut entries {
+        if let TrayMenuEntry::Item(item) = entry {
+            if item.label.ends_with(" off") && current == "0" {
+                item.enabled = false;
+                item.action = TrayAction::NoOp;
+            }
+            if item.label.ends_with(" on") && current == "1" {
+                item.enabled = false;
+                item.action = TrayAction::NoOp;
+            }
+        }
+    }
+    Some(entries)
+}
+
 fn fan_rows(sensors: &[HwmonSensor]) -> Vec<String> {
     sensors
         .iter()
@@ -417,7 +491,7 @@ mod tests {
     use legion_common::{
         BatteryChargeTypeCapability, BatteryTelemetry, Capability, CapabilityRegistry,
         CapabilityStatus, FanCurvePointSnapshot, FanCurveSnapshot, GpuModePending, HardwareSummary,
-        HwmonSensor, LedCapability, PlatformProfileCapability, RiskLevel,
+        HwmonSensor, IdeapadToggleCapability, LedCapability, PlatformProfileCapability, RiskLevel,
     };
 
     use super::*;
@@ -476,11 +550,25 @@ mod tests {
                     health: Some("Good".to_owned()),
                 }),
             },
-            leds: vec![LedCapability {
-                name: "platform::ylogo".to_owned(),
-                path: "/tmp/platform::ylogo/brightness".to_owned(),
-                brightness: Some(1),
-                max_brightness: Some(1),
+            leds: vec![
+                LedCapability {
+                    name: "platform::fnlock".to_owned(),
+                    path: "/tmp/platform::fnlock/brightness".to_owned(),
+                    brightness: Some(0),
+                    max_brightness: Some(1),
+                },
+                LedCapability {
+                    name: "platform::ylogo".to_owned(),
+                    path: "/tmp/platform::ylogo/brightness".to_owned(),
+                    brightness: Some(1),
+                    max_brightness: Some(1),
+                },
+            ],
+            ideapad_toggles: vec![IdeapadToggleCapability {
+                name: "fn_lock".to_owned(),
+                status: CapabilityStatus::ProbeOnly,
+                path: Some("/tmp/fn_lock".to_owned()),
+                current_value: Some("0".to_owned()),
             }],
             ..Default::default()
         };
@@ -514,7 +602,9 @@ mod tests {
                 "Battery charge type: Standard",
                 "Charge choices: Standard, Conservation, Fast",
                 "Battery: 79% / Charging / Good",
+                "LED: platform::fnlock off",
                 "LED: platform::ylogo on",
+                "Toggle: fn_lock off",
                 "Fan: CPU Fan 2410 RPM",
                 "GPU pending: hybrid (previous nvidia, reboot required)",
                 "Saved fan curve: 1 values from legion_hwmon",
@@ -525,6 +615,8 @@ mod tests {
                 "Battery charge type actions",
                 "LED actions",
                 "Set LED state: platform::ylogo on",
+                "Fn-lock actions",
+                "Set Fn-lock off",
             ]
         );
         assert_eq!(
@@ -535,6 +627,7 @@ mod tests {
                 "Set battery charge type: Conservation",
                 "Set battery charge type: Fast",
                 "Set LED state: platform::ylogo off",
+                "Set Fn-lock on",
                 "Open dashboard",
                 "Refresh status",
                 "Quit",
@@ -696,11 +789,25 @@ mod tests {
                 path: "/tmp/charge_type".to_owned(),
                 choices_path: "/tmp/charge_types".to_owned(),
             }),
-            leds: vec![LedCapability {
-                name: "platform::ylogo".to_owned(),
-                path: "/tmp/platform::ylogo/brightness".to_owned(),
-                brightness: Some(1),
-                max_brightness: Some(1),
+            leds: vec![
+                LedCapability {
+                    name: "platform::fnlock".to_owned(),
+                    path: "/tmp/platform::fnlock/brightness".to_owned(),
+                    brightness: Some(0),
+                    max_brightness: Some(1),
+                },
+                LedCapability {
+                    name: "platform::ylogo".to_owned(),
+                    path: "/tmp/platform::ylogo/brightness".to_owned(),
+                    brightness: Some(1),
+                    max_brightness: Some(1),
+                },
+            ],
+            ideapad_toggles: vec![IdeapadToggleCapability {
+                name: "fn_lock".to_owned(),
+                status: CapabilityStatus::ProbeOnly,
+                path: Some("/tmp/fn_lock".to_owned()),
+                current_value: Some("0".to_owned()),
             }],
             ..Default::default()
         };

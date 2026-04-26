@@ -36,6 +36,12 @@ struct Args {
     #[arg(long, value_name = "LED_ID=on|off")]
     set_led_state: Option<String>,
 
+    #[arg(long, value_name = "TOGGLE_ID=on|off")]
+    plan_ideapad_toggle: Option<String>,
+
+    #[arg(long, value_name = "TOGGLE_ID=on|off")]
+    set_ideapad_toggle: Option<String>,
+
     #[arg(long, value_name = "MODE")]
     plan_gpu_mode: Option<String>,
 
@@ -77,6 +83,8 @@ fn main() -> Result<()> {
         args.set_battery_charge_type.is_some(),
         args.plan_led_state.is_some(),
         args.set_led_state.is_some(),
+        args.plan_ideapad_toggle.is_some(),
+        args.set_ideapad_toggle.is_some(),
         args.plan_gpu_mode.is_some(),
         args.plan_fan_preset.is_some(),
         args.plan_restore_auto_fan,
@@ -112,6 +120,12 @@ fn main() -> Result<()> {
         } else if let Some(spec) = args.set_led_state {
             let (led_id, enabled) = parse_led_state_spec(&spec)?;
             print_json(&client.set_led_state(&led_id, enabled)?)?;
+        } else if let Some(spec) = args.plan_ideapad_toggle {
+            let (toggle_id, enabled) = parse_binary_switch_spec(&spec, "ideapad toggle")?;
+            print_write_plan(&client.plan_ideapad_toggle_write(&toggle_id, enabled)?)?;
+        } else if let Some(spec) = args.set_ideapad_toggle {
+            let (toggle_id, enabled) = parse_binary_switch_spec(&spec, "ideapad toggle")?;
+            print_json(&client.set_ideapad_toggle(&toggle_id, enabled)?)?;
         } else if let Some(mode) = args.plan_gpu_mode {
             print_write_plan(&client.plan_gpu_mode_write(&mode)?)?;
         } else if let Some(preset_id) = args.plan_fan_preset {
@@ -189,14 +203,18 @@ fn print_json<T: serde::Serialize>(value: &T) -> Result<()> {
 }
 
 fn parse_led_state_spec(spec: &str) -> Result<(String, bool)> {
+    parse_binary_switch_spec(spec, "LED")
+}
+
+fn parse_binary_switch_spec(spec: &str, label: &str) -> Result<(String, bool)> {
     let Some((led_id, requested)) = spec.split_once('=') else {
-        bail!("expected LED spec in the form <led_id>=on|off");
+        bail!("expected {label} spec in the form <id>=on|off");
     };
 
     let enabled = match requested {
         "1" | "on" | "true" => true,
         "0" | "off" | "false" => false,
-        _ => bail!("expected LED state to be one of: on, off, true, false, 1, 0"),
+        _ => bail!("expected {label} state to be one of: on, off, true, false, 1, 0"),
     };
 
     Ok((led_id.to_owned(), enabled))

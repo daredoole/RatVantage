@@ -84,6 +84,7 @@ value = "42000"
     assert!(stdout.contains("label=Charge choices: Standard, Conservation, Fast"));
     assert!(stdout.contains("label=Battery: 79% / Charging / Good"));
     assert!(stdout.contains("label=LED: platform::ylogo on"));
+    assert!(stdout.contains("label=Toggle: fn_lock off"));
     assert!(stdout.contains("label=Fan: CPU Fan 2410 RPM"));
     assert!(stdout.contains("label=GPU pending: hybrid (previous nvidia, reboot required)"));
     assert!(stdout.contains("label=Saved fan curve: 1 values from legion_hwmon"));
@@ -108,6 +109,8 @@ value = "42000"
     assert!(stdout.contains(
         "enabled action=set_led_state:platform::ylogo:off label=Set LED state: platform::ylogo off"
     ));
+    assert!(stdout.contains("label=Fn-lock actions"));
+    assert!(stdout.contains("enabled action=set_ideapad_toggle:fn_lock:on label=Set Fn-lock on"));
     assert!(stdout.contains("enabled action=open_dashboard label=Open dashboard"));
     assert!(stdout.contains("enabled action=refresh_status label=Refresh status"));
     assert!(stdout.contains("enabled action=quit label=Quit"));

@@ -104,7 +104,8 @@ impl StatusNotifierTray {
             TrayAction::NoOp => {}
             TrayAction::SetPlatformProfile(_)
             | TrayAction::SetBatteryChargeType(_)
-            | TrayAction::SetLedState(_, _) => self.execute_write_action(action),
+            | TrayAction::SetLedState(_, _)
+            | TrayAction::SetIdeapadToggle(_, _) => self.execute_write_action(action),
             TrayAction::OpenDashboard => self.open_dashboard(),
             TrayAction::RefreshStatus => self.refresh_status(),
             TrayAction::Quit => self.request_shutdown(),
@@ -259,6 +260,9 @@ fn execute_tray_action(
             client.set_battery_charge_type(charge_type)
         }
         TrayAction::SetLedState(led_id, enabled) => client.set_led_state(led_id, *enabled),
+        TrayAction::SetIdeapadToggle(toggle_id, enabled) => {
+            client.set_ideapad_toggle(toggle_id, *enabled)
+        }
         _ => anyhow::bail!("unsupported tray write action"),
     }
 }
@@ -351,6 +355,7 @@ mod tests {
             "Battery: 79% / Charging / Good"
         ));
         assert!(menu_has_disabled_item(&menu, "LED: platform::ylogo on"));
+        assert!(menu_has_disabled_item(&menu, "Toggle: fn_lock off"));
         assert!(menu_has_disabled_item(&menu, "Fan: CPU Fan 2410 RPM"));
         assert!(menu_has_disabled_item(
             &menu,
@@ -372,6 +377,7 @@ mod tests {
         assert!(menu_has_disabled_item(&menu, "Platform profile actions"));
         assert!(menu_has_disabled_item(&menu, "Battery charge type actions"));
         assert!(menu_has_disabled_item(&menu, "LED actions"));
+        assert!(menu_has_disabled_item(&menu, "Fn-lock actions"));
         assert!(menu_has_enabled_item(
             &menu,
             "Set platform profile: low-power"
@@ -392,6 +398,7 @@ mod tests {
             &menu,
             "Set LED state: platform::ylogo off"
         ));
+        assert!(menu_has_enabled_item(&menu, "Set Fn-lock on"));
         assert!(menu_has_enabled_item(&menu, "Open dashboard"));
         assert!(menu_has_enabled_item(&menu, "Refresh status"));
         assert!(menu_has_enabled_item(&menu, "Quit"));
@@ -403,7 +410,7 @@ mod tests {
     fn status_notifier_activation_executes_platform_profile_action_and_refreshes_menu() {
         let shutdown_requested = Arc::new(AtomicBool::new(false));
         let state = Arc::new(std::sync::Mutex::new(tray_state_fixture(
-            "balanced", "Standard", true,
+            "balanced", "Standard", true, false,
         )));
         let menu = state.lock().unwrap().menu.clone();
         let tray = StatusNotifierTray::new_with_runtime(
@@ -417,7 +424,7 @@ mod tests {
                 move |_, action| match action {
                     TrayAction::SetPlatformProfile(profile) => {
                         let mut guard = state.lock().unwrap();
-                        *guard = tray_state_fixture(profile, "Standard", true);
+                        *guard = tray_state_fixture(profile, "Standard", true, false);
                         Ok(applied_result("SetPlatformProfile", profile))
                     }
                     other => anyhow::bail!("unexpected action {other:?}"),
@@ -444,7 +451,7 @@ mod tests {
     fn status_notifier_activation_executes_battery_charge_type_action_and_refreshes_menu() {
         let shutdown_requested = Arc::new(AtomicBool::new(false));
         let state = Arc::new(std::sync::Mutex::new(tray_state_fixture(
-            "balanced", "Standard", true,
+            "balanced", "Standard", true, false,
         )));
         let menu = state.lock().unwrap().menu.clone();
         let tray = StatusNotifierTray::new_with_runtime(
@@ -458,7 +465,7 @@ mod tests {
                 move |_, action| match action {
                     TrayAction::SetBatteryChargeType(charge_type) => {
                         let mut guard = state.lock().unwrap();
-                        *guard = tray_state_fixture("balanced", charge_type, true);
+                        *guard = tray_state_fixture("balanced", charge_type, true, false);
                         Ok(applied_result("SetBatteryChargeType", charge_type))
                     }
                     other => anyhow::bail!("unexpected action {other:?}"),
@@ -485,7 +492,7 @@ mod tests {
     fn status_notifier_activation_executes_led_action_and_refreshes_menu() {
         let shutdown_requested = Arc::new(AtomicBool::new(false));
         let state = Arc::new(std::sync::Mutex::new(tray_state_fixture(
-            "balanced", "Standard", true,
+            "balanced", "Standard", true, false,
         )));
         let menu = state.lock().unwrap().menu.clone();
         let tray = StatusNotifierTray::new_with_runtime(
@@ -499,7 +506,7 @@ mod tests {
                 move |_, action| match action {
                     TrayAction::SetLedState(led_id, enabled) => {
                         let mut guard = state.lock().unwrap();
-                        *guard = tray_state_fixture("balanced", "Standard", *enabled);
+                        *guard = tray_state_fixture("balanced", "Standard", *enabled, false);
                         Ok(applied_result(
                             "SetLedState",
                             &format!("{led_id}={}", if *enabled { "1" } else { "0" }),
@@ -523,10 +530,48 @@ mod tests {
     }
 
     #[test]
+    fn status_notifier_activation_executes_ideapad_toggle_action_and_refreshes_menu() {
+        let shutdown_requested = Arc::new(AtomicBool::new(false));
+        let state = Arc::new(std::sync::Mutex::new(tray_state_fixture(
+            "balanced", "Standard", true, false,
+        )));
+        let menu = state.lock().unwrap().menu.clone();
+        let tray = StatusNotifierTray::new_with_runtime(
+            summary(),
+            menu,
+            None,
+            shutdown_requested,
+            loader_for_state(Arc::clone(&state)),
+            Arc::new({
+                let state = Arc::clone(&state);
+                move |_, action| match action {
+                    TrayAction::SetIdeapadToggle(toggle_id, enabled) => {
+                        let mut guard = state.lock().unwrap();
+                        *guard = tray_state_fixture("balanced", "Standard", true, *enabled);
+                        Ok(applied_result(
+                            "SetIdeapadToggle",
+                            &format!("{toggle_id}={}", if *enabled { "1" } else { "0" }),
+                        ))
+                    }
+                    other => anyhow::bail!("unexpected action {other:?}"),
+                }
+            }),
+        );
+        let mut tray = tray;
+
+        tray.handle_action(TrayAction::SetIdeapadToggle("fn_lock".to_owned(), true));
+
+        let menu = tray.menu();
+        assert!(menu_has_disabled_item(&menu, "Toggle: fn_lock on"));
+        assert!(menu_has_enabled_item(&menu, "Set Fn-lock off"));
+        assert!(tray.last_error.is_none());
+    }
+
+    #[test]
     fn status_notifier_activation_preserves_menu_and_records_error_on_write_failure() {
         let shutdown_requested = Arc::new(AtomicBool::new(false));
         let state = Arc::new(std::sync::Mutex::new(tray_state_fixture(
-            "balanced", "Standard", true,
+            "balanced", "Standard", true, false,
         )));
         let menu = state.lock().unwrap().menu.clone();
         let tray = StatusNotifierTray::new_with_runtime(
@@ -559,7 +604,7 @@ mod tests {
     fn status_notifier_activation_ignores_current_choice_noop_rows() {
         let shutdown_requested = Arc::new(AtomicBool::new(false));
         let state = Arc::new(std::sync::Mutex::new(tray_state_fixture(
-            "balanced", "Standard", true,
+            "balanced", "Standard", true, false,
         )));
         let menu = state.lock().unwrap().menu.clone();
         let call_count = Arc::new(std::sync::Mutex::new(0usize));
@@ -685,11 +730,25 @@ mod tests {
                     health: Some("Good".to_owned()),
                 }),
             },
-            leds: vec![legion_common::LedCapability {
-                name: "platform::ylogo".to_owned(),
-                path: "/tmp/platform::ylogo/brightness".to_owned(),
-                brightness: Some(1),
-                max_brightness: Some(1),
+            leds: vec![
+                legion_common::LedCapability {
+                    name: "platform::fnlock".to_owned(),
+                    path: "/tmp/platform::fnlock/brightness".to_owned(),
+                    brightness: Some(0),
+                    max_brightness: Some(1),
+                },
+                legion_common::LedCapability {
+                    name: "platform::ylogo".to_owned(),
+                    path: "/tmp/platform::ylogo/brightness".to_owned(),
+                    brightness: Some(1),
+                    max_brightness: Some(1),
+                },
+            ],
+            ideapad_toggles: vec![legion_common::IdeapadToggleCapability {
+                name: "fn_lock".to_owned(),
+                status: legion_common::CapabilityStatus::ProbeOnly,
+                path: Some("/tmp/fn_lock".to_owned()),
+                current_value: Some("0".to_owned()),
             }],
             ..Default::default()
         };
@@ -730,7 +789,12 @@ mod tests {
         ));
     }
 
-    fn tray_state_fixture(profile: &str, charge_type: &str, ylogo_on: bool) -> LoadedTrayState {
+    fn tray_state_fixture(
+        profile: &str,
+        charge_type: &str,
+        ylogo_on: bool,
+        fn_lock_on: bool,
+    ) -> LoadedTrayState {
         let status = UiStatus::from_parts(
             HardwareSummary {
                 sysfs_root: "/tmp/fixture".to_owned(),
@@ -780,11 +844,25 @@ mod tests {
                 path: "/tmp/charge_type".to_owned(),
                 choices_path: "/tmp/charge_types".to_owned(),
             }),
-            leds: vec![legion_common::LedCapability {
-                name: "platform::ylogo".to_owned(),
-                path: "/tmp/platform::ylogo/brightness".to_owned(),
-                brightness: Some(if ylogo_on { 1 } else { 0 }),
-                max_brightness: Some(1),
+            leds: vec![
+                legion_common::LedCapability {
+                    name: "platform::fnlock".to_owned(),
+                    path: "/tmp/platform::fnlock/brightness".to_owned(),
+                    brightness: Some(if fn_lock_on { 1 } else { 0 }),
+                    max_brightness: Some(1),
+                },
+                legion_common::LedCapability {
+                    name: "platform::ylogo".to_owned(),
+                    path: "/tmp/platform::ylogo/brightness".to_owned(),
+                    brightness: Some(if ylogo_on { 1 } else { 0 }),
+                    max_brightness: Some(1),
+                },
+            ],
+            ideapad_toggles: vec![legion_common::IdeapadToggleCapability {
+                name: "fn_lock".to_owned(),
+                status: legion_common::CapabilityStatus::ProbeOnly,
+                path: Some("/tmp/fn_lock".to_owned()),
+                current_value: Some(if fn_lock_on { "1" } else { "0" }.to_owned()),
             }],
             ..Default::default()
         };

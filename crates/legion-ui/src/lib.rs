@@ -592,6 +592,26 @@ impl LegionControlClient {
         Ok(serde_json::from_str(&payload)?)
     }
 
+    pub fn plan_ideapad_toggle_write(
+        &self,
+        toggle_id: &str,
+        enabled: bool,
+    ) -> Result<WriteDryRunPlan> {
+        let proxy = Proxy::new(&self.connection, DBUS_INTERFACE, DBUS_PATH, DBUS_INTERFACE)?;
+        let payload: String = proxy.call("PlanIdeapadToggleWrite", &(toggle_id, enabled))?;
+        Ok(serde_json::from_str(&payload)?)
+    }
+
+    pub fn set_ideapad_toggle(
+        &self,
+        toggle_id: &str,
+        enabled: bool,
+    ) -> Result<WriteExecutionResult> {
+        let proxy = Proxy::new(&self.connection, DBUS_INTERFACE, DBUS_PATH, DBUS_INTERFACE)?;
+        let payload: String = proxy.call("SetIdeapadToggle", &(toggle_id, enabled))?;
+        Ok(serde_json::from_str(&payload)?)
+    }
+
     pub fn plan_gpu_mode_write(&self, requested: &str) -> Result<WriteDryRunPlan> {
         self.call_json_arg("PlanGpuModeWrite", requested)
     }

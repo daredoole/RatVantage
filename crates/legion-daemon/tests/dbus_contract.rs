@@ -5,8 +5,8 @@ use legion_common::{
     WriteDryRunPlan, WriteExecutionResult, WriteExecutionStatus,
 };
 use legion_control_daemon::{
-    BatteryChargeTypeWriter, LedStateWriter, LegionControl, PlatformProfileWriter,
-    WriteAccessPolicy, WriteAuthorizer, DBUS_INTERFACE, DBUS_PATH,
+    BatteryChargeTypeWriter, IdeapadToggleWriter, LedStateWriter, LegionControl,
+    PlatformProfileWriter, WriteAccessPolicy, WriteAuthorizer, DBUS_INTERFACE, DBUS_PATH,
 };
 use legion_probe::ProbeOptions;
 use ratvantage_test_support::{
@@ -97,6 +97,14 @@ fn read_only_methods_return_expected_json_contracts() {
     assert_eq!(led_plan.requested_value, "0");
     assert_eq!(led_plan.previous_value, "1");
 
+    let payload: String = proxy
+        .call("PlanIdeapadToggleWrite", &("fn_lock", true))
+        .unwrap();
+    let toggle_plan: WriteDryRunPlan = serde_json::from_str(&payload).unwrap();
+    assert_eq!(toggle_plan.method, "SetIdeapadToggle");
+    assert_eq!(toggle_plan.requested_value, "1");
+    assert_eq!(toggle_plan.previous_value, "0");
+
     let payload: String = proxy.call("SetPlatformProfile", &("performance",)).unwrap();
     let execution: WriteExecutionResult = serde_json::from_str(&payload).unwrap();
     assert_eq!(execution.status, WriteExecutionStatus::BlockedByPolicy);
@@ -121,6 +129,13 @@ fn read_only_methods_return_expected_json_contracts() {
     assert!(!execution.applied);
     assert_eq!(execution.plan.method, "SetLedState");
     assert_eq!(execution.plan.requested_value, "0");
+
+    let payload: String = proxy.call("SetIdeapadToggle", &("fn_lock", true)).unwrap();
+    let execution: WriteExecutionResult = serde_json::from_str(&payload).unwrap();
+    assert_eq!(execution.status, WriteExecutionStatus::BlockedByPolicy);
+    assert!(!execution.applied);
+    assert_eq!(execution.plan.method, "SetIdeapadToggle");
+    assert_eq!(execution.plan.requested_value, "1");
 }
 
 #[test]
@@ -144,12 +159,14 @@ fn introspection_exposes_gated_reversible_write_methods_only() {
             "PlanBatteryChargeTypeWrite",
             "PlanFanPresetWrite",
             "PlanGpuModeWrite",
+            "PlanIdeapadToggleWrite",
             "PlanLedStateWrite",
             "PlanPlatformProfileWrite",
             "PlanRestoreAutoFanWrite",
             "RefreshCapabilities",
             "SetBatteryChargeType",
             "SetGpuModePending",
+            "SetIdeapadToggle",
             "SetLedState",
             "SetPlatformProfile",
         ]
@@ -194,10 +211,21 @@ fn daemon_builds_dry_run_plans_without_other_dbus_write_methods() {
     assert_eq!(led_plan.rollback_value, "1");
     assert!(led_plan.readback_required);
 
+    let toggle_plan = service.plan_ideapad_toggle_write("fn_lock", true).unwrap();
+    assert_eq!(toggle_plan.method, "SetIdeapadToggle");
+    assert_eq!(toggle_plan.capability_id, "ideapad_toggles");
+    assert_eq!(toggle_plan.previous_value, "0");
+    assert_eq!(toggle_plan.requested_value, "1");
+    assert_eq!(toggle_plan.rollback_value, "0");
+    assert!(toggle_plan.readback_required);
+
     assert!(service.plan_platform_profile_write("custom").is_err());
     assert!(service.plan_battery_charge_type_write("Invalid").is_err());
     assert!(service
         .plan_led_state_write("platform::fnlock", true)
+        .is_err());
+    assert!(service
+        .plan_ideapad_toggle_write("camera_power", false)
         .is_err());
     assert!(service.plan_gpu_mode_write("hybrid").is_err());
     assert!(service.plan_fan_preset_write("balanced-daily").is_err());
@@ -221,11 +249,13 @@ fn platform_profile_write_applies_when_policy_and_authorizer_allow_it() {
             platform_profile_enabled: true,
             battery_charge_type_enabled: false,
             led_state_enabled: false,
+            ideapad_toggle_enabled: false,
         },
         Arc::new(AllowAllAuthorizer),
         Arc::new(RealFixturePlatformProfileWriter),
         Arc::new(RealFixtureBatteryChargeTypeWriter),
         Arc::new(RealFixtureLedStateWriter),
+        Arc::new(RealFixtureIdeapadToggleWriter),
     );
 
     let result = service
@@ -258,11 +288,13 @@ fn platform_profile_write_rejects_invalid_choice_before_write() {
             platform_profile_enabled: true,
             battery_charge_type_enabled: false,
             led_state_enabled: false,
+            ideapad_toggle_enabled: false,
         },
         Arc::new(AllowAllAuthorizer),
         Arc::new(RealFixturePlatformProfileWriter),
         Arc::new(RealFixtureBatteryChargeTypeWriter),
         Arc::new(RealFixtureLedStateWriter),
+        Arc::new(RealFixtureIdeapadToggleWriter),
     );
 
     assert!(service.set_platform_profile("custom", ":1.99").is_err());
@@ -290,11 +322,13 @@ fn platform_profile_write_reports_write_failure_without_changing_value() {
             platform_profile_enabled: true,
             battery_charge_type_enabled: false,
             led_state_enabled: false,
+            ideapad_toggle_enabled: false,
         },
         Arc::new(AllowAllAuthorizer),
         Arc::new(FailingPlatformProfileWriter),
         Arc::new(RealFixtureBatteryChargeTypeWriter),
         Arc::new(RealFixtureLedStateWriter),
+        Arc::new(RealFixtureIdeapadToggleWriter),
     );
 
     let result = service
@@ -327,11 +361,13 @@ fn platform_profile_write_rolls_back_after_readback_mismatch() {
             platform_profile_enabled: true,
             battery_charge_type_enabled: false,
             led_state_enabled: false,
+            ideapad_toggle_enabled: false,
         },
         Arc::new(AllowAllAuthorizer),
         Arc::new(MismatchingPlatformProfileWriter),
         Arc::new(RealFixtureBatteryChargeTypeWriter),
         Arc::new(RealFixtureLedStateWriter),
+        Arc::new(RealFixtureIdeapadToggleWriter),
     );
 
     let result = service
@@ -367,11 +403,13 @@ fn battery_charge_type_write_applies_when_policy_and_authorizer_allow_it() {
             platform_profile_enabled: false,
             battery_charge_type_enabled: true,
             led_state_enabled: false,
+            ideapad_toggle_enabled: false,
         },
         Arc::new(AllowAllAuthorizer),
         Arc::new(RealFixturePlatformProfileWriter),
         Arc::new(RealFixtureBatteryChargeTypeWriter),
         Arc::new(RealFixtureLedStateWriter),
+        Arc::new(RealFixtureIdeapadToggleWriter),
     );
 
     let result = service
@@ -404,11 +442,13 @@ fn battery_charge_type_write_rolls_back_after_readback_mismatch() {
             platform_profile_enabled: false,
             battery_charge_type_enabled: true,
             led_state_enabled: false,
+            ideapad_toggle_enabled: false,
         },
         Arc::new(AllowAllAuthorizer),
         Arc::new(RealFixturePlatformProfileWriter),
         Arc::new(MismatchingBatteryChargeTypeWriter),
         Arc::new(RealFixtureLedStateWriter),
+        Arc::new(RealFixtureIdeapadToggleWriter),
     );
 
     let result = service
@@ -444,11 +484,13 @@ fn led_state_write_applies_when_policy_and_authorizer_allow_it() {
             platform_profile_enabled: false,
             battery_charge_type_enabled: false,
             led_state_enabled: true,
+            ideapad_toggle_enabled: false,
         },
         Arc::new(AllowAllAuthorizer),
         Arc::new(RealFixturePlatformProfileWriter),
         Arc::new(RealFixtureBatteryChargeTypeWriter),
         Arc::new(RealFixtureLedStateWriter),
+        Arc::new(RealFixtureIdeapadToggleWriter),
     );
 
     let result = service
@@ -481,11 +523,13 @@ fn led_state_write_rolls_back_after_readback_mismatch() {
             platform_profile_enabled: false,
             battery_charge_type_enabled: false,
             led_state_enabled: true,
+            ideapad_toggle_enabled: false,
         },
         Arc::new(AllowAllAuthorizer),
         Arc::new(RealFixturePlatformProfileWriter),
         Arc::new(RealFixtureBatteryChargeTypeWriter),
         Arc::new(MismatchingLedStateWriter),
+        Arc::new(RealFixtureIdeapadToggleWriter),
     );
 
     let result = service
@@ -500,6 +544,101 @@ fn led_state_write_rolls_back_after_readback_mismatch() {
             .unwrap()
             .trim(),
         "1"
+    );
+
+    let _ = fs::remove_file(state_path);
+    let _ = fs::remove_dir_all(fixture);
+}
+
+#[test]
+fn ideapad_toggle_write_applies_when_policy_and_authorizer_allow_it() {
+    let fixture = copied_fixture_root("ideapad-toggle-write-success");
+    let state_path = unique_state_path("ideapad-toggle-write-success");
+    let service = LegionControl::new_with_runtime(
+        ProbeOptions {
+            sysfs_root: fixture.clone(),
+        },
+        &state_path,
+        WriteAccessPolicy {
+            platform_profile_enabled: false,
+            battery_charge_type_enabled: false,
+            led_state_enabled: false,
+            ideapad_toggle_enabled: true,
+        },
+        Arc::new(AllowAllAuthorizer),
+        Arc::new(RealFixturePlatformProfileWriter),
+        Arc::new(RealFixtureBatteryChargeTypeWriter),
+        Arc::new(RealFixtureLedStateWriter),
+        Arc::new(RealFixtureIdeapadToggleWriter),
+    );
+
+    let result = service
+        .set_ideapad_toggle("fn_lock", true, ":1.99")
+        .unwrap();
+    assert_eq!(result.status, WriteExecutionStatus::Applied);
+    assert!(result.applied);
+    assert_eq!(result.readback_value.as_deref(), Some("1"));
+    assert_eq!(
+        fs::read_to_string(
+            fixture.join("sys/bus/platform/drivers/ideapad_acpi/VPC2004:00/fn_lock")
+        )
+        .unwrap()
+        .trim(),
+        "1"
+    );
+    assert_eq!(
+        fs::read_to_string(fixture.join("sys/class/leds/platform::fnlock/brightness"))
+            .unwrap()
+            .trim(),
+        "1"
+    );
+
+    let _ = fs::remove_file(state_path);
+    let _ = fs::remove_dir_all(fixture);
+}
+
+#[test]
+fn ideapad_toggle_write_rolls_back_after_readback_mismatch() {
+    let fixture = copied_fixture_root("ideapad-toggle-write-rollback");
+    let state_path = unique_state_path("ideapad-toggle-write-rollback");
+    let service = LegionControl::new_with_runtime(
+        ProbeOptions {
+            sysfs_root: fixture.clone(),
+        },
+        &state_path,
+        WriteAccessPolicy {
+            platform_profile_enabled: false,
+            battery_charge_type_enabled: false,
+            led_state_enabled: false,
+            ideapad_toggle_enabled: true,
+        },
+        Arc::new(AllowAllAuthorizer),
+        Arc::new(RealFixturePlatformProfileWriter),
+        Arc::new(RealFixtureBatteryChargeTypeWriter),
+        Arc::new(RealFixtureLedStateWriter),
+        Arc::new(MismatchingIdeapadToggleWriter),
+    );
+
+    let result = service
+        .set_ideapad_toggle("fn_lock", true, ":1.99")
+        .unwrap();
+    assert_eq!(result.status, WriteExecutionStatus::Failed);
+    assert!(!result.applied);
+    assert!(result.message.contains("restored previous value `0`"));
+    assert_eq!(result.readback_value.as_deref(), Some("0"));
+    assert_eq!(
+        fs::read_to_string(
+            fixture.join("sys/bus/platform/drivers/ideapad_acpi/VPC2004:00/fn_lock")
+        )
+        .unwrap()
+        .trim(),
+        "0"
+    );
+    assert_eq!(
+        fs::read_to_string(fixture.join("sys/class/leds/platform::fnlock/brightness"))
+            .unwrap()
+            .trim(),
+        "0"
     );
 
     let _ = fs::remove_file(state_path);
@@ -682,6 +821,23 @@ impl LedStateWriter for RealFixtureLedStateWriter {
     }
 }
 
+struct RealFixtureIdeapadToggleWriter;
+
+impl IdeapadToggleWriter for RealFixtureIdeapadToggleWriter {
+    fn write_ideapad_toggle(&self, path: &str, enabled: bool) -> std::result::Result<(), String> {
+        fs::write(path, if enabled { "1" } else { "0" }).map_err(|error| error.to_string())?;
+        if path.ends_with("/fn_lock") {
+            let indicator = path.replace(
+                "sys/bus/platform/drivers/ideapad_acpi/VPC2004:00/fn_lock",
+                "sys/class/leds/platform::fnlock/brightness",
+            );
+            fs::write(indicator, if enabled { "1" } else { "0" })
+                .map_err(|error| error.to_string())?;
+        }
+        Ok(())
+    }
+}
+
 struct FailingPlatformProfileWriter;
 
 impl PlatformProfileWriter for FailingPlatformProfileWriter {
@@ -733,5 +889,21 @@ struct MismatchingLedStateWriter;
 impl LedStateWriter for MismatchingLedStateWriter {
     fn write_led_state(&self, path: &str, _enabled: bool) -> std::result::Result<(), String> {
         fs::write(path, "1").map_err(|error| error.to_string())
+    }
+}
+
+struct MismatchingIdeapadToggleWriter;
+
+impl IdeapadToggleWriter for MismatchingIdeapadToggleWriter {
+    fn write_ideapad_toggle(&self, path: &str, _enabled: bool) -> std::result::Result<(), String> {
+        fs::write(path, "0").map_err(|error| error.to_string())?;
+        if path.ends_with("/fn_lock") {
+            let indicator = path.replace(
+                "sys/bus/platform/drivers/ideapad_acpi/VPC2004:00/fn_lock",
+                "sys/class/leds/platform::fnlock/brightness",
+            );
+            fs::write(indicator, "0").map_err(|error| error.to_string())?;
+        }
+        Ok(())
     }
 }

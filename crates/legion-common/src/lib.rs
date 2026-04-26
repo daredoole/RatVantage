@@ -273,6 +273,35 @@ pub const WRITE_METHOD_CONTRACTS: &[WriteMethodContract] = &[
         safety_notes: &["write method remains disabled; dry-run planning only"],
     },
     WriteMethodContract {
+        method: "SetIdeapadToggle",
+        capability_id: "ideapad_toggles",
+        polkit_action: "org.ratvantage.LegionControl1.set-ideapad-toggle",
+        request_type: r#"{"toggle_id":"fn_lock","enabled":"bool"}"#,
+        risk: RiskLevel::ReversibleWrite,
+        enabled: false,
+        reboot_required: false,
+        preconditions: &[
+            "ideapad toggle capability is detected",
+            "daemon has read current toggle state and sysfs path",
+            "paired platform::fnlock indicator LED is detected for corroboration",
+        ],
+        validators: &[
+            "requested toggle exactly matches one detected ideapad toggle id",
+            "only fn_lock is enabled for reversible ideapad toggle writes right now",
+            "current fn_lock value and paired platform::fnlock LED must both be binary and aligned before write",
+            "post-write fn_lock read-back matches requested state",
+            "post-write platform::fnlock LED read-back matches requested state when present",
+        ],
+        rollback: &[
+            "store previous toggle value before write",
+            "restore previous toggle value if toggle or LED read-back fails",
+        ],
+        safety_notes: &[
+            "write method remains disabled; dry-run planning only",
+            "first rollout is restricted to fn_lock with paired LED corroboration",
+        ],
+    },
+    WriteMethodContract {
         method: "SetGpuMode",
         capability_id: "gpu",
         polkit_action: "org.ratvantage.LegionControl1.set-gpu-mode",
@@ -522,6 +551,113 @@ pub fn validate_led_state_request(
     }
 }
 
+pub fn validate_ideapad_toggle_request(
+    toggles: &[IdeapadToggleCapability],
+    leds: &[LedCapability],
+    toggle_id: &str,
+) -> Result<(), ValidationError> {
+    if toggle_id.is_empty() {
+        return Err(ValidationError::EmptyValue {
+            field: "toggle_id".to_owned(),
+        });
+    }
+
+    let Some(toggle) = toggles.iter().find(|toggle| toggle.name == toggle_id) else {
+        return Err(ValidationError::MissingCapability {
+            capability_id: format!("ideapad_toggles:{toggle_id}"),
+        });
+    };
+
+    if toggle.name != "fn_lock" {
+        return Err(ValidationError::BlockedChoice {
+            capability_id: "ideapad_toggles".to_owned(),
+            requested: toggle_id.to_owned(),
+            reason: "only fn_lock is enabled for reversible ideapad toggle writes right now"
+                .to_owned(),
+        });
+    }
+
+    let Some(path) = toggle.path.as_deref() else {
+        return Err(ValidationError::MissingCapability {
+            capability_id: format!("ideapad_toggles:{toggle_id}:path"),
+        });
+    };
+    if path.trim().is_empty() {
+        return Err(ValidationError::MissingCapability {
+            capability_id: format!("ideapad_toggles:{toggle_id}:path"),
+        });
+    }
+
+    require_current(
+        &format!("ideapad_toggles:{toggle_id}"),
+        toggle.current_value.as_deref(),
+    )?;
+    let current = toggle
+        .current_value
+        .as_deref()
+        .expect("validated ideapad toggle current value must exist");
+    if current != "0" && current != "1" {
+        return Err(ValidationError::BlockedChoice {
+            capability_id: "ideapad_toggles".to_owned(),
+            requested: toggle_id.to_owned(),
+            reason: format!(
+                "only binary ideapad toggle states are supported; detected current_value={current}"
+            ),
+        });
+    }
+
+    let Some(indicator) = leds.iter().find(|led| led.name == "platform::fnlock") else {
+        return Err(ValidationError::MissingCapability {
+            capability_id: "leds:platform::fnlock".to_owned(),
+        });
+    };
+
+    match indicator.max_brightness {
+        Some(1) => {}
+        Some(max_brightness) => {
+            return Err(ValidationError::BlockedChoice {
+                capability_id: "leds".to_owned(),
+                requested: "platform::fnlock".to_owned(),
+                reason: format!(
+                    "paired fn_lock indicator LED must be binary; detected max_brightness={max_brightness}"
+                ),
+            })
+        }
+        None => {
+            return Err(ValidationError::MissingCurrentValue {
+                capability_id: "leds:platform::fnlock:max_brightness".to_owned(),
+            })
+        }
+    }
+
+    let Some(led_brightness) = indicator.brightness else {
+        return Err(ValidationError::MissingCurrentValue {
+            capability_id: "leds:platform::fnlock".to_owned(),
+        });
+    };
+    if led_brightness != 0 && led_brightness != 1 {
+        return Err(ValidationError::BlockedChoice {
+            capability_id: "leds".to_owned(),
+            requested: "platform::fnlock".to_owned(),
+            reason: format!(
+                "paired fn_lock indicator LED must be binary; detected brightness={led_brightness}"
+            ),
+        });
+    }
+
+    if current != led_brightness.to_string() {
+        return Err(ValidationError::BlockedChoice {
+            capability_id: "ideapad_toggles".to_owned(),
+            requested: toggle_id.to_owned(),
+            reason: format!(
+                "fn_lock toggle state `{current}` does not match paired platform::fnlock LED `{led_brightness}`"
+            ),
+        });
+    }
+
+    Ok(())
+}
+
 pub fn validate_fan_preset_choice(
     fan_curves: &[FanCurveCapability],
     presets: &[FanPreset],
@@ -712,6 +848,33 @@ pub fn plan_led_state_write(
         write_contract("SetLedState"),
         &led.path,
         &previous_value,
+        requested_value,
+    )
+}
+
+pub fn plan_ideapad_toggle_write(
+    toggles: &[IdeapadToggleCapability],
+    leds: &[LedCapability],
+    toggle_id: &str,
+    enabled: bool,
+) -> Result<WriteDryRunPlan, ValidationError> {
+    validate_ideapad_toggle_request(toggles, leds, toggle_id)?;
+    let toggle = toggles
+        .iter()
+        .find(|toggle| toggle.name == toggle_id)
+        .expect("validated ideapad toggle capability must exist");
+    let previous_value = toggle
+        .current_value
+        .as_deref()
+        .expect("validated ideapad toggle current value must exist");
+    let requested_value = if enabled { "1" } else { "0" };
+    plan_write(
+        write_contract("SetIdeapadToggle"),
+        toggle
+            .path
+            .as_deref()
+            .expect("validated ideapad toggle path must exist"),
+        previous_value,
         requested_value,
     )
 }
@@ -971,6 +1134,7 @@ mod tests {
                 "SetPlatformProfile",
                 "SetBatteryChargeType",
                 "SetLedState",
+                "SetIdeapadToggle",
                 "SetGpuMode",
                 "ApplyFanPreset",
                 "RestoreAutoFan"
@@ -1136,6 +1300,90 @@ mod tests {
                     max_brightness: Some(1),
                 }],
                 "platform::fnlock"
+            ),
+            Err(ValidationError::BlockedChoice { .. })
+        ));
+    }
+
+    #[test]
+    fn ideapad_toggle_validator_accepts_fn_lock_with_paired_indicator_led() {
+        assert_eq!(
+            validate_ideapad_toggle_request(
+                &[IdeapadToggleCapability {
+                    name: "fn_lock".to_owned(),
+                    status: CapabilityStatus::ProbeOnly,
+                    path: Some("/tmp/fn_lock".to_owned()),
+                    current_value: Some("1".to_owned()),
+                }],
+                &[LedCapability {
+                    name: "platform::fnlock".to_owned(),
+                    path: "/tmp/platform::fnlock/brightness".to_owned(),
+                    brightness: Some(1),
+                    max_brightness: Some(1),
+                }],
+                "fn_lock"
+            ),
+            Ok(())
+        );
+    }
+
+    #[test]
+    fn ideapad_toggle_validator_rejects_missing_non_binary_and_blocked_toggles() {
+        assert!(matches!(
+            validate_ideapad_toggle_request(&[], &[], "fn_lock"),
+            Err(ValidationError::MissingCapability { .. })
+        ));
+        assert!(matches!(
+            validate_ideapad_toggle_request(
+                &[IdeapadToggleCapability {
+                    name: "camera_power".to_owned(),
+                    status: CapabilityStatus::ProbeOnly,
+                    path: Some("/tmp/camera_power".to_owned()),
+                    current_value: Some("1".to_owned()),
+                }],
+                &[LedCapability {
+                    name: "platform::fnlock".to_owned(),
+                    path: "/tmp/platform::fnlock/brightness".to_owned(),
+                    brightness: Some(1),
+                    max_brightness: Some(1),
+                }],
+                "camera_power"
+            ),
+            Err(ValidationError::BlockedChoice { .. })
+        ));
+        assert!(matches!(
+            validate_ideapad_toggle_request(
+                &[IdeapadToggleCapability {
+                    name: "fn_lock".to_owned(),
+                    status: CapabilityStatus::ProbeOnly,
+                    path: Some("/tmp/fn_lock".to_owned()),
+                    current_value: Some("2".to_owned()),
+                }],
+                &[LedCapability {
+                    name: "platform::fnlock".to_owned(),
+                    path: "/tmp/platform::fnlock/brightness".to_owned(),
+                    brightness: Some(1),
+                    max_brightness: Some(1),
+                }],
+                "fn_lock"
+            ),
+            Err(ValidationError::BlockedChoice { .. })
+        ));
+        assert!(matches!(
+            validate_ideapad_toggle_request(
+                &[IdeapadToggleCapability {
+                    name: "fn_lock".to_owned(),
+                    status: CapabilityStatus::ProbeOnly,
+                    path: Some("/tmp/fn_lock".to_owned()),
+                    current_value: Some("0".to_owned()),
+                }],
+                &[LedCapability {
+                    name: "platform::fnlock".to_owned(),
+                    path: "/tmp/platform::fnlock/brightness".to_owned(),
+                    brightness: Some(1),
+                    max_brightness: Some(1),
+                }],
+                "fn_lock"
             ),
             Err(ValidationError::BlockedChoice { .. })
         ));
@@ -1328,6 +1576,39 @@ mod tests {
         assert_eq!(plan.previous_value, "1");
         assert_eq!(plan.requested_value, "0");
         assert_eq!(plan.rollback_value, "1");
+        assert!(plan.readback_required);
+    }
+
+    #[test]
+    fn ideapad_toggle_dry_run_plan_uses_validator_and_contract_metadata() {
+        let plan = plan_ideapad_toggle_write(
+            &[IdeapadToggleCapability {
+                name: "fn_lock".to_owned(),
+                status: CapabilityStatus::ProbeOnly,
+                path: Some("/tmp/fn_lock".to_owned()),
+                current_value: Some("0".to_owned()),
+            }],
+            &[LedCapability {
+                name: "platform::fnlock".to_owned(),
+                path: "/tmp/platform::fnlock/brightness".to_owned(),
+                brightness: Some(0),
+                max_brightness: Some(1),
+            }],
+            "fn_lock",
+            true,
+        )
+        .unwrap();
+
+        assert_eq!(plan.method, "SetIdeapadToggle");
+        assert_eq!(plan.capability_id, "ideapad_toggles");
+        assert_eq!(
+            plan.polkit_action,
+            "org.ratvantage.LegionControl1.set-ideapad-toggle"
+        );
+        assert_eq!(plan.path, "/tmp/fn_lock");
+        assert_eq!(plan.previous_value, "0");
+        assert_eq!(plan.requested_value, "1");
+        assert_eq!(plan.rollback_value, "0");
         assert!(plan.readback_required);
     }
 
