@@ -2,7 +2,7 @@
 Type=Application
 Name=Legion Control
 Comment=Probe Lenovo Legion hardware capabilities on Fedora
-Exec=env GSK_RENDERER=ngl legion-control-ui
+Exec=env GSK_RENDERER=gl legion-control-ui
 Icon=org.ratvantage.LegionControl
 Terminal=false
 Categories=Settings;HardwareSettings;

@@ -16,6 +16,7 @@
 - Completed slice: added `scripts/run-local-session-app.sh` plus GTK shell bus-address/startup fixes so local `status`, `overview`, `menu-check`, tray, and GTK runs can all share the same temporary session-bus daemon. Direct `--bus-address` GTK launches now stay running, but a KDE Wayland/NVIDIA black-window issue can still affect the full GTK surface even when tray/CLI data and taskbar thumbnails look correct.
 - Completed slice: the StatusNotifier tray now filters raw kernel LED/toggle noise down to Legion-relevant indicators (`Logo LED`, `Fn-lock`, `Camera power`, `USB charging`), polls frequently enough for hardware hotkey drift to feel responsive, and emits native desktop notifications when the platform profile changes externally, such as via Fn+Q.
 - Completed slice: the tray and shared runtime notice path now also surface external battery charge type drift, and the repo has `scripts/capture-gtk-smoke-report.sh` for deterministic Xvfb-backed dashboard screenshots across `status`, `profiles`, `battery`, `fans`, `appearance`, and `diagnostics`.
+- Completed slice: the GTK shell now forces `GSK_RENDERER=gl` automatically on Wayland+NVIDIA when unset, wraps each dashboard tab in a scroller so KWin no longer tries to resize the window to the full page height, and loads the first dashboard snapshot before `present()` instead of mapping an empty window first. `scripts/run-local-session-app.sh` also accepts `--gdk-backend` for explicit X11/Wayland fallback testing.
 - The daemon now exposes:
   - `SetPlatformProfile`
   - `SetBatteryChargeType`
@@ -50,7 +51,7 @@
   - `crates/legion-ui/src/main.rs`
   - `crates/legion-ui/tests/dbus_client.rs`
 - This still does not enable GPU, fan preset, or fan restore writes yet.
-- Next recommended task from the updated roadmap: run live tray validation on supported Legion hardware with the tray left active, confirm external Fn+Q profile transitions produce the new native desktop notifications, confirm whether any live battery charge type drift path is observable on your hardware, and then use execute-mode validation evidence to tighten any mismatch between firmware behavior and the current reversible write assumptions.
+- Next recommended task from the updated roadmap: retry the live GTK shell on the KDE Wayland/NVIDIA 82WM path with the new scroll-bounded startup sequence, then use the `--gdk-backend x11` launcher fallback if the compositor still blacks out the full surface. After that, continue live tray validation around Fn+Q profile transitions and execute-mode evidence capture for the current reversible write set.
 
 ## Implemented
 

@@ -21,6 +21,7 @@ Options:
   --frontend <mode>      Required frontend mode.
   --sysfs-root <root>    Sysfs root for the private daemon. Default: /
   --gsk-renderer <name>  Set GSK_RENDERER for GTK UI mode.
+  --gdk-backend <name>   Set GDK_BACKEND for GTK UI mode.
   --gdk-disable <value>  Set GDK_DISABLE for GTK UI mode.
   --gtk-page <page>      GTK page for UI mode: status, profiles, battery, fans, appearance, diagnostics.
   --gtk-auto-quit-ms <n> Auto-close GTK UI after N milliseconds.
@@ -33,6 +34,7 @@ repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 frontend=""
 sysfs_root="/"
 gsk_renderer=""
+gdk_backend=""
 gdk_disable=""
 gtk_page=""
 gtk_auto_quit_ms=""
@@ -50,6 +52,10 @@ while (($#)); do
       ;;
     --gsk-renderer)
       gsk_renderer="${2:?missing value for --gsk-renderer}"
+      shift 2
+      ;;
+    --gdk-backend)
+      gdk_backend="${2:?missing value for --gdk-backend}"
       shift 2
       ;;
     --gdk-disable)
@@ -172,7 +178,7 @@ if (( dry_run )); then
       print_command cargo run -q -p legion-control-tray -- --bus-address '<private-bus>'
       ;;
     ui)
-      if [[ -n "$gsk_renderer" ]]; then
+      if [[ -n "$gsk_renderer" || -n "$gdk_backend" || -n "$gdk_disable" ]]; then
         gtk_args=()
         if [[ -n "$gtk_page" ]]; then
           gtk_args+=(--gtk-page "$gtk_page")
@@ -180,7 +186,17 @@ if (( dry_run )); then
         if [[ -n "$gtk_auto_quit_ms" ]]; then
           gtk_args+=(--gtk-auto-quit-ms "$gtk_auto_quit_ms")
         fi
-        print_command env GSK_RENDERER="$gsk_renderer" cargo run -q -p legion-control-ui --features gtk-ui -- --bus-address '<private-bus>' "${gtk_args[@]}"
+        env_args=()
+        if [[ -n "$gsk_renderer" ]]; then
+          env_args+=("GSK_RENDERER=$gsk_renderer")
+        fi
+        if [[ -n "$gdk_backend" ]]; then
+          env_args+=("GDK_BACKEND=$gdk_backend")
+        fi
+        if [[ -n "$gdk_disable" ]]; then
+          env_args+=("GDK_DISABLE=$gdk_disable")
+        fi
+        print_command env "${env_args[@]}" cargo run -q -p legion-control-ui --features gtk-ui -- --bus-address '<private-bus>' "${gtk_args[@]}"
       else
         gtk_args=()
         if [[ -n "$gtk_page" ]]; then
@@ -252,10 +268,13 @@ case "$frontend" in
     if [[ -n "$gtk_auto_quit_ms" ]]; then
       ui_cmd+=(--gtk-auto-quit-ms "$gtk_auto_quit_ms")
     fi
-    if [[ -n "$gsk_renderer" || -n "$gdk_disable" ]]; then
+    if [[ -n "$gsk_renderer" || -n "$gdk_backend" || -n "$gdk_disable" ]]; then
       env_vars=()
       if [[ -n "$gsk_renderer" ]]; then
         env_vars+=("GSK_RENDERER=$gsk_renderer")
+      fi
+      if [[ -n "$gdk_backend" ]]; then
+        env_vars+=("GDK_BACKEND=$gdk_backend")
       fi
       if [[ -n "$gdk_disable" ]]; then
         env_vars+=("GDK_DISABLE=$gdk_disable")

@@ -39,15 +39,15 @@ pub fn run(
     initial_page: Option<String>,
     auto_quit_ms: Option<u64>,
 ) -> Result<()> {
-    if std::env::var_os("GSK_RENDERER").is_none()
-        && (std::env::var_os("WAYLAND_DISPLAY").is_some()
-            || std::env::var("XDG_SESSION_TYPE").ok().as_deref() == Some("wayland"))
-        && std::path::Path::new("/proc/driver/nvidia").exists()
-    {
+    if should_force_gl_renderer() {
+        // GTK 4.15+ defaults to Vulkan on this stack, which renders a black
+        // window on KDE Wayland with NVIDIA. Force the known-good renderer
+        // before the application initializes unless the caller already set one.
+        unsafe {
+            std::env::set_var("GSK_RENDERER", "gl");
+        }
         eprintln!(
-            "legion-control-ui: Wayland+NVIDIA detected and GSK_RENDERER is unset. \
-             GTK 4.15+ defaults to Vulkan which causes a black window on NVIDIA. \
-             If the window is black, run: GSK_RENDERER=ngl legion-control-ui"
+            "legion-control-ui: Wayland+NVIDIA detected; forcing GSK_RENDERER=gl for this launch"
         );
     }
 
@@ -88,9 +88,8 @@ pub fn run(
         });
         install_runtime_refresh(&window, Rc::clone(&runtime));
         window.set_content(Some(&root));
+        runtime.borrow_mut().refresh_now();
         window.present();
-        window.unfullscreen();
-        window.unmaximize();
         if let Some(auto_quit_ms) = auto_quit_ms {
             let app = app.clone();
             let window = window.clone();
@@ -99,13 +98,17 @@ pub fn run(
                 app.quit();
             });
         }
-        gtk4::glib::idle_add_local_once(move || {
-            runtime.borrow_mut().refresh_now();
-        });
     });
 
     app.run_with_args(&["legion-control-ui"]);
     Ok(())
+}
+
+pub fn should_force_gl_renderer() -> bool {
+    std::env::var_os("GSK_RENDERER").is_none()
+        && (std::env::var_os("WAYLAND_DISPLAY").is_some()
+            || std::env::var("XDG_SESSION_TYPE").ok().as_deref() == Some("wayland"))
+        && std::path::Path::new("/proc/driver/nvidia").exists()
 }
 
 pub fn dashboard_page(
@@ -118,29 +121,33 @@ pub fn dashboard_page(
     let stack = gtk4::Stack::new();
     stack.set_hexpand(true);
     stack.set_vexpand(true);
-    stack.add_titled(&status_page(status, gpu_pending), Some("status"), "Status");
     stack.add_titled(
-        &profiles_page(clone_result(&diagnostics)),
+        &scrollable_dashboard_page(status_page(status, gpu_pending)),
+        Some("status"),
+        "Status",
+    );
+    stack.add_titled(
+        &scrollable_dashboard_page(profiles_page(clone_result(&diagnostics))),
         Some("profiles"),
         "Profiles",
     );
     stack.add_titled(
-        &battery_page(clone_result(&diagnostics)),
+        &scrollable_dashboard_page(battery_page(clone_result(&diagnostics))),
         Some("battery"),
         "Battery",
     );
     stack.add_titled(
-        &fans_page(clone_result(&diagnostics), fan_snapshot),
+        &scrollable_dashboard_page(fans_page(clone_result(&diagnostics), fan_snapshot)),
         Some("fans"),
         "Fans",
     );
     stack.add_titled(
-        &appearance_page(clone_result(&diagnostics)),
+        &scrollable_dashboard_page(appearance_page(clone_result(&diagnostics))),
         Some("appearance"),
         "Appearance",
     );
     stack.add_titled(
-        &diagnostics_page(diagnostics),
+        &scrollable_dashboard_page(diagnostics_page(diagnostics)),
         Some("diagnostics"),
         "Diagnostics",
     );
@@ -159,6 +166,18 @@ pub fn dashboard_page(
     page.append(&switcher);
     page.append(&stack);
     page.upcast()
+}
+
+fn scrollable_dashboard_page(child: gtk4::Widget) -> gtk4::ScrolledWindow {
+    let scroller = gtk4::ScrolledWindow::new();
+    scroller.set_hscrollbar_policy(gtk4::PolicyType::Never);
+    scroller.set_vscrollbar_policy(gtk4::PolicyType::Automatic);
+    scroller.set_hexpand(true);
+    scroller.set_vexpand(true);
+    scroller.set_propagate_natural_height(false);
+    scroller.set_propagate_natural_width(true);
+    scroller.set_child(Some(&child));
+    scroller
 }
 
 fn install_runtime_refresh(

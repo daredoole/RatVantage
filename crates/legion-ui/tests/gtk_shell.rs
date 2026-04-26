@@ -143,6 +143,18 @@ fn status_and_error_pages_build_under_headless_display() {
     assert_eq!(page.orientation(), gtk4::Orientation::Vertical);
     assert_eq!(page.observe_children().n_items(), 2);
 
+    let stack = page
+        .last_child()
+        .expect("dashboard should contain a stack")
+        .downcast::<gtk4::Stack>()
+        .expect("dashboard content should be a stack");
+    let visible_child = stack
+        .visible_child()
+        .expect("dashboard stack should have a visible child");
+    visible_child
+        .downcast::<gtk4::ScrolledWindow>()
+        .expect("dashboard stack pages should be scrollable");
+
     let page = gtk_shell::status_page(Err(anyhow::anyhow!("daemon unavailable")), Ok(None));
     let page = page
         .downcast::<gtk4::Box>()
