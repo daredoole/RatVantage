@@ -43,5 +43,8 @@ jobs:
       - name: Probe fixture smoke test
         run: cargo run -p legion-probe -- --json --sysfs-root tests/fixtures/sysfs-82wm-confirmed
 
+      - name: Compatibility capture smoke test
+        run: scripts/capture-compat-report.sh --sysfs-root tests/fixtures/sysfs-82wm-confirmed --output /tmp/ratvantage-compat
+
       - name: Daemon dry-run smoke test
         run: cargo run -p legion-control-daemon -- --dry-run

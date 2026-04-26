@@ -23,6 +23,7 @@ Pre-alpha implementation scaffold exists:
 - Headless GTK smoke coverage for the optional shell.
 - Fedora packaging metadata and validation for systemd, D-Bus, polkit, desktop, AppStream, and RPM assets.
 - Read-only sysfs fixture capture workflow for adding more real hardware reports.
+- Read-only compatibility bundle workflow for outside Legion contributors, including generated probe summaries and PR body text.
 - Read-only validation evidence for the current 82WM target is recorded in `docs/implementation-plan.md`.
 - Packaged read-only fan preset TOML assets with CI schema validation and dry-run planning.
 - Disabled write-method contract drafts for platform profile, battery charge type, GPU mode, fan presets, and fan restore/default.
@@ -33,6 +34,7 @@ Pre-alpha implementation scaffold exists:
 - App-state-only GPU pending-reboot tracking in `/var/lib/legion-control/state.toml`; no hardware writes are performed.
 - App-state-only last-known-good fan curve capture in the same TOML state file; no fan writes are performed.
 - Tray/status output and GTK read-only pages surface pending GPU reboot state and saved fan curve snapshots.
+- Read-only diagnostics/export surfaces now include the same durable app-state fields, including `gpu_mode_pending` and `last_known_good_fan_curve`.
 - Local CI script and GitHub Actions CI.
 
 No hardware write path exists yet. Write support must wait for validators, polkit policy, rollback behavior, and manual target-machine validation.
@@ -106,6 +108,13 @@ scripts/smoke-statusnotifier-tray.sh --hold-seconds 15
 To collect a read-only fixture from another Legion machine, use
 `scripts/capture-sysfs-fixture.sh`. See [docs/fixture-capture.md](docs/fixture-capture.md).
 
+To prepare a contributor-ready compatibility bundle with fixture, probe JSON,
+summary markdown/JSON, and a pasteable PR body, use:
+
+```bash
+scripts/capture-compat-report.sh --output compat/<machine-label>
+```
+
 Keep GitHub CI enabled as the clean-checkout and remote-runner guard. Local CI prevents wasted failed pushes; GitHub CI catches missing packages, toolchain drift, and workflow breakage.
 
 ## Roadmap Summary
@@ -123,6 +132,7 @@ Completed scaffold:
 - Headless GTK smoke coverage.
 - Fedora packaging metadata and validation.
 - Read-only fixture capture workflow.
+- Read-only compatibility bundle workflow for fixture PR intake.
 - Runtime-captured 82WM fixture coverage.
 - Packaged fan preset TOML assets with runtime dry-run validation.
 - Disabled write-method contract drafts.
@@ -131,6 +141,7 @@ Completed scaffold:
 - Read-only daemon planning methods over D-Bus; no write methods are exposed.
 - UI CLI previews for platform profile, battery charge type, GPU mode, and fan preset dry-run plans.
 - Read-only diagnostics JSON bundle with hardware summary, compact counts, kernel version, detected sysfs paths, recent daemon log excerpts, and raw probe report.
+- Diagnostics/export parity for durable app state, so CLI `--diagnostics` output and GTK Diagnostics Copy JSON both include `gpu_mode_pending` and `last_known_good_fan_curve`.
 - Read-only overview output includes durable GPU pending-reboot and saved fan curve state, plus LED brightness and firmware toggle values when exposed.
 - Diagnostics include choice file paths for platform profiles and battery charge types.
 - Read-only GTK Fans tab for fan telemetry, detected fan curve paths, and packaged preset IDs.
@@ -141,7 +152,8 @@ Completed scaffold:
 Next:
 
 - Desktop smoke testing for the StatusNotifier tray backend before enabling autostart.
-- Additional captured fixtures when more supported Legion machines are available.
+- External compatibility PRs from more supported Legion machines through the bundle workflow.
+- Read-only KDE/UI tray polish while waiting on more hardware reports.
 
 See [docs/feature-roadmap.md](docs/feature-roadmap.md) and [docs/implementation-plan.md](docs/implementation-plan.md).
 
@@ -150,6 +162,7 @@ See [docs/feature-roadmap.md](docs/feature-roadmap.md) and [docs/implementation-
 Useful contributions:
 
 - Probe reports from Lenovo Legion machines.
+- Compatibility bundles captured with `scripts/capture-compat-report.sh`.
 - Fedora packaging fixes.
 - GTK/libadwaita UI work.
 - Safe Rust hardware adapter code.

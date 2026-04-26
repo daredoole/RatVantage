@@ -101,6 +101,8 @@ fn client_reads_daemon_contract_over_private_bus() {
     let bundle = DiagnosticsBundle::from_report(raw.clone(), Some("test-kernel".to_owned()));
     assert_eq!(bundle.hardware, hardware);
     assert_eq!(bundle.kernel_version.as_deref(), Some("test-kernel"));
+    assert_eq!(bundle.gpu_mode_pending, None);
+    assert_eq!(bundle.last_known_good_fan_curve, None);
     assert!(bundle.recent_daemon_logs.is_empty());
     assert!(bundle
         .detected_sysfs_paths
@@ -126,6 +128,8 @@ fn client_reads_daemon_contract_over_private_bus() {
     let json: serde_json::Value =
         serde_json::from_str(&render_diagnostics_json(&bundle).unwrap()).unwrap();
     assert_eq!(json["kernel_version"], "test-kernel");
+    assert_eq!(json["gpu_mode_pending"], serde_json::Value::Null);
+    assert_eq!(json["last_known_good_fan_curve"], serde_json::Value::Null);
     assert_eq!(json["recent_daemon_logs"], serde_json::json!([]));
     assert_eq!(json["hardware"]["product_name"], "82WM");
     assert_eq!(json["summary"]["capability_count"], 8);
@@ -350,6 +354,55 @@ fn diagnostics_cli_prints_read_only_debug_bundle_json() {
             .as_str()
             .unwrap()
             .ends_with("sys/firmware/acpi/platform_profile")));
+    assert_eq!(json["gpu_mode_pending"], serde_json::Value::Null);
+    assert_eq!(json["last_known_good_fan_curve"], serde_json::Value::Null);
+}
+
+#[test]
+fn diagnostics_cli_surfaces_durable_runtime_state_in_json() {
+    let state_path = unique_state_path("ui-diagnostics-state");
+    std::fs::write(
+        &state_path,
+        r#"schema_version = 1
+
+[gpu_mode_pending]
+requested_mode = "hybrid"
+previous_mode = "nvidia"
+reboot_required = true
+
+[last_known_good_fan_curve]
+curve_id = "legion_hwmon"
+path = "/tmp/fixture/sys/class/hwmon/hwmon7"
+
+[[last_known_good_fan_curve.points]]
+path = "/tmp/fixture/sys/class/hwmon/hwmon7/pwm1_auto_point1_temp"
+value = "42000"
+"#,
+    )
+    .unwrap();
+
+    let (_bus, _service_connection, address) = fixture_service_with_state(&state_path);
+    let output = Command::new(env!("CARGO_BIN_EXE_legion-control-ui"))
+        .args(["--diagnostics", "--bus-address", &address])
+        .output()
+        .unwrap();
+
+    assert!(output.status.success());
+    assert!(output.stderr.is_empty());
+
+    let json: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(json["gpu_mode_pending"]["requested_mode"], "hybrid");
+    assert_eq!(json["gpu_mode_pending"]["previous_mode"], "nvidia");
+    assert_eq!(json["gpu_mode_pending"]["reboot_required"], true);
+    assert_eq!(
+        json["last_known_good_fan_curve"]["curve_id"],
+        "legion_hwmon"
+    );
+    assert_eq!(
+        json["last_known_good_fan_curve"]["points"][0]["value"],
+        "42000"
+    );
+    let _ = std::fs::remove_file(state_path);
 }
 
 #[test]

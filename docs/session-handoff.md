@@ -21,21 +21,22 @@
   - `3dde848` (`Add disabled tray battery entries`)
   - `ab128c4` (`Add disabled tray fan preset entries`)
   - `c61cef8` (`Polish tray tooltip details`)
-- Latest known milestone: read-only pre-alpha scaffold with GTK smoke coverage, hardened packaging metadata, disabled write planning, runtime/current 82WM fixture and validation evidence, diagnostics log excerpts and compact summary counts, packaged fan preset assets with dry-run planning, fan restore/default dry-run planning, app-state-only GPU pending-reboot tracking, app-state-only last-known-good fan curve capture, overview/tray/GTK state visibility, read-only StatusNotifier tray backend, tray dashboard bus-address forwarding, tray tooltip profile/fan/count details, disabled quick fan preset and battery charge tray entries, GNOME tray extension guidance, KDE StatusNotifier tooltip/menu/quit smoke evidence, documented GNOME untested path, read-only battery overview telemetry, read-only EnvyControl GPU query, UI status/overview/diagnostics/dry-run output with LED brightness and firmware toggle values, GPU dry-run planning with reboot-required messaging and rollback guidance, diagnostics choice-source paths, per-capability status labels, and GTK read-only Status, Profiles, Battery, Fans, Appearance, and Diagnostics tabs.
+- Latest known milestone: read-only pre-alpha scaffold with GTK smoke coverage, hardened packaging metadata, disabled write planning, runtime/current 82WM fixture and validation evidence, diagnostics log excerpts and compact summary counts, packaged fan preset assets with dry-run planning, fan restore/default dry-run planning, app-state-only GPU pending-reboot tracking, app-state-only last-known-good fan curve capture, overview/tray/GTK state visibility, diagnostics/export parity for `gpu_mode_pending` and `last_known_good_fan_curve`, read-only StatusNotifier tray backend, tray dashboard bus-address forwarding, tray tooltip profile/fan/count details, disabled quick fan preset and battery charge tray entries, GNOME tray extension guidance, KDE StatusNotifier tooltip/menu/quit smoke evidence, documented GNOME untested path, read-only battery overview telemetry, read-only EnvyControl GPU query, UI status/overview/diagnostics/dry-run output with LED brightness and firmware toggle values, GPU dry-run planning with reboot-required messaging and rollback guidance, diagnostics choice-source paths, per-capability status labels, GTK read-only Status, Profiles, Battery, Fans, Appearance, and Diagnostics tabs, and a compatibility bundle/PR intake workflow for outside Legion hardware submissions.
 - Rust toolchain: pinned stable in `rust-toolchain.toml`; local stable installed because GTK stack requires rustc 1.92+.
 
 ## Current task
 
-- Next slice: thread durable app state into diagnostics/export surfaces so `legion-control-ui --diagnostics` and GTK Copy JSON include:
-  - `gpu_mode_pending`
-  - `last_known_good_fan_curve`
-- Keep this slice read-only. No hardware writes, no new mutation paths, no safety constraint changes.
-- Expected follow-through for the slice:
-  - add the durable state to diagnostics JSON output and any shared diagnostics bundle/model needed for GTK export parity
-  - extend focused tests plus `./scripts/ci-local.sh`
-  - run a real-device smoke for `--diagnostics` against a seeded state file
-  - update `README.md`, `docs/feature-roadmap.md`, `docs/implementation-plan.md`, and this handoff
-  - commit as a standalone slice
+- Completed slice: added a contributor-friendly compatibility intake workflow on top of the existing fixture capture path.
+- `scripts/capture-compat-report.sh` now captures a narrow read-only fixture, runs `legion-probe`, and writes:
+  - `fixture/`
+  - `probe.json`
+  - `compat-report.json`
+  - `compat-report.md`
+  - `pull-request-body.md`
+- `.github/PULL_REQUEST_TEMPLATE/hardware-compatibility.md` provides a matching review checklist for fixture PRs.
+- `docs/fixture-capture.md` and `README.md` now document the external hardware submission flow.
+- This remains a read-only slice. No hardware writes, no new mutation paths, and no safety-constraint changes were introduced.
+- Next recommended task from the updated roadmap: wait for outside compatibility submissions or captured fixtures, and continue with read-only KDE/UI tray polish locally while hardware coverage is still limited.
 
 ## Implemented
 
@@ -51,13 +52,13 @@
 - Durable app-state-only last-known-good fan curve capture via `GetLastKnownGoodFanCurve`, `CaptureLastKnownGoodFanCurve`, and the UI `--last-known-good-fan-curve`, `--capture-last-known-good-fan-curve` commands.
 - Tray/status output, UI `--overview`, and GTK Status/Fans pages surface the durable GPU pending and saved fan curve state.
 - UI `--overview` command for platform profile, battery charge type, fan RPM, temperatures, GPU mode, durable app state, battery telemetry, LED brightness, and firmware toggle values.
-- UI `--diagnostics` command for a read-only JSON debug bundle containing hardware summary, compact capability/sensor/fan/path counts, kernel version, detected sysfs paths, recent daemon log excerpts, and raw probe report.
+- UI `--diagnostics` command for a read-only JSON debug bundle containing hardware summary, compact capability/sensor/fan/path counts, kernel version, detected sysfs paths, durable app-state fields `gpu_mode_pending` and `last_known_good_fan_curve`, recent daemon log excerpts, and raw probe report.
 - Platform profile and battery charge type models include both current-value paths and choice-list paths for diagnostics.
 - UI status output includes per-capability status and risk labels.
 - Optional GTK read-only Profiles and Battery tabs render the same diagnostics bundle data without write controls.
 - Optional GTK read-only Fans tab renders fan telemetry, fan curve paths, and packaged preset IDs without write controls.
 - Optional GTK read-only Appearance tab renders LED brightness and firmware toggle values without write controls.
-- Optional GTK diagnostics tab for the same read-only hardware/debug bundle, with compact counts and Copy JSON.
+- Optional GTK diagnostics tab for the same read-only hardware/debug bundle, with compact counts and Copy JSON parity for durable app-state fields.
 - Packaged read-only fan preset TOML assets in `data/presets/`, validated by `scripts/validate-packaging.sh`, installed by the RPM spec, and validated at runtime for dry-run fan preset planning.
 - Read-only D-Bus daemon methods:
   - `GetHardwareSummary`
@@ -86,6 +87,8 @@
 - Fedora packaging assets for systemd, D-Bus, polkit, desktop metadata, AppStream metadata, and RPM spec.
 - Packaging metadata validation script wired into local and GitHub CI.
 - Read-only sysfs fixture capture workflow, validated against the existing 82WM fixture in local CI.
+- Read-only compatibility bundle workflow via `scripts/capture-compat-report.sh`, validated against the existing 82WM fixture in local and GitHub CI.
+- Hardware compatibility PR template in `.github/PULL_REQUEST_TEMPLATE/hardware-compatibility.md`.
 - Disabled draft write-method contracts for platform profile, battery charge type, GPU mode, and fan presets.
 - Pure validators for platform profile, battery charge type, EnvyControl GPU mode, and packaged fan preset choices; no write methods are enabled.
 - Validator-backed dry-run planning for platform profile, battery charge type, GPU mode, and fan presets; read-only D-Bus planning methods are exposed, but no write methods are enabled.
@@ -102,6 +105,7 @@
 ./scripts/ci-local.sh
 ./scripts/validate-packaging.sh
 scripts/capture-sysfs-fixture.sh --output tests/fixtures/sysfs-<model>-<note>
+scripts/capture-compat-report.sh --output compat/<machine-label>
 cargo run -p legion-probe -- --json --sysfs-root tests/fixtures/sysfs-82wm-confirmed
 cargo run -p legion-control-daemon -- --dry-run
 cargo run -p legion-control-daemon -- --session --sysfs-root tests/fixtures/sysfs-82wm-confirmed
@@ -131,9 +135,9 @@ Do not turn GitHub CI off completely yet. Use local CI before pushing, then keep
 
 ## Next tasks
 
-1. Complete the current diagnostics/export parity slice: include durable GPU pending and saved fan curve state in `--diagnostics` output and GTK Copy JSON.
-2. If another supported Legion machine is available, add a captured fixture with `scripts/capture-sysfs-fixture.sh`, validate probe behavior, update docs, and commit.
-3. If no new hardware fixture is available after that, continue with read-only UI/tray polish.
+1. Collect additional captured fixtures through the compatibility bundle workflow when outside Legion submissions become available.
+2. If no new hardware reports are available, continue with read-only KDE/UI tray polish and smoke coverage.
+3. Keep progress docs current after each completed roadmap slice.
 4. Keep all hardware mutation disabled until the safety checklist below is satisfied.
 
 ## Working process

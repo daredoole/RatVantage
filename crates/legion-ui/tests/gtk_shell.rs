@@ -68,6 +68,22 @@ fn status_and_error_pages_build_under_headless_display() {
     assert_eq!(page.orientation(), gtk4::Orientation::Vertical);
     assert_eq!(page.spacing(), 12);
     assert_eq!(page.observe_children().n_items(), 4);
+    let scroller = page
+        .last_child()
+        .expect("diagnostics page should end with a scroller")
+        .downcast::<gtk4::ScrolledWindow>()
+        .expect("last child should be a scrolled window");
+    let text = scroller
+        .child()
+        .expect("scroller should wrap the diagnostics text")
+        .downcast::<gtk4::TextView>()
+        .expect("scroller child should be a text view");
+    let buffer = text.buffer();
+    let json = buffer.text(&buffer.start_iter(), &buffer.end_iter(), false);
+    assert!(json.contains("\"gpu_mode_pending\""));
+    assert!(json.contains("\"requested_mode\": \"hybrid\""));
+    assert!(json.contains("\"last_known_good_fan_curve\""));
+    assert!(json.contains("\"curve_id\": \"legion_hwmon\""));
 
     let page = gtk_shell::profiles_page(Ok(sample_diagnostics()));
     let page = page
@@ -262,6 +278,7 @@ fn sample_diagnostics() -> DiagnosticsBundle {
         Some("6.17.0-test".to_owned()),
         vec!["2026-04-25T17:44:00 legion-control-daemon started".to_owned()],
     )
+    .with_runtime_state(Some(sample_gpu_pending()), Some(sample_fan_snapshot()))
 }
 
 fn sample_gpu_pending() -> GpuModePending {

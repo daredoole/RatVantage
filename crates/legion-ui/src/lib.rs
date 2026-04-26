@@ -46,6 +46,8 @@ pub struct DiagnosticsBundle {
     pub hardware: HardwareSummary,
     pub kernel_version: Option<String>,
     pub summary: DiagnosticsSummary,
+    pub gpu_mode_pending: Option<GpuModePending>,
+    pub last_known_good_fan_curve: Option<FanCurveSnapshot>,
     pub detected_sysfs_paths: Vec<String>,
     pub recent_daemon_logs: Vec<String>,
     pub raw_probe_report: CapabilityRegistry,
@@ -78,10 +80,22 @@ impl DiagnosticsBundle {
             hardware: report.hardware.clone(),
             kernel_version,
             summary,
+            gpu_mode_pending: None,
+            last_known_good_fan_curve: None,
             detected_sysfs_paths,
             recent_daemon_logs,
             raw_probe_report: report,
         }
+    }
+
+    pub fn with_runtime_state(
+        mut self,
+        gpu_mode_pending: Option<GpuModePending>,
+        last_known_good_fan_curve: Option<FanCurveSnapshot>,
+    ) -> Self {
+        self.gpu_mode_pending = gpu_mode_pending;
+        self.last_known_good_fan_curve = last_known_good_fan_curve;
+        self
     }
 }
 
@@ -521,7 +535,8 @@ impl LegionControlClient {
             self.raw_probe_report()?,
             kernel_version(),
             recent_daemon_logs(),
-        ))
+        )
+        .with_runtime_state(self.gpu_mode_pending()?, self.last_known_good_fan_curve()?))
     }
 
     pub fn plan_platform_profile_write(&self, requested: &str) -> Result<WriteDryRunPlan> {

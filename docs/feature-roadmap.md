@@ -16,6 +16,7 @@ Current pre-alpha code provides the safe read-only base:
 - Fedora packaging assets for systemd, D-Bus, polkit, desktop metadata, AppStream metadata, and RPM spec.
 - Packaging metadata validation in local and GitHub CI.
 - Read-only sysfs fixture capture workflow for adding real hardware reports.
+- Read-only compatibility bundle workflow for external hardware submissions, including generated summary files and PR body text.
 - StatusNotifier tray smoke script and manual checklist.
 - Disabled draft write-method contracts for platform profile, battery charge type, GPU mode, and fan presets.
 - Pure validators for platform profile, battery charge type, EnvyControl GPU mode, and packaged fan preset choices.
@@ -29,6 +30,7 @@ Current pre-alpha code provides the safe read-only base:
 - UI overview includes app-state-only GPU pending-reboot status and saved fan curve snapshots when recorded by the daemon.
 - Tray/status output and GTK pages surface app-state-only GPU pending-reboot state and saved fan curve snapshots.
 - Read-only UI `--diagnostics` JSON bundle with hardware summary, compact counts, kernel version, detected sysfs paths, recent daemon log excerpts, and raw probe report.
+- Diagnostics/export parity for durable app state, so CLI `--diagnostics` output and GTK Diagnostics Copy JSON include `gpu_mode_pending` and `last_known_good_fan_curve`.
 - Diagnostics include `platform_profile_choices` and `charge_types` source paths.
 - Read-only UI dry-run plan previews for platform profile, battery charge type, GPU mode, fan preset, and fan restore/default writes, including GPU rollback guidance.
 - UI status output includes per-capability status and risk labels.
@@ -41,8 +43,8 @@ Current pre-alpha code provides the safe read-only base:
 ## Next immediate work
 
 - Keep tray autostart disabled; GNOME AppIndicator extension path is untested.
-- Add more captured fixtures when additional supported Legion machines are available.
-- Add more captured hardware fixtures when available; otherwise continue with read-only UI/tray polish.
+- Collect more captured fixtures through the compatibility bundle workflow when additional supported Legion machines are available.
+- If no new hardware reports are available, continue with read-only UI/tray polish, with KDE-specific tray behavior as the most relevant local path.
 - Keep progress docs current after each completed roadmap slice.
 - Keep GitHub CI as remote guard; run `./scripts/ci-local.sh` before pushing to reduce failed CI minutes.
 
@@ -156,6 +158,7 @@ Expose only if present:
   - DMI model fields;
   - kernel version;
   - detected sysfs paths;
+  - durable app-state fields `gpu_mode_pending` and `last_known_good_fan_curve`;
   - capability JSON; [implemented in CLI and GTK diagnostics surfaces]
   - recent daemon log excerpt. [implemented as best-effort `journalctl` read]
 - Copy diagnostics JSON from the GTK viewer. [implemented]
