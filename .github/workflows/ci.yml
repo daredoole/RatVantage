@@ -46,5 +46,8 @@ jobs:
       - name: Compatibility capture smoke test
         run: scripts/capture-compat-report.sh --sysfs-root tests/fixtures/sysfs-82wm-confirmed --output /tmp/ratvantage-compat
 
+      - name: Write validation harness smoke test
+        run: scripts/capture-write-validation-report.sh --sysfs-root tests/fixtures/sysfs-82wm-confirmed --output /tmp/ratvantage-write-validation --skip-compat-bundle --skip-tray-smoke
+
       - name: Daemon dry-run smoke test
         run: cargo run -p legion-control-daemon -- --dry-run

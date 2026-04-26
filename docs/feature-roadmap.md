@@ -17,6 +17,7 @@ Current pre-alpha code provides the safe read-only base:
 - Packaging metadata validation in local and GitHub CI.
 - Read-only sysfs fixture capture workflow for adding real hardware reports.
 - Read-only compatibility bundle workflow for external hardware submissions, including generated summary files and PR body text.
+- Live write-validation harness with plan-only bundle capture by default and explicit execute-mode evidence capture for the current reversible controls.
 - StatusNotifier tray smoke script and manual checklist.
 - KDE StatusNotifier smoke report workflow with reusable report bundles.
 - Read-only tray desktop diagnostics via `legion-control-tray --desktop-check`.
@@ -48,7 +49,7 @@ Current pre-alpha code provides the safe read-only base:
 
 - Keep tray autostart disabled; GNOME AppIndicator extension path is still untested.
 - Collect more captured fixtures through the compatibility bundle workflow when additional supported Legion machines are available.
-- If no new hardware reports are available, continue with manual validation guidance, recovery UX polish, and broader desktop-session smoke around the current reversible write set; tray/UI refresh behavior is now aligned on the shared reload path, KDE-specific smoke/reporting is in place, and GNOME validation remains blocked.
+- If no new hardware reports are available, use the live write-validation harness to capture execute-mode evidence on supported Legion hardware one control at a time; tray/UI refresh behavior is now aligned on the shared reload path, KDE-specific smoke/reporting is in place, and GNOME validation remains blocked.
 - Keep progress docs current after each completed roadmap slice.
 - Keep GitHub CI as remote guard; run `./scripts/ci-local.sh` before pushing to reduce failed CI minutes.
 

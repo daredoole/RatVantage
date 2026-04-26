@@ -30,6 +30,7 @@ Pre-alpha implementation scaffold exists:
 - Fedora packaging metadata and validation for systemd, D-Bus, polkit, desktop, AppStream, and RPM assets.
 - Read-only sysfs fixture capture workflow for adding more real hardware reports.
 - Read-only compatibility bundle workflow for outside Legion contributors, including generated probe summaries and PR body text.
+- Live write-validation harness with plan-only report capture by default and explicit execute-mode evidence capture for the current reversible write surface.
 - Read-only validation evidence for the current 82WM target is recorded in `docs/implementation-plan.md`.
 - Packaged read-only fan preset TOML assets with CI schema validation and dry-run planning.
 - Disabled write-method contract drafts for platform profile, battery charge type, GPU mode, fan presets, and fan restore/default.
@@ -47,6 +48,8 @@ Pre-alpha implementation scaffold exists:
 Only reversible platform-profile, battery charge-type, ylogo LED, and three ideapad-toggle executions exist so far: restricted `fn_lock` plus warning-gated `camera_power` and `usb_charging`. All remain disabled by default unless the daemon is started with their explicit enable flags. `fn_lock` requires the paired `platform::fnlock` LED for corroborating read-back before the UI or tray exposes quick actions, while `camera_power` and `usb_charging` are intentionally dashboard-confirmed and not exposed as one-click tray writes. `touchpad` remains probe-only and explicitly blocked until dedicated fixture coverage, recovery validation, and user-lockout handling exist, and legacy `conservation_mode`/`fan_mode` stay in compatibility-diagnostic scope instead of the live write surface.
 
 The GTK shell now routes attempted-write refreshes back through the shared runtime controller when it is active, while the tray keeps a visible last-write status row for blocked, failed, or rolled-back actions instead of leaving those outcomes in tooltip text alone.
+
+Fixture-backed rollback tests and tray/GTK smoke do not count as live-device write validation by themselves. Use the write-validation harness to capture real-machine evidence before treating a reversible write path as manually validated.
 
 For continuation work, start from [docs/session-handoff.md](docs/session-handoff.md). It records the latest commits, next roadmap slice, safety constraints, validation commands, and the expected orchestrator/agent workflow for new Codex sessions.
 
@@ -119,6 +122,8 @@ cargo run -p legion-control-tray -- --desktop-check
 cargo run -p legion-control-tray -- --menu-check --bus-address <dbus-address>
 cargo run -p legion-control-ui --features gtk-ui
 scripts/smoke-statusnotifier-tray.sh --hold-seconds 15
+scripts/capture-write-validation-report.sh --output target/validation/<machine-label>-plan
+scripts/capture-write-validation-report.sh --output target/validation/<machine-label>-live --execute --system-bus
 ```
 
 To collect a read-only fixture from another Legion machine, use
@@ -130,6 +135,19 @@ summary markdown/JSON, and a pasteable PR body, use:
 ```bash
 scripts/capture-compat-report.sh --output compat/<machine-label>
 ```
+
+To capture a write-validation bundle for the currently implemented reversible
+write surface, use:
+
+```bash
+scripts/capture-write-validation-report.sh --output target/validation/<machine-label>-plan
+scripts/capture-write-validation-report.sh --output target/validation/<machine-label>-live --execute --system-bus
+```
+
+The default run is plan-only and starts its own private session-bus daemon. The
+explicit `--execute` mode expects a real privileged daemon target and records
+apply/revert evidence one control at a time. See
+[docs/live-write-validation.md](docs/live-write-validation.md).
 
 Keep GitHub CI enabled as the clean-checkout and remote-runner guard. Local CI prevents wasted failed pushes; GitHub CI catches missing packages, toolchain drift, and workflow breakage.
 

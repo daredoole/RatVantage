@@ -2,6 +2,10 @@
 
 Use this before enabling tray autostart.
 
+Tray smoke is only one part of live validation. Use it alongside
+[`scripts/capture-write-validation-report.sh`](../scripts/capture-write-validation-report.sh)
+when validating the current reversible write surface on real hardware.
+
 ## Supported Desktop Check
 
 Build the tray and run the smoke script from the graphical desktop session:
