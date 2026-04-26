@@ -310,6 +310,7 @@ fn dashboard_pages_render_quick_apply_and_gpu_controls() {
         text.contains("Click or drag")
             && text.contains("arrow keys")
             && text.contains("Shift")
+            && text.contains("Focusing a row's temp or pwm field syncs the chart highlight")
             && text.contains("PWM 0–255 vertically")
     }));
     assert!(fans_text.iter().any(|text| text == "Load from live"));

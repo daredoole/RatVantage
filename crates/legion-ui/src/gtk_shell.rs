@@ -1360,12 +1360,34 @@ fn apply_scratchpad_nudge(
 fn connect_scratchpad_chart_entry_signals(
     entries: &ManualFanScratchRows,
     chart: &gtk4::DrawingArea,
+    selection_sync: Option<&ScratchpadChartSelection>,
 ) {
-    for (_, temp_entry, pwm_entry) in entries.borrow().iter() {
+    for (row_i, (_, temp_entry, pwm_entry)) in entries.borrow().iter().enumerate() {
         let chart_t = chart.clone();
         temp_entry.connect_changed(move |_| chart_t.queue_draw());
         let chart_p = chart.clone();
         pwm_entry.connect_changed(move |_| chart_p.queue_draw());
+
+        if let Some(sel) = selection_sync {
+            let sel_temp = sel.clone();
+            let chart_ft = chart.clone();
+            let idx = row_i;
+            let focus_temp = gtk4::EventControllerFocus::new();
+            focus_temp.connect_enter(move |_c| {
+                *sel_temp.borrow_mut() = Some(idx);
+                chart_ft.queue_draw();
+            });
+            temp_entry.add_controller(focus_temp);
+
+            let sel_pwm = sel.clone();
+            let chart_fp = chart.clone();
+            let focus_pwm = gtk4::EventControllerFocus::new();
+            focus_pwm.connect_enter(move |_c| {
+                *sel_pwm.borrow_mut() = Some(idx);
+                chart_fp.queue_draw();
+            });
+            pwm_entry.add_controller(focus_pwm);
+        }
     }
 }
 
@@ -1376,7 +1398,7 @@ fn attach_scratchpad_chart_interactions(
 ) {
     chart.set_focusable(true);
     chart.set_tooltip_text(Some(
-        "Click a point to select it. Arrow keys adjust temp (←/→) and PWM (↑/↓); hold Shift for larger steps. Scratchpad only.",
+        "Click a point to select it. Tab into a row's temp or pwm field to sync the highlight. Arrow keys adjust temp (←/→) and PWM (↑/↓); hold Shift for larger steps. Scratchpad only.",
     ));
 
     let click = gtk4::GestureClick::new();
@@ -1733,11 +1755,11 @@ fn repopulate_manual_fan_scratchpad_rows(
     snapshot: Option<&FanCurveSnapshot>,
     entries: &ManualFanScratchRows,
     scratchpad_chart: Option<&gtk4::DrawingArea>,
-    chart_selection_clear: Option<&ScratchpadChartSelection>,
+    scratchpad_selection: Option<&ScratchpadChartSelection>,
 ) {
     clear_points_column(column);
     entries.borrow_mut().clear();
-    if let Some(sel) = chart_selection_clear {
+    if let Some(sel) = scratchpad_selection {
         *sel.borrow_mut() = None;
     }
     let lookup: HashMap<String, String> = snapshot
@@ -1775,7 +1797,7 @@ fn repopulate_manual_fan_scratchpad_rows(
             .push((pair.clone(), temp_entry.clone(), pwm_entry.clone()));
     }
     if let Some(chart) = scratchpad_chart {
-        connect_scratchpad_chart_entry_signals(entries, chart);
+        connect_scratchpad_chart_entry_signals(entries, chart, scratchpad_selection);
         chart.queue_draw();
     }
 }
@@ -1830,7 +1852,7 @@ fn append_manual_fan_curve_scratchpad(page: &gtk4::Box, curve: &FanCurveCapabili
     page.append(&rows_heading);
 
     let chart_interaction_hint = gtk4::Label::new(Some(
-        "Click or drag a point on the chart to edit temp/PWM in the rows, or select a point and use arrow keys (Shift = larger temp/PWM steps). Scratchpad only; not applied to hardware. Axes: raw sysfs temperature (min–max of your points) horizontally, PWM 0–255 vertically.",
+        "Click or drag a point on the chart to edit temp/PWM in the rows, or select a point and use arrow keys (Shift = larger temp/PWM steps). Focusing a row's temp or pwm field syncs the chart highlight. Scratchpad only; not applied to hardware. Axes: raw sysfs temperature (min–max of your points) horizontally, PWM 0–255 vertically.",
     ));
     chart_interaction_hint.add_css_class("dim-label");
     chart_interaction_hint.set_wrap(true);
