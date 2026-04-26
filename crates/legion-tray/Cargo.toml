@@ -15,10 +15,10 @@ clap.workspace = true
 ksni = { version = "0.3.4", features = ["blocking"], optional = true }
 legion-common.workspace = true
 legion-control-ui.workspace = true
+zbus.workspace = true
 
 [dev-dependencies]
 legion-control-daemon = { path = "../legion-daemon" }
 legion-probe.workspace = true
 ratvantage-test-support.workspace = true
 serde_json.workspace = true
-zbus.workspace = true

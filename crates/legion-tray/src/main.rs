@@ -1,8 +1,8 @@
 use anyhow::Result;
 use clap::Parser;
-use legion_control_tray::TraySummary;
 #[cfg(not(feature = "status-notifier"))]
 use legion_control_tray::{DesktopSession, TrayMenu};
+use legion_control_tray::{TrayDesktopCheck, TraySummary};
 use legion_control_ui::LegionControlClient;
 
 #[derive(Debug, Parser)]
@@ -14,11 +14,28 @@ struct Args {
     tooltip: bool,
 
     #[arg(long)]
+    desktop_check: bool,
+
+    #[arg(long)]
     bus_address: Option<String>,
 }
 
 fn main() -> Result<()> {
     let args = Args::parse();
+
+    if [args.status, args.tooltip, args.desktop_check]
+        .into_iter()
+        .filter(|enabled| *enabled)
+        .count()
+        > 1
+    {
+        anyhow::bail!("choose exactly one tray command");
+    }
+
+    if args.desktop_check {
+        print_desktop_check(&TrayDesktopCheck::detect());
+        return Ok(());
+    }
 
     if args.status || args.tooltip {
         let client = match args.bus_address {
@@ -44,6 +61,12 @@ fn main() -> Result<()> {
     }
 
     run_tray(args.bus_address)
+}
+
+fn print_desktop_check(check: &TrayDesktopCheck) {
+    for line in check.render_lines() {
+        println!("{line}");
+    }
 }
 
 #[cfg(feature = "status-notifier")]

@@ -131,6 +131,7 @@ write_report() {
 
   "${tray_cmd[@]}" --status "${bus_args[@]}" >"$dir/tray-status.txt"
   "${tray_cmd[@]}" --tooltip "${bus_args[@]}" >"$dir/tray-tooltip.txt"
+  "${tray_cmd[@]}" --desktop-check >"$dir/tray-desktop-check.txt"
 
   {
     printf 'registered_item=%s\n' "${item:-unknown}"
@@ -169,6 +170,7 @@ write_report() {
 - \`watcher-items.txt\`
 - \`tray-status.txt\`
 - \`tray-tooltip.txt\`
+- \`tray-desktop-check.txt\`
 - \`item-properties.txt\`
 
 ## Manual checks still required

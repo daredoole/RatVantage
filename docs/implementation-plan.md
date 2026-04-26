@@ -12,6 +12,7 @@ The repository now has a working pre-alpha scaffold:
 - Packaged read-only fan preset TOML assets with CI schema validation and runtime dry-run planning.
 - Read-only compatibility bundle workflow for external Legion submissions, including generated probe summaries and PR template support.
 - KDE StatusNotifier smoke report workflow with reusable report bundles under `target/smoke/`.
+- Read-only tray desktop diagnostics via `legion-control-tray --desktop-check`, with unit and CLI coverage.
 - Local CI script, Fedora dependency installer, GitHub Actions CI, and pinned stable Rust toolchain.
 
 Next implementation work should collect more captured fixtures through the compatibility bundle workflow when additional supported Legion machines are available, continue with read-only UI/tray polish if no new hardware reports are available, and leave autostart disabled until GNOME-with-extension smoke exists. Hardware writes remain design-only until validators, polkit policy, rollback, write-specific manual validation, and recovery instructions are complete.

@@ -18,6 +18,7 @@ Pre-alpha implementation scaffold exists:
 - Tray dashboard launch forwards custom D-Bus addresses for private/session-bus smoke workflows.
 - Tray status separates available and missing capabilities in tooltips.
 - KDE StatusNotifier smoke can emit a reusable report bundle with environment, watcher, and tray summary data.
+- `legion-control-tray --desktop-check` reports desktop/session state, watcher availability, and autostart gating for read-only tray diagnostics.
 - UI status output includes per-capability status and risk labels.
 - Disabled tray autostart packaging placeholder.
 - Runtime-captured 82WM fixture coverage, including bracketed battery `charge_types` current-value parsing.
@@ -102,6 +103,7 @@ cargo run -p legion-control-ui -- --last-known-good-fan-curve --bus-address <dbu
 cargo run -p legion-control-ui -- --capture-last-known-good-fan-curve --bus-address <dbus-address>
 cargo run -p legion-control-tray -- --status --bus-address <dbus-address>
 cargo run -p legion-control-tray -- --tooltip --bus-address <dbus-address>
+cargo run -p legion-control-tray -- --desktop-check
 cargo run -p legion-control-ui --features gtk-ui
 scripts/smoke-statusnotifier-tray.sh --hold-seconds 15
 ```
@@ -130,6 +132,7 @@ Completed scaffold:
 - StatusNotifier dashboard launch keeps `--bus-address` when the tray uses a private bus.
 - Tray tooltip reports platform profile, fan RPM, and available/missing capability counts.
 - KDE StatusNotifier smoke report workflow with recorded local evidence.
+- Read-only tray desktop diagnostics via `legion-control-tray --desktop-check`.
 - Disabled tray autostart packaging placeholder.
 - Headless GTK smoke coverage.
 - Fedora packaging metadata and validation.
@@ -155,7 +158,7 @@ Next:
 
 - GNOME-with-extension smoke for the StatusNotifier tray backend before enabling autostart.
 - External compatibility PRs from more supported Legion machines through the bundle workflow.
-- Read-only KDE/UI tray polish while waiting on more hardware reports.
+- Additional read-only tray/UI polish while waiting on more hardware reports.
 
 See [docs/feature-roadmap.md](docs/feature-roadmap.md) and [docs/implementation-plan.md](docs/implementation-plan.md).
 

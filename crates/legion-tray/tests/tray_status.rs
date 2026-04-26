@@ -46,6 +46,60 @@ fn tooltip_cli_prints_single_line_over_private_bus() {
 }
 
 #[test]
+fn desktop_check_cli_reports_kde_env_without_session_bus() {
+    let output = Command::new(env!("CARGO_BIN_EXE_legion-control-tray"))
+        .arg("--desktop-check")
+        .env_clear()
+        .env("XDG_CURRENT_DESKTOP", "KDE")
+        .env("XDG_SESSION_TYPE", "wayland")
+        .env("WAYLAND_DISPLAY", "wayland-0")
+        .env("DISPLAY", ":0")
+        .env("KDE_FULL_SESSION", "true")
+        .output()
+        .unwrap();
+
+    assert!(output.status.success());
+    let stdout = String::from_utf8(output.stdout).unwrap();
+    assert!(stdout.contains("Legion Control tray desktop check"));
+    assert!(stdout.contains("current_desktop=KDE"));
+    assert!(stdout.contains("session_type=wayland"));
+    assert!(stdout.contains("wayland_display=wayland-0"));
+    assert!(stdout.contains("display=:0"));
+    assert!(stdout.contains("kde_full_session=true"));
+    assert!(stdout.contains("dbus_session_bus_address_set=false"));
+    assert!(stdout.contains("prefers_status_notifier=true"));
+    assert!(stdout.contains("may_need_appindicator_extension=false"));
+    assert!(stdout.contains("status_notifier_watcher_available=false"));
+    assert!(stdout.contains("autostart_hidden=true"));
+    assert!(stdout.contains("gnome_autostart_disabled=true"));
+    assert!(
+        stdout.contains("desktop_guidance=KDE/Plasma should expose StatusNotifier items natively.")
+    );
+}
+
+#[test]
+fn desktop_check_cli_reports_gnome_guidance_without_session_bus() {
+    let output = Command::new(env!("CARGO_BIN_EXE_legion-control-tray"))
+        .arg("--desktop-check")
+        .env_clear()
+        .env("XDG_CURRENT_DESKTOP", "GNOME")
+        .env("XDG_SESSION_TYPE", "wayland")
+        .output()
+        .unwrap();
+
+    assert!(output.status.success());
+    let stdout = String::from_utf8(output.stdout).unwrap();
+    assert!(stdout.contains("current_desktop=GNOME"));
+    assert!(stdout.contains("dbus_session_bus_address_set=false"));
+    assert!(stdout.contains("prefers_status_notifier=false"));
+    assert!(stdout.contains("may_need_appindicator_extension=true"));
+    assert!(stdout.contains("status_notifier_watcher_available=false"));
+    assert!(stdout.contains(
+        "desktop_guidance=GNOME may require an AppIndicator/KStatusNotifier extension for tray icons."
+    ));
+}
+
+#[test]
 fn tray_status_includes_pending_gpu_and_saved_fan_curve_state() {
     let state_path = unique_state_path("tray-state");
     fs::write(

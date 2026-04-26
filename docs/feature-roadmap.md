@@ -19,6 +19,7 @@ Current pre-alpha code provides the safe read-only base:
 - Read-only compatibility bundle workflow for external hardware submissions, including generated summary files and PR body text.
 - StatusNotifier tray smoke script and manual checklist.
 - KDE StatusNotifier smoke report workflow with reusable report bundles.
+- Read-only tray desktop diagnostics via `legion-control-tray --desktop-check`.
 - Disabled draft write-method contracts for platform profile, battery charge type, GPU mode, and fan presets.
 - Pure validators for platform profile, battery charge type, EnvyControl GPU mode, and packaged fan preset choices.
 - Validator-backed dry-run planning for platform profile, battery charge type, GPU mode, and fan presets.
@@ -45,7 +46,7 @@ Current pre-alpha code provides the safe read-only base:
 
 - Keep tray autostart disabled; GNOME AppIndicator extension path is still untested.
 - Collect more captured fixtures through the compatibility bundle workflow when additional supported Legion machines are available.
-- If no new hardware reports are available, continue with read-only UI/tray polish, with KDE-specific tray behavior as the most relevant local path.
+- If no new hardware reports are available, continue with read-only UI/tray polish; KDE-specific smoke/reporting is now in place, while GNOME validation remains blocked.
 - Keep progress docs current after each completed roadmap slice.
 - Keep GitHub CI as remote guard; run `./scripts/ci-local.sh` before pushing to reduce failed CI minutes.
 
@@ -154,6 +155,7 @@ Expose only if present:
 - Hardware summary page. [implemented in CLI and GTK diagnostics surfaces]
 - Raw capability registry viewer. [implemented in CLI and GTK diagnostics surfaces]
 - CLI debug bundle via `legion-control-ui --diagnostics`. [implemented]
+- Tray desktop/session diagnostics via `legion-control-tray --desktop-check`. [implemented]
 - Compact diagnostics summary with capability, sensor, fan curve, and detected-path counts. [implemented]
 - Copy debug bundle:
   - DMI model fields;
