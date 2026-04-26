@@ -101,7 +101,7 @@ Suggested labels:
   - Max safe [implemented as TOML asset and dry-run input]
 - Apply full validated curve only. [implemented as dry-run validation only]
 - Restore safe/default action. [implemented as dry-run planning only]
-- Store last-known-good fan curve.
+- Store last-known-good fan curve. [implemented as app-state-only capture]
 
 ### GPU
 

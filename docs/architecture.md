@@ -146,6 +146,8 @@ ValidateFanCurve(s curve_json) -> s               # JSON result
 ApplyFanCurve(s curve_json) -> ()
 ApplyFanPreset(s preset_id) -> ()
 RestoreAutoFan() -> ()
+GetLastKnownGoodFanCurve() -> s
+CaptureLastKnownGoodFanCurve() -> s
 
 GetGpuMode() -> s
 GetGpuModePending() -> s

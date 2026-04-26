@@ -3,8 +3,8 @@ use std::process::Command;
 
 use anyhow::Result;
 use legion_common::{
-    Capability, CapabilityRegistry, CapabilityStatus, GpuModePending, HardwareSummary, RiskLevel,
-    TelemetrySnapshot, WriteDryRunPlan,
+    Capability, CapabilityRegistry, CapabilityStatus, FanCurveSnapshot, GpuModePending,
+    HardwareSummary, RiskLevel, TelemetrySnapshot, WriteDryRunPlan,
 };
 use serde::{de::DeserializeOwned, Serialize};
 use zbus::blocking::{Connection, ConnectionBuilder, Proxy};
@@ -538,6 +538,14 @@ impl LegionControlClient {
 
     pub fn clear_gpu_mode_pending(&self) -> Result<Option<GpuModePending>> {
         self.call_json("ClearGpuModePending")
+    }
+
+    pub fn last_known_good_fan_curve(&self) -> Result<Option<FanCurveSnapshot>> {
+        self.call_json("GetLastKnownGoodFanCurve")
+    }
+
+    pub fn capture_last_known_good_fan_curve(&self) -> Result<FanCurveSnapshot> {
+        self.call_json("CaptureLastKnownGoodFanCurve")
     }
 
     pub fn status(&self) -> Result<UiStatus> {

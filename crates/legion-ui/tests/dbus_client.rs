@@ -434,6 +434,56 @@ fn gpu_pending_cli_prints_and_clears_empty_state() {
 }
 
 #[test]
+fn last_known_good_fan_curve_cli_captures_state_snapshot() {
+    let state_path = unique_state_path("ui-fan-curve");
+    let (_bus, _service_connection, address) = runtime_fixture_service_with_state(&state_path);
+    let client = LegionControlClient::address(&address).unwrap();
+    assert_eq!(client.last_known_good_fan_curve().unwrap(), None);
+
+    let output = Command::new(env!("CARGO_BIN_EXE_legion-control-ui"))
+        .args(["--last-known-good-fan-curve", "--bus-address", &address])
+        .output()
+        .unwrap();
+    assert!(output.status.success());
+    assert_eq!(String::from_utf8(output.stdout).unwrap(), "null\n");
+
+    let output = Command::new(env!("CARGO_BIN_EXE_legion-control-ui"))
+        .args([
+            "--capture-last-known-good-fan-curve",
+            "--bus-address",
+            &address,
+        ])
+        .output()
+        .unwrap();
+
+    assert!(output.status.success());
+    assert!(output.stderr.is_empty());
+    let json: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(json["curve_id"], "legion_hwmon");
+    let point_count = json["points"].as_array().unwrap().len();
+    assert!(point_count >= 20);
+    assert!(json["points"].as_array().unwrap().iter().any(|point| {
+        point["path"]
+            .as_str()
+            .unwrap()
+            .ends_with("pwm1_auto_point1_temp")
+            && point["value"]
+                .as_str()
+                .is_some_and(|value| !value.is_empty())
+    }));
+    assert_eq!(
+        client
+            .last_known_good_fan_curve()
+            .unwrap()
+            .unwrap()
+            .points
+            .len(),
+        point_count
+    );
+    let _ = std::fs::remove_file(state_path);
+}
+
+#[test]
 fn status_model_uses_unknown_for_missing_hardware_fields() {
     let status = UiStatus::from_parts(Default::default(), Vec::new()).unwrap();
 
@@ -555,8 +605,34 @@ fn runtime_fixture_service() -> (PrivateBus, zbus::blocking::Connection, String)
     (bus, service_connection, address)
 }
 
+fn runtime_fixture_service_with_state(
+    state_path: &std::path::Path,
+) -> (PrivateBus, zbus::blocking::Connection, String) {
+    let bus = PrivateBus::start();
+    let service = LegionControl::new_with_state_path(
+        ProbeOptions {
+            sysfs_root: fixture_root()
+                .parent()
+                .expect("fixture root must have parent")
+                .join("sysfs-82wm-runtime-capture"),
+        },
+        state_path,
+    );
+    let service_connection = ConnectionBuilder::address(bus.address())
+        .unwrap()
+        .name(DBUS_INTERFACE)
+        .unwrap()
+        .serve_at(DBUS_PATH, service)
+        .unwrap()
+        .build()
+        .unwrap();
+    let address = bus.address().to_owned();
+
+    (bus, service_connection, address)
+}
+
 fn unique_state_path(label: &str) -> std::path::PathBuf {
-    std::env::temp_dir().join(format!(
+    std::path::PathBuf::from("/tmp").join(format!(
         "ratvantage-{label}-{}-{}.toml",
         std::process::id(),
         std::thread::current().name().unwrap_or("test")

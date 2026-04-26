@@ -18,7 +18,10 @@ pub struct CapabilityRegistry {
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct DaemonState {
     pub schema_version: u32,
+    #[serde(default)]
     pub gpu_mode_pending: Option<GpuModePending>,
+    #[serde(default)]
+    pub last_known_good_fan_curve: Option<FanCurveSnapshot>,
 }
 
 impl Default for DaemonState {
@@ -26,6 +29,7 @@ impl Default for DaemonState {
         Self {
             schema_version: 1,
             gpu_mode_pending: None,
+            last_known_good_fan_curve: None,
         }
     }
 }
@@ -35,6 +39,19 @@ pub struct GpuModePending {
     pub requested_mode: String,
     pub previous_mode: Option<String>,
     pub reboot_required: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct FanCurveSnapshot {
+    pub curve_id: String,
+    pub path: Option<String>,
+    pub points: Vec<FanCurvePointSnapshot>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct FanCurvePointSnapshot {
+    pub path: String,
+    pub value: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]

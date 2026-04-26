@@ -43,6 +43,12 @@ struct Args {
     clear_gpu_mode_pending: bool,
 
     #[arg(long)]
+    last_known_good_fan_curve: bool,
+
+    #[arg(long)]
+    capture_last_known_good_fan_curve: bool,
+
+    #[arg(long)]
     bus_address: Option<String>,
 }
 
@@ -61,6 +67,8 @@ fn main() -> Result<()> {
         args.gpu_mode_pending,
         args.set_gpu_mode_pending.is_some(),
         args.clear_gpu_mode_pending,
+        args.last_known_good_fan_curve,
+        args.capture_last_known_good_fan_curve,
     ]
     .into_iter()
     .filter(|enabled| *enabled)
@@ -90,6 +98,10 @@ fn main() -> Result<()> {
             print_json(&client.set_gpu_mode_pending(&mode)?)?;
         } else if args.clear_gpu_mode_pending {
             print_json(&client.clear_gpu_mode_pending()?)?;
+        } else if args.last_known_good_fan_curve {
+            print_json(&client.last_known_good_fan_curve()?)?;
+        } else if args.capture_last_known_good_fan_curve {
+            print_json(&client.capture_last_known_good_fan_curve()?)?;
         } else if args.diagnostics {
             print_diagnostics(&client.diagnostics_bundle()?)?;
         } else if args.overview {

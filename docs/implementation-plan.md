@@ -6,9 +6,9 @@ The repository now has a working pre-alpha scaffold:
 
 - Rust workspace with `legion-common`, `legion-probe`, `legion-daemon`, `legion-ui`, and `ratvantage-test-support`.
 - Read-only probe that builds hardware summary, capability, telemetry, and raw report JSON.
-- Daemon exposing read-only hardware/capability/telemetry/raw-report methods, dry-run planning methods for platform profile, battery charge type, GPU mode, fan presets, and fan restore/default, plus app-state-only GPU pending-reboot tracking.
+- Daemon exposing read-only hardware/capability/telemetry/raw-report methods, dry-run planning methods for platform profile, battery charge type, GPU mode, fan presets, and fan restore/default, plus app-state-only GPU pending-reboot tracking and fan curve snapshots.
 - Private D-Bus contract tests that verify method introspection and JSON contracts.
-- UI status, overview, diagnostics, app-state, and dry-run planning clients with deterministic CLI output, including reboot-required GPU mode planning with rollback guidance, pending-reboot display, fan preset and fan restore/default validation, and read-only appearance/peripheral values, plus optional GTK4/libadwaita shell with read-only Status, Profiles, Battery, Fans, Appearance, and Diagnostics tabs behind `gtk-ui`.
+- UI status, overview, diagnostics, app-state, and dry-run planning clients with deterministic CLI output, including reboot-required GPU mode planning with rollback guidance, pending-reboot display, fan curve snapshot capture, fan preset and fan restore/default validation, and read-only appearance/peripheral values, plus optional GTK4/libadwaita shell with read-only Status, Profiles, Battery, Fans, Appearance, and Diagnostics tabs behind `gtk-ui`.
 - Packaged read-only fan preset TOML assets with CI schema validation and runtime dry-run planning.
 - Local CI script, Fedora dependency installer, GitHub Actions CI, and pinned stable Rust toolchain.
 
@@ -394,6 +394,8 @@ ValidateFanCurve(s curve_json) -> s
 ApplyFanCurve(s curve_json) -> ()
 ApplyFanPreset(s preset_id) -> ()
 RestoreAutoFan() -> ()
+GetLastKnownGoodFanCurve() -> s
+CaptureLastKnownGoodFanCurve() -> s
 
 GetGpuMode() -> s
 GetGpuModePending() -> s
@@ -528,6 +530,7 @@ ErrorOccurred(s code, s message)
 23. [x] Add rollback guidance to read-only GPU dry-run plans.
 24. [x] Add read-only fan restore/default dry-run planning.
 25. [x] Add app-state-only GPU pending-reboot state with durable TOML storage.
+26. [x] Add app-state-only last-known-good fan curve capture.
 
 ## Test strategy
 

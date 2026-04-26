@@ -7,7 +7,8 @@
 - Branch: `main`
 - Global Codex config: GitHub MCP is disabled, not removed, in `/home/darrian/.codex/config.toml`. New sessions should not rely on GitHub MCP unless the user explicitly re-enables it.
 - Latest local commits:
-  - `HEAD` (`Add GPU pending state tracking`; run `git log --oneline -1` for the exact hash)
+  - `HEAD` (`Add fan curve state capture`; run `git log --oneline -1` for the exact hash)
+  - `b72ff7e` (`Add GPU pending state tracking`)
   - `7ccf2c0` (`Add fan restore dry-run planning`)
   - `654cc6d` (`Record 82WM validation evidence`)
   - `8a28656` (`Add GPU rollback plan guidance`)
@@ -17,7 +18,7 @@
   - `3dde848` (`Add disabled tray battery entries`)
   - `ab128c4` (`Add disabled tray fan preset entries`)
   - `c61cef8` (`Polish tray tooltip details`)
-- Latest known milestone: read-only pre-alpha scaffold with GTK smoke coverage, hardened packaging metadata, disabled write planning, runtime/current 82WM fixture and validation evidence, diagnostics log excerpts and compact summary counts, packaged fan preset assets with dry-run planning, fan restore/default dry-run planning, app-state-only GPU pending-reboot tracking, read-only StatusNotifier tray backend, tray dashboard bus-address forwarding, tray tooltip profile/fan/count details, disabled quick fan preset and battery charge tray entries, GNOME tray extension guidance, KDE StatusNotifier tooltip/menu/quit smoke evidence, documented GNOME untested path, read-only battery overview telemetry, read-only EnvyControl GPU query, UI status/overview/diagnostics/dry-run output with LED brightness and firmware toggle values, GPU dry-run planning with reboot-required messaging and rollback guidance, diagnostics choice-source paths, per-capability status labels, and GTK read-only Status, Profiles, Battery, Fans, Appearance, and Diagnostics tabs.
+- Latest known milestone: read-only pre-alpha scaffold with GTK smoke coverage, hardened packaging metadata, disabled write planning, runtime/current 82WM fixture and validation evidence, diagnostics log excerpts and compact summary counts, packaged fan preset assets with dry-run planning, fan restore/default dry-run planning, app-state-only GPU pending-reboot tracking, app-state-only last-known-good fan curve capture, read-only StatusNotifier tray backend, tray dashboard bus-address forwarding, tray tooltip profile/fan/count details, disabled quick fan preset and battery charge tray entries, GNOME tray extension guidance, KDE StatusNotifier tooltip/menu/quit smoke evidence, documented GNOME untested path, read-only battery overview telemetry, read-only EnvyControl GPU query, UI status/overview/diagnostics/dry-run output with LED brightness and firmware toggle values, GPU dry-run planning with reboot-required messaging and rollback guidance, diagnostics choice-source paths, per-capability status labels, and GTK read-only Status, Profiles, Battery, Fans, Appearance, and Diagnostics tabs.
 - Rust toolchain: pinned stable in `rust-toolchain.toml`; local stable installed because GTK stack requires rustc 1.92+.
 
 ## Implemented
@@ -31,6 +32,7 @@
 - EnvyControl GPU mode dry-run planning for `integrated`, `hybrid`, and `nvidia`, with write execution disabled plus reboot-required and rollback metadata in the plan.
 - Fan restore/default dry-run planning through `PlanRestoreAutoFanWrite` and `--plan-restore-auto-fan`; write execution remains disabled.
 - Durable app-state-only GPU pending-reboot tracking via `GetGpuModePending`, `SetGpuModePending`, `ClearGpuModePending`, and the UI `--gpu-mode-pending`, `--set-gpu-mode-pending`, `--clear-gpu-mode-pending` commands.
+- Durable app-state-only last-known-good fan curve capture via `GetLastKnownGoodFanCurve`, `CaptureLastKnownGoodFanCurve`, and the UI `--last-known-good-fan-curve`, `--capture-last-known-good-fan-curve` commands.
 - UI `--overview` command for platform profile, battery charge type, fan RPM, temperatures, GPU mode, battery telemetry, LED brightness, and firmware toggle values.
 - UI `--diagnostics` command for a read-only JSON debug bundle containing hardware summary, compact capability/sensor/fan/path counts, kernel version, detected sysfs paths, recent daemon log excerpts, and raw probe report.
 - Platform profile and battery charge type models include both current-value paths and choice-list paths for diagnostics.
@@ -97,6 +99,8 @@ cargo run -p legion-control-ui -- --plan-restore-auto-fan --bus-address <dbus-ad
 cargo run -p legion-control-ui -- --gpu-mode-pending --bus-address <dbus-address>
 cargo run -p legion-control-ui -- --set-gpu-mode-pending hybrid --bus-address <dbus-address>
 cargo run -p legion-control-ui -- --clear-gpu-mode-pending --bus-address <dbus-address>
+cargo run -p legion-control-ui -- --last-known-good-fan-curve --bus-address <dbus-address>
+cargo run -p legion-control-ui -- --capture-last-known-good-fan-curve --bus-address <dbus-address>
 cargo run -p legion-control-tray -- --bus-address <dbus-address>
 cargo run -p legion-control-tray -- --status --bus-address <dbus-address>
 cargo run -p legion-control-tray -- --tooltip --bus-address <dbus-address>

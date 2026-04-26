@@ -193,7 +193,7 @@ Rollback must be automatic where possible and documented where not.
 
 Store in `/var/lib/legion-control/state.toml`:
 
-- last-known-good fan curve;
+- last-known-good fan curve; [captured as app state only]
 - packaged safe fan preset ID;
 - last platform profile set by the daemon;
 - previous battery charge type;

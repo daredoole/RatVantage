@@ -95,10 +95,12 @@ fn introspection_exposes_only_read_only_legion_methods() {
     assert_eq!(
         methods,
         [
+            "CaptureLastKnownGoodFanCurve",
             "ClearGpuModePending",
             "GetCapabilities",
             "GetGpuModePending",
             "GetHardwareSummary",
+            "GetLastKnownGoodFanCurve",
             "GetRawProbeReport",
             "GetTelemetry",
             "PlanBatteryChargeTypeWrite",
@@ -157,9 +159,13 @@ fn daemon_builds_dry_run_plans_without_dbus_write_methods() {
 
 #[test]
 fn daemon_builds_fan_preset_plan_from_runtime_fixture() {
-    let service = LegionControl::new(ProbeOptions {
-        sysfs_root: runtime_fixture_root(),
-    });
+    let state_path = unique_state_path("runtime-fan-curve");
+    let service = LegionControl::new_with_state_path(
+        ProbeOptions {
+            sysfs_root: runtime_fixture_root(),
+        },
+        &state_path,
+    );
 
     let plan = service.plan_fan_preset_write("balanced-daily").unwrap();
     assert_eq!(plan.method, "ApplyFanPreset");
@@ -179,6 +185,17 @@ fn daemon_builds_fan_preset_plan_from_runtime_fixture() {
     assert_eq!(restore_plan.requested_value, "auto/default fan control");
     assert!(restore_plan.readback_required);
     assert!(!restore_plan.reboot_required);
+
+    assert_eq!(service.last_known_good_fan_curve().unwrap(), None);
+    let captured = service.capture_last_known_good_fan_curve().unwrap();
+    assert_eq!(captured.curve_id, "legion_hwmon");
+    assert!(captured.points.len() >= 20);
+    assert!(captured
+        .points
+        .iter()
+        .any(|point| point.path.ends_with("pwm1_auto_point1_temp") && !point.value.is_empty()));
+    assert_eq!(service.last_known_good_fan_curve().unwrap(), Some(captured));
+    let _ = fs::remove_file(state_path);
 }
 
 #[test]
@@ -264,7 +281,7 @@ fn runtime_fixture_root() -> std::path::PathBuf {
 }
 
 fn unique_state_path(label: &str) -> std::path::PathBuf {
-    std::env::temp_dir().join(format!(
+    std::path::PathBuf::from("/tmp").join(format!(
         "ratvantage-{label}-{}-{}.toml",
         std::process::id(),
         std::thread::current().name().unwrap_or("test")

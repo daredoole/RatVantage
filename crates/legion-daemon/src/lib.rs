@@ -10,7 +10,8 @@ use legion_common::{
     plan_fan_preset_write as plan_fan_preset, plan_gpu_mode_write as plan_gpu_mode,
     plan_platform_profile_write as plan_platform_profile,
     plan_restore_auto_fan_write as plan_restore_auto_fan, validate_gpu_mode_choice,
-    CapabilityRegistry, DaemonState, FanPreset, GpuModePending, ValidationError, WriteDryRunPlan,
+    CapabilityRegistry, DaemonState, FanCurveSnapshot, FanPreset, GpuModePending, ValidationError,
+    WriteDryRunPlan,
 };
 use legion_probe::{probe, ProbeOptions};
 use serde::Serialize;
@@ -18,7 +19,7 @@ use zbus::{blocking::Connection, blocking::ConnectionBuilder, fdo, interface};
 
 pub const DBUS_INTERFACE: &str = "org.ratvantage.LegionControl1";
 pub const DBUS_PATH: &str = "/org/ratvantage/LegionControl1";
-pub const READ_ONLY_METHODS: &str = "GetHardwareSummary,GetCapabilities,RefreshCapabilities,GetTelemetry,GetRawProbeReport,GetGpuModePending,PlanPlatformProfileWrite,PlanBatteryChargeTypeWrite,PlanGpuModeWrite,PlanFanPresetWrite,PlanRestoreAutoFanWrite,SetGpuModePending,ClearGpuModePending";
+pub const READ_ONLY_METHODS: &str = "GetHardwareSummary,GetCapabilities,RefreshCapabilities,GetTelemetry,GetRawProbeReport,GetGpuModePending,GetLastKnownGoodFanCurve,PlanPlatformProfileWrite,PlanBatteryChargeTypeWrite,PlanGpuModeWrite,PlanFanPresetWrite,PlanRestoreAutoFanWrite,SetGpuModePending,ClearGpuModePending,CaptureLastKnownGoodFanCurve";
 pub const DEFAULT_STATE_PATH: &str = "/var/lib/legion-control/state.toml";
 
 const PACKAGED_FAN_PRESETS: &[&str] = &[
@@ -140,6 +141,26 @@ impl LegionControl {
         Ok(previous)
     }
 
+    pub fn last_known_good_fan_curve(&self) -> fdo::Result<Option<FanCurveSnapshot>> {
+        self.state
+            .lock()
+            .map(|state| state.last_known_good_fan_curve.clone())
+            .map_err(|_| fdo::Error::Failed("daemon state lock poisoned".to_owned()))
+    }
+
+    pub fn capture_last_known_good_fan_curve(&self) -> fdo::Result<FanCurveSnapshot> {
+        let registry = self.planning_snapshot().map_err(planning_to_fdo)?;
+        let snapshot = capture_fan_curve_snapshot(&registry)?;
+        let mut state = self
+            .state
+            .lock()
+            .map_err(|_| fdo::Error::Failed("daemon state lock poisoned".to_owned()))?;
+        state.last_known_good_fan_curve = Some(snapshot.clone());
+        save_state(&self.state_path, &state)
+            .map_err(|error| fdo::Error::Failed(format!("failed to save daemon state: {error}")))?;
+        Ok(snapshot)
+    }
+
     fn refresh(&self) -> fdo::Result<CapabilityRegistry> {
         let registry = probe(&self.options);
         let mut cached = self
@@ -185,6 +206,10 @@ impl LegionControl {
         to_json(&self.gpu_mode_pending()?)
     }
 
+    fn GetLastKnownGoodFanCurve(&self) -> fdo::Result<String> {
+        to_json(&self.last_known_good_fan_curve()?)
+    }
+
     fn PlanPlatformProfileWrite(&self, requested: &str) -> fdo::Result<String> {
         to_plan_json(self.plan_platform_profile_write(requested))
     }
@@ -211,6 +236,10 @@ impl LegionControl {
 
     fn ClearGpuModePending(&self) -> fdo::Result<String> {
         to_json(&self.clear_gpu_mode_pending()?)
+    }
+
+    fn CaptureLastKnownGoodFanCurve(&self) -> fdo::Result<String> {
+        to_json(&self.capture_last_known_good_fan_curve()?)
     }
 }
 
@@ -251,6 +280,32 @@ fn planning_to_fdo(error: PlanningError) -> fdo::Error {
 
 fn validation_to_fdo(error: ValidationError) -> fdo::Error {
     fdo::Error::InvalidArgs(serde_json::to_string(&error).unwrap_or_else(|_| format!("{error:?}")))
+}
+
+fn capture_fan_curve_snapshot(registry: &CapabilityRegistry) -> fdo::Result<FanCurveSnapshot> {
+    let curve = registry
+        .fan_curves
+        .first()
+        .ok_or_else(|| fdo::Error::InvalidArgs("fan_curves capability is missing".to_owned()))?;
+    let mut points = Vec::with_capacity(curve.point_paths.len());
+    for path in &curve.point_paths {
+        let value = fs::read_to_string(path)
+            .map_err(|error| {
+                fdo::Error::Failed(format!("failed to read fan curve point {path}: {error}"))
+            })?
+            .trim()
+            .to_owned();
+        points.push(legion_common::FanCurvePointSnapshot {
+            path: path.clone(),
+            value,
+        });
+    }
+
+    Ok(FanCurveSnapshot {
+        curve_id: curve.id.clone(),
+        path: curve.path.clone(),
+        points,
+    })
 }
 
 fn load_state(path: &Path) -> Result<DaemonState> {
