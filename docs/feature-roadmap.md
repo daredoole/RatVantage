@@ -52,7 +52,8 @@ Current pre-alpha code provides the safe read-only base:
 - Keep tray autostart disabled; GNOME AppIndicator extension path is still untested.
 - Collect more captured fixtures through the compatibility bundle workflow when additional supported Legion machines are available.
 - If no new hardware reports are available, use the live write-validation harness to capture execute-mode evidence on supported Legion hardware one control at a time; tray/UI refresh behavior is now aligned on the shared reload path, KDE-specific smoke/reporting is in place, and GNOME validation remains blocked.
-- Retry the KDE Wayland/NVIDIA GTK shell with the new scroll-bounded startup path and automatic `GSK_RENDERER=gl` fallback before treating the remaining blackout as compositor-specific; if it still reproduces, use the private-session launcher with `--gdk-backend x11` while keeping tray/CLI validation moving.
+- If the KDE Wayland/NVIDIA GTK blackout returns, retry the shell with the scroll-bounded startup path and automatic `GSK_RENDERER=gl` fallback before treating it as compositor-specific; if it still reproduces, use the private-session launcher with `--gdk-backend x11` while keeping tray/CLI validation moving.
+- Continue the GTK Fans page toward the v0.2 fan editor by surfacing packaged preset selection, `ApplyFanPreset`/`RestoreAutoFan` dry-run previews, and the saved last-known-good snapshot before adding a manual curve editor.
 - Use the GTK smoke/report workflow for deterministic screenshot evidence even while the live KDE Wayland/NVIDIA session remains compositor-sensitive.
 - Keep progress docs current after each completed roadmap slice.
 - Keep GitHub CI as remote guard; run `./scripts/ci-local.sh` before pushing to reduce failed CI minutes.
@@ -123,9 +124,9 @@ Suggested labels:
 ### GPU
 
 - Read `envycontrol --query` when available. [implemented]
-- Offer guided switch to `integrated`, `hybrid`, or `nvidia` only if EnvyControl is installed and daemon validation passes. [implemented as dry-run planning only]
-- Mark changes as pending reboot. [implemented in dry-run plan JSON]
-- Provide clear rollback instructions. [implemented in dry-run plan JSON]
+- Offer guided switch to `integrated`, `hybrid`, or `nvidia` only if EnvyControl is installed and daemon validation passes. [implemented as dry-run planning in CLI and the GTK GPU page; direct execution remains disabled]
+- Mark changes as pending reboot. [implemented in app state plus overview, tray, status output, and the GTK GPU page]
+- Provide clear rollback instructions. [implemented in dry-run plan JSON and surfaced in the GTK GPU page]
 
 ### Appearance
 

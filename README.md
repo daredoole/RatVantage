@@ -45,6 +45,7 @@ Pre-alpha implementation scaffold exists:
 - App-state-only GPU pending-reboot tracking in `/var/lib/legion-control/state.toml`; no hardware writes are performed.
 - App-state-only last-known-good fan curve capture in the same TOML state file; no fan writes are performed.
 - Tray/status output and GTK pages surface pending GPU reboot state and saved fan curve snapshots.
+- The GTK shell includes a dedicated GPU tab for current-mode visibility, dry-run plan preview, rollback guidance, and pending-reboot state tracking; direct GPU execution remains disabled.
 - Read-only diagnostics/export surfaces now include the same durable app-state fields, including `gpu_mode_pending` and `last_known_good_fan_curve`.
 - Local CI script and GitHub Actions CI.
 

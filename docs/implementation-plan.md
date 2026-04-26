@@ -332,12 +332,12 @@ Cards:
 
 ### Fan Curves page
 
-- Preset list.
+- Preset list. [next GTK slice; packaged preset labels already appear as read-only state]
 - Tray menu surfaces packaged preset labels as read-only state. [implemented]
-- Apply preset button.
-- Restore safe/default button.
+- Apply preset button. [next as dry-run preview first]
+- Restore safe/default button. [next as dry-run preview first]
 - Manual editor in v0.2.
-- Validation result panel.
+- Validation result panel. [next together with dry-run preview]
 
 ### Battery page
 
@@ -349,11 +349,11 @@ Cards:
 
 ### GPU page
 
-- Current EnvyControl mode.
-- Target mode selector.
-- Pending reboot banner.
-- Reboot button.
-- Recovery instructions.
+- Current EnvyControl mode. [implemented in the GTK GPU page]
+- Target mode selector. [implemented as dry-run planning only]
+- Pending reboot banner. [implemented through daemon app state plus GTK refresh]
+- Reboot button. [not implemented; GPU execution remains disabled in the dashboard]
+- Recovery instructions. [implemented from daemon rollback guidance]
 
 ### Appearance page
 

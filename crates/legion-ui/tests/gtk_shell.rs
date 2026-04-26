@@ -8,8 +8,8 @@ use std::{
 
 use legion_common::{
     BatteryChargeTypeCapability, BatteryTelemetry, Capability, CapabilityRegistry,
-    CapabilityStatus, FanCurveCapability, FanCurvePointSnapshot, FanCurveSnapshot, GpuModePending,
-    HardwareSummary, HwmonSensor, IdeapadToggleCapability, LedCapability,
+    CapabilityStatus, FanCurveCapability, FanCurvePointSnapshot, FanCurveSnapshot, GpuCapability,
+    GpuModePending, HardwareSummary, HwmonSensor, IdeapadToggleCapability, LedCapability,
     PlatformProfileCapability, RiskLevel, WriteDryRunPlan, WriteExecutionResult,
     WriteExecutionStatus,
 };
@@ -129,6 +129,15 @@ fn status_and_error_pages_build_under_headless_display() {
     assert_eq!(page.spacing(), 12);
     assert_eq!(page.observe_children().n_items(), 5);
 
+    let page = gtk_shell::gpu_page(Ok(sample_diagnostics()), Ok(Some(sample_gpu_pending())));
+    let page = page
+        .downcast::<gtk4::Box>()
+        .expect("gpu page should be a vertical box");
+
+    assert_eq!(page.orientation(), gtk4::Orientation::Vertical);
+    assert_eq!(page.spacing(), 12);
+    assert_eq!(page.observe_children().n_items(), 3);
+
     let page = gtk_shell::dashboard_page(
         Ok(sample_status()),
         Ok(sample_diagnostics()),
@@ -202,6 +211,14 @@ fn status_and_error_pages_build_under_headless_display() {
 
     assert_eq!(page.orientation(), gtk4::Orientation::Vertical);
     assert_eq!(page.observe_children().n_items(), 2);
+
+    let page = gtk_shell::gpu_page(Err(anyhow::anyhow!("daemon unavailable")), Ok(None));
+    let page = page
+        .downcast::<gtk4::Box>()
+        .expect("gpu error page should be a vertical box");
+
+    assert_eq!(page.orientation(), gtk4::Orientation::Vertical);
+    assert_eq!(page.observe_children().n_items(), 2);
 }
 
 #[test]
@@ -210,6 +227,7 @@ fn dashboard_page_name_normalization_accepts_known_pages_only() {
         gtk_shell::normalize_dashboard_page_name(Some("battery")),
         "battery"
     );
+    assert_eq!(gtk_shell::normalize_dashboard_page_name(Some("gpu")), "gpu");
     assert_eq!(
         gtk_shell::normalize_dashboard_page_name(Some("not-a-page")),
         "status"
@@ -218,7 +236,7 @@ fn dashboard_page_name_normalization_accepts_known_pages_only() {
 }
 
 #[gtk4::test]
-fn profiles_and_battery_pages_render_quick_apply_controls() {
+fn dashboard_pages_render_quick_apply_and_gpu_controls() {
     init_gtk();
 
     let profiles = gtk_shell::profiles_page(Ok(sample_diagnostics()))
@@ -227,6 +245,9 @@ fn profiles_and_battery_pages_render_quick_apply_controls() {
     let battery = gtk_shell::battery_page(Ok(sample_diagnostics()))
         .downcast::<gtk4::Box>()
         .expect("battery page should be a vertical box");
+    let gpu = gtk_shell::gpu_page(Ok(sample_diagnostics()), Ok(Some(sample_gpu_pending())))
+        .downcast::<gtk4::Box>()
+        .expect("gpu page should be a vertical box");
 
     let profile_text = collect_widget_text(&profiles.clone().upcast());
     assert!(profile_text
@@ -251,6 +272,20 @@ fn profiles_and_battery_pages_render_quick_apply_controls() {
     assert!(battery_text
         .iter()
         .any(|text| text == "No write attempted yet."));
+
+    let gpu_text = collect_widget_text(&gpu.clone().upcast());
+    assert!(gpu_text.iter().any(|text| text == "GPU Mode"));
+    assert!(gpu_text
+        .iter()
+        .any(|text| text == "Guided GPU switch planning"));
+    assert!(gpu_text.iter().any(|text| text == "Current mode"));
+    assert!(gpu_text.iter().any(|text| text == "Pending reboot"));
+    assert!(gpu_text.iter().any(|text| text == "Target mode"));
+    assert!(gpu_text.iter().any(|text| text == "Preview plan"));
+    assert!(gpu_text.iter().any(|text| text == "Record pending"));
+    assert!(gpu_text.iter().any(|text| text == "Clear pending"));
+    assert!(gpu_text.iter().any(|text| text == "Plan preview"));
+    assert!(gpu_text.iter().any(|text| text == "Recovery guidance"));
 
     let appearance = gtk_shell::appearance_page(Ok(sample_diagnostics()))
         .downcast::<gtk4::Box>()
@@ -284,12 +319,13 @@ fn profiles_and_battery_pages_render_quick_apply_controls() {
 }
 
 #[gtk4::test]
-fn profiles_and_battery_pages_disable_quick_apply_when_capability_is_unavailable() {
+fn dashboard_pages_disable_quick_apply_when_capabilities_are_unavailable() {
     init_gtk();
 
     let mut diagnostics = sample_diagnostics();
     diagnostics.raw_probe_report.platform_profile = None;
     diagnostics.raw_probe_report.battery_charge_type = None;
+    diagnostics.raw_probe_report.gpu = None;
     diagnostics.raw_probe_report.leds.clear();
     diagnostics.raw_probe_report.ideapad_toggles.clear();
 
@@ -299,6 +335,9 @@ fn profiles_and_battery_pages_disable_quick_apply_when_capability_is_unavailable
     let battery = gtk_shell::battery_page(Ok(diagnostics.clone()))
         .downcast::<gtk4::Box>()
         .expect("battery page should be a vertical box");
+    let gpu = gtk_shell::gpu_page(Ok(diagnostics.clone()), Ok(None))
+        .downcast::<gtk4::Box>()
+        .expect("gpu page should be a vertical box");
 
     let profile_text = collect_widget_text(&profiles.clone().upcast());
     assert!(profile_text
@@ -317,6 +356,15 @@ fn profiles_and_battery_pages_disable_quick_apply_when_capability_is_unavailable
         .iter()
         .any(|text| text == "unavailable - quick apply disabled"));
     assert!(!battery_text.iter().any(|text| text == "Apply charge type"));
+
+    let gpu_text = collect_widget_text(&gpu.clone().upcast());
+    assert!(gpu_text
+        .iter()
+        .any(|text| text == "Guided GPU switch planning"));
+    assert!(gpu_text
+        .iter()
+        .any(|text| text == "unavailable - envycontrol was not detected"));
+    assert!(!gpu_text.iter().any(|text| text == "Preview plan"));
 
     let appearance = gtk_shell::appearance_page(Ok(diagnostics))
         .downcast::<gtk4::Box>()
@@ -433,14 +481,24 @@ fn sample_diagnostics() -> DiagnosticsBundle {
         },
         ..Default::default()
     };
-    report.capabilities = vec![Capability {
-        id: "platform_profile".to_owned(),
-        label: "Platform profile".to_owned(),
-        status: CapabilityStatus::ProbeOnly,
-        risk: RiskLevel::ReadOnly,
-        evidence: vec![],
-        details: serde_json::Value::Null,
-    }];
+    report.capabilities = vec![
+        Capability {
+            id: "gpu".to_owned(),
+            label: "GPU mode".to_owned(),
+            status: CapabilityStatus::ProbeOnly,
+            risk: RiskLevel::ReadOnly,
+            evidence: vec![],
+            details: serde_json::Value::Null,
+        },
+        Capability {
+            id: "platform_profile".to_owned(),
+            label: "Platform profile".to_owned(),
+            status: CapabilityStatus::ProbeOnly,
+            risk: RiskLevel::ReadOnly,
+            evidence: vec![],
+            details: serde_json::Value::Null,
+        },
+    ];
     report.platform_profile = Some(PlatformProfileCapability {
         current: Some("balanced".to_owned()),
         choices: vec![
@@ -460,6 +518,11 @@ fn sample_diagnostics() -> DiagnosticsBundle {
         ],
         path: "/tmp/fixture/sys/class/power_supply/BAT0/charge_control_end_threshold".to_owned(),
         choices_path: "/tmp/fixture/sys/class/power_supply/BAT0/charge_types".to_owned(),
+    });
+    report.gpu = Some(GpuCapability {
+        provider: "envycontrol".to_owned(),
+        status: CapabilityStatus::ProbeOnly,
+        mode: Some("hybrid".to_owned()),
     });
     report.telemetry.battery = Some(BatteryTelemetry {
         name: "BAT0".to_owned(),

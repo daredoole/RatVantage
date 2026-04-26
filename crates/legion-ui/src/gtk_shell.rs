@@ -5,8 +5,9 @@ use crate::{
 use adw::prelude::*;
 use anyhow::{anyhow, Result};
 use legion_common::{
-    BatteryChargeTypeCapability, FanCurveSnapshot, GpuModePending, IdeapadToggleCapability,
-    LedCapability, PlatformProfileCapability, WriteExecutionResult, WriteExecutionStatus,
+    BatteryChargeTypeCapability, FanCurveSnapshot, GpuCapability, GpuModePending,
+    IdeapadToggleCapability, LedCapability, PlatformProfileCapability, WriteDryRunPlan,
+    WriteExecutionResult, WriteExecutionStatus,
 };
 use std::thread_local;
 use std::{
@@ -19,6 +20,7 @@ use std::{
 const AUTO_REFRESH_INTERVAL: Duration = Duration::from_secs(30);
 const RESUME_REFRESH_GAP: Duration = Duration::from_secs(90);
 const DEFAULT_DASHBOARD_PAGE: &str = "status";
+const GPU_MODE_CHOICES: &[&str] = &["integrated", "hybrid", "nvidia"];
 
 type SnapshotLoader = Rc<dyn Fn() -> Result<RuntimeSnapshot>>;
 
@@ -122,7 +124,7 @@ pub fn dashboard_page(
     stack.set_hexpand(true);
     stack.set_vexpand(true);
     stack.add_titled(
-        &scrollable_dashboard_page(status_page(status, gpu_pending)),
+        &scrollable_dashboard_page(status_page(status, clone_result(&gpu_pending))),
         Some("status"),
         "Status",
     );
@@ -135,6 +137,14 @@ pub fn dashboard_page(
         &scrollable_dashboard_page(battery_page(clone_result(&diagnostics))),
         Some("battery"),
         "Battery",
+    );
+    stack.add_titled(
+        &scrollable_dashboard_page(gpu_page(
+            clone_result(&diagnostics),
+            clone_result(&gpu_pending),
+        )),
+        Some("gpu"),
+        "GPU",
     );
     stack.add_titled(
         &scrollable_dashboard_page(fans_page(clone_result(&diagnostics), fan_snapshot)),
@@ -374,7 +384,7 @@ fn snapshot_page(snapshot: Result<RuntimeSnapshot>, initial_page: Option<&str>) 
 
 pub fn normalize_dashboard_page_name(page: Option<&str>) -> String {
     match page {
-        Some("status" | "profiles" | "battery" | "fans" | "appearance" | "diagnostics") => {
+        Some("status" | "profiles" | "battery" | "gpu" | "fans" | "appearance" | "diagnostics") => {
             page.unwrap().to_owned()
         }
         _ => DEFAULT_DASHBOARD_PAGE.to_owned(),
@@ -423,6 +433,24 @@ pub fn battery_page(diagnostics: Result<DiagnosticsBundle>) -> gtk4::Widget {
 
     match diagnostics {
         Ok(bundle) => append_battery(&page, &bundle),
+        Err(error) => append_error(&page, &error),
+    }
+
+    page.upcast()
+}
+
+pub fn gpu_page(
+    diagnostics: Result<DiagnosticsBundle>,
+    gpu_pending: Result<Option<GpuModePending>>,
+) -> gtk4::Widget {
+    let page = gtk4::Box::new(gtk4::Orientation::Vertical, 12);
+    page.set_margin_top(24);
+    page.set_margin_bottom(24);
+    page.set_margin_start(24);
+    page.set_margin_end(24);
+
+    match diagnostics {
+        Ok(bundle) => append_gpu(&page, &bundle, gpu_pending),
         Err(error) => append_error(&page, &error),
     }
 
@@ -617,6 +645,41 @@ fn append_battery(page: &gtk4::Box, bundle: &DiagnosticsBundle) {
         telemetry.add(&info_row("Battery telemetry", "unavailable"));
     }
     page.append(&telemetry);
+}
+
+fn append_gpu(
+    page: &gtk4::Box,
+    bundle: &DiagnosticsBundle,
+    gpu_pending: Result<Option<GpuModePending>>,
+) {
+    let title = gtk4::Label::new(Some("GPU"));
+    title.add_css_class("title-2");
+    title.set_xalign(0.0);
+    page.append(&title);
+
+    let mode = adw::PreferencesGroup::new();
+    mode.set_title("GPU Mode");
+    if let Some(gpu) = &bundle.raw_probe_report.gpu {
+        mode.add(&info_row("Provider", &gpu.provider));
+        mode.add(&info_row(
+            "Capability status",
+            capability_status_label(gpu.status),
+        ));
+        mode.add(&info_row(
+            "Current mode",
+            gpu.mode.as_deref().unwrap_or("unknown"),
+        ));
+    } else {
+        mode.add(&info_row("GPU mode", "unavailable"));
+    }
+    let pending_row = info_row("Pending reboot", &render_gpu_pending_row(gpu_pending));
+    mode.add(&pending_row);
+    page.append(&mode);
+
+    page.append(&build_gpu_mode_controls(
+        bundle.raw_probe_report.gpu.as_ref(),
+        pending_row,
+    ));
 }
 
 fn append_fans(
@@ -904,6 +967,196 @@ fn info_row(title: &str, value: &str) -> adw::ActionRow {
         .subtitle(value)
         .selectable(false)
         .build()
+}
+
+fn selected_dropdown_value(chooser: &gtk4::DropDown) -> Option<String> {
+    chooser
+        .selected_item()
+        .and_then(|item| item.downcast::<gtk4::StringObject>().ok())
+        .map(|selected| selected.string().to_string())
+}
+
+fn render_gpu_plan_summary(plan: &WriteDryRunPlan) -> String {
+    format!(
+        "{} -> {} via {} - reboot required {} - read-back required {}",
+        plan.previous_value,
+        plan.requested_value,
+        plan.path,
+        plan.reboot_required,
+        plan.readback_required
+    )
+}
+
+fn render_gpu_recovery_summary(plan: &WriteDryRunPlan) -> String {
+    if plan.rollback_instructions.is_empty() {
+        "No rollback instructions were provided by the daemon.".to_owned()
+    } else {
+        plan.rollback_instructions.join(" ")
+    }
+}
+
+fn build_gpu_mode_controls(
+    capability: Option<&GpuCapability>,
+    pending_row: adw::ActionRow,
+) -> adw::PreferencesGroup {
+    let group = adw::PreferencesGroup::new();
+    group.set_title("Guided GPU switch planning");
+
+    let Some(capability) = capability.filter(|capability| capability.provider == "envycontrol")
+    else {
+        group.add(&info_row(
+            "GPU mode planning",
+            "unavailable - envycontrol was not detected",
+        ));
+        return group;
+    };
+
+    let model = gtk4::StringList::new(GPU_MODE_CHOICES);
+    let chooser = gtk4::DropDown::builder().model(&model).build();
+    chooser.set_hexpand(true);
+    chooser.set_selected(
+        GPU_MODE_CHOICES
+            .iter()
+            .position(|mode| capability.mode.as_deref() == Some(*mode))
+            .unwrap_or(0) as u32,
+    );
+    chooser.set_sensitive(!GPU_MODE_CHOICES.is_empty());
+
+    let preview = gtk4::Button::with_label("Preview plan");
+    let record_pending = gtk4::Button::with_label("Record pending");
+    let clear_pending = gtk4::Button::with_label("Clear pending");
+
+    let chooser_row = adw::ActionRow::builder()
+        .title("Target mode")
+        .subtitle(
+            "Preview the validated EnvyControl plan first. Dashboard execution stays disabled until live validation evidence exists.",
+        )
+        .selectable(false)
+        .build();
+    chooser_row.add_suffix(&chooser);
+    chooser_row.add_suffix(&preview);
+    group.add(&chooser_row);
+
+    let pending_controls = adw::ActionRow::builder()
+        .title("Pending reboot state")
+        .subtitle(
+            "Record the requested mode after an external switch starts requiring a reboot, or clear it after reboot and verification.",
+        )
+        .selectable(false)
+        .build();
+    pending_controls.add_suffix(&record_pending);
+    pending_controls.add_suffix(&clear_pending);
+    group.add(&pending_controls);
+
+    let plan_row = adw::ActionRow::builder()
+        .title("Plan preview")
+        .subtitle("No dry-run plan requested yet.")
+        .selectable(false)
+        .build();
+    group.add(&plan_row);
+
+    let recovery_row = adw::ActionRow::builder()
+        .title("Recovery guidance")
+        .subtitle(
+            "Preview a plan to see the rollback path. GPU mode changes remain dry-run only in the dashboard for now.",
+        )
+        .selectable(false)
+        .build();
+    group.add(&recovery_row);
+
+    let chooser_for_preview = chooser.clone();
+    let plan_row_for_preview = plan_row.clone();
+    let recovery_row_for_preview = recovery_row.clone();
+    preview.connect_clicked(move |_| {
+        let Some(requested) = selected_dropdown_value(&chooser_for_preview) else {
+            plan_row_for_preview.set_title("Plan preview failed");
+            plan_row_for_preview.set_subtitle("No target GPU mode was selected.");
+            recovery_row_for_preview.set_subtitle(
+                "Pick one of the detected GPU modes before requesting a dry-run plan.",
+            );
+            return;
+        };
+
+        match LegionControlClient::system()
+            .and_then(|client| client.plan_gpu_mode_write(&requested))
+        {
+            Ok(plan) => {
+                plan_row_for_preview.set_title("Plan preview ready");
+                plan_row_for_preview.set_subtitle(&render_gpu_plan_summary(&plan));
+                recovery_row_for_preview.set_subtitle(&render_gpu_recovery_summary(&plan));
+            }
+            Err(error) => {
+                plan_row_for_preview.set_title("Plan preview failed");
+                plan_row_for_preview
+                    .set_subtitle(&format!("Dry-run planning could not be completed: {error}"));
+                recovery_row_for_preview.set_subtitle(
+                    "The daemon rejected this request or the GPU capability was not available.",
+                );
+            }
+        }
+    });
+
+    let chooser_for_record = chooser.clone();
+    let pending_row_for_record = pending_row.clone();
+    let plan_row_for_record = plan_row.clone();
+    let recovery_row_for_record = recovery_row.clone();
+    record_pending.connect_clicked(move |_| {
+        let Some(requested) = selected_dropdown_value(&chooser_for_record) else {
+            plan_row_for_record.set_title("Pending reboot not recorded");
+            plan_row_for_record.set_subtitle("No target GPU mode was selected.");
+            return;
+        };
+
+        match LegionControlClient::system()
+            .and_then(|client| client.set_gpu_mode_pending(&requested))
+        {
+            Ok(pending) => {
+                pending_row_for_record
+                    .set_subtitle(&render_gpu_pending_row(Ok(Some(pending.clone()))));
+                plan_row_for_record.set_title("Pending reboot recorded");
+                plan_row_for_record.set_subtitle(
+                    "Recorded the requested GPU mode in app state. Clear it after reboot and verification.",
+                );
+                recovery_row_for_record.set_subtitle(
+                    "The pending reboot banner now reflects the requested mode. This does not perform the hardware switch itself.",
+                );
+                let _ = request_dashboard_refresh();
+            }
+            Err(error) => {
+                plan_row_for_record.set_title("Pending reboot not recorded");
+                plan_row_for_record.set_subtitle(&format!("App-state update failed: {error}"));
+            }
+        }
+    });
+
+    let pending_row_for_clear = pending_row.clone();
+    let plan_row_for_clear = plan_row.clone();
+    let recovery_row_for_clear = recovery_row.clone();
+    clear_pending.connect_clicked(move |_| {
+        match LegionControlClient::system().and_then(|client| client.clear_gpu_mode_pending()) {
+            Ok(previous) => {
+                pending_row_for_clear.set_subtitle("none");
+                plan_row_for_clear.set_title("Pending reboot cleared");
+                plan_row_for_clear.set_subtitle(match previous {
+                    Some(previous) if previous.reboot_required => {
+                        "Cleared the app-state reboot marker after verification."
+                    }
+                    Some(_) => "Cleared the app-state GPU marker.",
+                    None => "No pending reboot marker was set.",
+                });
+                recovery_row_for_clear.set_subtitle(
+                    "If graphics still do not come back after reboot, use the rollback instructions from the dry-run plan in a TTY or rescue session.",
+                );
+                let _ = request_dashboard_refresh();
+            }
+            Err(error) => {
+                plan_row_for_clear.set_title("Pending reboot not cleared");
+                plan_row_for_clear.set_subtitle(&format!("App-state update failed: {error}"));
+            }
+        }
+    });
+
+    group
 }
 
 fn build_platform_profile_controls(
