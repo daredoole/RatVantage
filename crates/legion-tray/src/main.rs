@@ -25,8 +25,14 @@ fn main() -> Result<()> {
             Some(address) => LegionControlClient::address(&address)?,
             None => LegionControlClient::system()?,
         };
-        let summary =
-            TraySummary::from_status_and_report(&client.status()?, &client.raw_probe_report()?);
+        let status = client.status()?;
+        let report = client.raw_probe_report()?;
+        let summary = TraySummary::from_status_and_report(
+            &status,
+            &report,
+            client.gpu_mode_pending()?.as_ref(),
+            client.last_known_good_fan_curve()?.as_ref(),
+        );
         if args.tooltip {
             println!("{}", summary.tooltip);
             return Ok(());

@@ -4,6 +4,7 @@ use crate::{
 };
 use adw::prelude::*;
 use anyhow::{anyhow, Result};
+use legion_common::{FanCurveSnapshot, GpuModePending};
 
 pub fn run() -> Result<()> {
     let app = adw::Application::builder()
@@ -14,6 +15,10 @@ pub fn run() -> Result<()> {
         let status = LegionControlClient::system().and_then(|client| client.status());
         let diagnostics =
             LegionControlClient::system().and_then(|client| client.diagnostics_bundle());
+        let gpu_pending =
+            LegionControlClient::system().and_then(|client| client.gpu_mode_pending());
+        let fan_snapshot =
+            LegionControlClient::system().and_then(|client| client.last_known_good_fan_curve());
         let window = adw::ApplicationWindow::builder()
             .application(app)
             .title("Legion Control")
@@ -23,7 +28,12 @@ pub fn run() -> Result<()> {
 
         let root = gtk4::Box::new(gtk4::Orientation::Vertical, 0);
         root.append(&adw::HeaderBar::new());
-        root.append(&dashboard_page(status, diagnostics));
+        root.append(&dashboard_page(
+            status,
+            diagnostics,
+            gpu_pending,
+            fan_snapshot,
+        ));
         window.set_content(Some(&root));
         window.present();
     });
@@ -35,35 +45,29 @@ pub fn run() -> Result<()> {
 pub fn dashboard_page(
     status: Result<UiStatus>,
     diagnostics: Result<DiagnosticsBundle>,
+    gpu_pending: Result<Option<GpuModePending>>,
+    fan_snapshot: Result<Option<FanCurveSnapshot>>,
 ) -> gtk4::Widget {
-    let (profiles, battery, fans, appearance, diagnostics) = match diagnostics {
-        Ok(bundle) => (
-            Ok(bundle.clone()),
-            Ok(bundle.clone()),
-            Ok(bundle.clone()),
-            Ok(bundle.clone()),
-            Ok(bundle),
-        ),
-        Err(error) => {
-            let message = error.to_string();
-            (
-                Err(anyhow!(message.clone())),
-                Err(anyhow!(message.clone())),
-                Err(anyhow!(message.clone())),
-                Err(anyhow!(message.clone())),
-                Err(anyhow!(message)),
-            )
-        }
-    };
-
     let stack = gtk4::Stack::new();
     stack.set_vexpand(true);
-    stack.add_titled(&status_page(status), Some("status"), "Status");
-    stack.add_titled(&profiles_page(profiles), Some("profiles"), "Profiles");
-    stack.add_titled(&battery_page(battery), Some("battery"), "Battery");
-    stack.add_titled(&fans_page(fans), Some("fans"), "Fans");
+    stack.add_titled(&status_page(status, gpu_pending), Some("status"), "Status");
     stack.add_titled(
-        &appearance_page(appearance),
+        &profiles_page(clone_result(&diagnostics)),
+        Some("profiles"),
+        "Profiles",
+    );
+    stack.add_titled(
+        &battery_page(clone_result(&diagnostics)),
+        Some("battery"),
+        "Battery",
+    );
+    stack.add_titled(
+        &fans_page(clone_result(&diagnostics), fan_snapshot),
+        Some("fans"),
+        "Fans",
+    );
+    stack.add_titled(
+        &appearance_page(clone_result(&diagnostics)),
         Some("appearance"),
         "Appearance",
     );
@@ -86,7 +90,10 @@ pub fn dashboard_page(
     page.upcast()
 }
 
-pub fn status_page(status: Result<UiStatus>) -> gtk4::Widget {
+pub fn status_page(
+    status: Result<UiStatus>,
+    gpu_pending: Result<Option<GpuModePending>>,
+) -> gtk4::Widget {
     let page = gtk4::Box::new(gtk4::Orientation::Vertical, 12);
     page.set_margin_top(24);
     page.set_margin_bottom(24);
@@ -94,7 +101,7 @@ pub fn status_page(status: Result<UiStatus>) -> gtk4::Widget {
     page.set_margin_end(24);
 
     match status {
-        Ok(status) => append_status(&page, &status),
+        Ok(status) => append_status(&page, &status, gpu_pending),
         Err(error) => append_error(&page, &error),
     }
 
@@ -131,7 +138,10 @@ pub fn battery_page(diagnostics: Result<DiagnosticsBundle>) -> gtk4::Widget {
     page.upcast()
 }
 
-pub fn fans_page(diagnostics: Result<DiagnosticsBundle>) -> gtk4::Widget {
+pub fn fans_page(
+    diagnostics: Result<DiagnosticsBundle>,
+    fan_snapshot: Result<Option<FanCurveSnapshot>>,
+) -> gtk4::Widget {
     let page = gtk4::Box::new(gtk4::Orientation::Vertical, 12);
     page.set_margin_top(24);
     page.set_margin_bottom(24);
@@ -139,7 +149,7 @@ pub fn fans_page(diagnostics: Result<DiagnosticsBundle>) -> gtk4::Widget {
     page.set_margin_end(24);
 
     match diagnostics {
-        Ok(bundle) => append_fans(&page, &bundle),
+        Ok(bundle) => append_fans(&page, &bundle, fan_snapshot),
         Err(error) => append_error(&page, &error),
     }
 
@@ -176,7 +186,7 @@ pub fn diagnostics_page(diagnostics: Result<DiagnosticsBundle>) -> gtk4::Widget 
     page.upcast()
 }
 
-fn append_status(page: &gtk4::Box, status: &UiStatus) {
+fn append_status(page: &gtk4::Box, status: &UiStatus, gpu_pending: Result<Option<GpuModePending>>) {
     let title = gtk4::Label::new(Some("Detected Hardware"));
     title.add_css_class("title-2");
     title.set_xalign(0.0);
@@ -192,6 +202,10 @@ fn append_status(page: &gtk4::Box, status: &UiStatus) {
     group.add(&info_row(
         "Capabilities",
         &status.capability_count().to_string(),
+    ));
+    group.add(&info_row(
+        "GPU pending reboot",
+        &render_gpu_pending_row(gpu_pending),
     ));
     page.append(&group);
 
@@ -289,7 +303,11 @@ fn append_battery(page: &gtk4::Box, bundle: &DiagnosticsBundle) {
     page.append(&telemetry);
 }
 
-fn append_fans(page: &gtk4::Box, bundle: &DiagnosticsBundle) {
+fn append_fans(
+    page: &gtk4::Box,
+    bundle: &DiagnosticsBundle,
+    fan_snapshot: Result<Option<FanCurveSnapshot>>,
+) {
     let title = gtk4::Label::new(Some("Fans"));
     title.add_css_class("title-2");
     title.set_xalign(0.0);
@@ -331,6 +349,10 @@ fn append_fans(page: &gtk4::Box, bundle: &DiagnosticsBundle) {
             ));
         }
     }
+    curves.add(&info_row(
+        "Last known good",
+        &render_fan_snapshot_row(fan_snapshot),
+    ));
     page.append(&curves);
 
     let presets = adw::PreferencesGroup::new();
@@ -458,6 +480,38 @@ fn append_diagnostics(page: &gtk4::Box, bundle: &DiagnosticsBundle) {
         .child(&text)
         .build();
     page.append(&scroller);
+}
+
+fn clone_result<T: Clone>(result: &Result<T>) -> Result<T> {
+    match result {
+        Ok(value) => Ok(value.clone()),
+        Err(error) => Err(anyhow!(error.to_string())),
+    }
+}
+
+fn render_gpu_pending_row(pending: Result<Option<GpuModePending>>) -> String {
+    match pending {
+        Ok(Some(pending)) => {
+            let previous = pending.previous_mode.as_deref().unwrap_or("unknown");
+            format!(
+                "{} - previous {} - reboot required {}",
+                pending.requested_mode, previous, pending.reboot_required
+            )
+        }
+        Ok(None) => "none".to_owned(),
+        Err(error) => format!("state unavailable - {error}"),
+    }
+}
+
+fn render_fan_snapshot_row(snapshot: Result<Option<FanCurveSnapshot>>) -> String {
+    match snapshot {
+        Ok(Some(snapshot)) => {
+            let path = snapshot.path.as_deref().unwrap_or("unknown");
+            format!("{path} - {} captured values", snapshot.points.len())
+        }
+        Ok(None) => "none captured".to_owned(),
+        Err(error) => format!("state unavailable - {error}"),
+    }
 }
 
 fn append_error(page: &gtk4::Box, error: &anyhow::Error) {

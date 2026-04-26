@@ -1,5 +1,14 @@
-use legion_common::{CapabilityRegistry, CapabilityStatus, HwmonSensor};
+use legion_common::{
+    CapabilityRegistry, CapabilityStatus, FanCurveSnapshot, GpuModePending, HwmonSensor,
+};
 use legion_control_ui::UiStatus;
+
+struct TooltipTelemetry<'a> {
+    platform_profile: Option<&'a str>,
+    fan_rpm: Option<&'a str>,
+    gpu_pending_reboot: Option<&'a str>,
+    fan_curve_snapshot: Option<&'a str>,
+}
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TraySummary {
@@ -11,6 +20,8 @@ pub struct TraySummary {
     pub capability_ids: Vec<String>,
     pub platform_profile: Option<String>,
     pub fan_rpm: Option<String>,
+    pub gpu_pending_reboot: Option<String>,
+    pub fan_curve_snapshot: Option<String>,
 }
 
 impl TraySummary {
@@ -34,8 +45,12 @@ impl TraySummary {
                 &status.hardware.product_version,
                 available_capability_count,
                 missing_capability_count,
-                None,
-                None,
+                TooltipTelemetry {
+                    platform_profile: None,
+                    fan_rpm: None,
+                    gpu_pending_reboot: None,
+                    fan_curve_snapshot: None,
+                },
             ),
             capability_count: status.capability_count(),
             available_capability_count,
@@ -43,23 +58,48 @@ impl TraySummary {
             capability_ids,
             platform_profile: None,
             fan_rpm: None,
+            gpu_pending_reboot: None,
+            fan_curve_snapshot: None,
         }
     }
 
-    pub fn from_status_and_report(status: &UiStatus, report: &CapabilityRegistry) -> Self {
+    pub fn from_status_and_report(
+        status: &UiStatus,
+        report: &CapabilityRegistry,
+        gpu_pending: Option<&GpuModePending>,
+        fan_snapshot: Option<&FanCurveSnapshot>,
+    ) -> Self {
         let mut summary = Self::from_status(status);
         summary.platform_profile = report
             .platform_profile
             .as_ref()
             .and_then(|profile| profile.current.clone());
         summary.fan_rpm = fan_rpm_label(&report.telemetry.sensors);
+        summary.gpu_pending_reboot = gpu_pending.map(|pending| {
+            let previous = pending.previous_mode.as_deref().unwrap_or("unknown");
+            format!(
+                "{} previous={} reboot_required={}",
+                pending.requested_mode, previous, pending.reboot_required
+            )
+        });
+        summary.fan_curve_snapshot = fan_snapshot.map(|snapshot| {
+            format!(
+                "{} values from {}",
+                snapshot.points.len(),
+                snapshot.curve_id
+            )
+        });
         summary.tooltip = capability_tooltip(
             &status.hardware.product_name,
             &status.hardware.product_version,
             summary.available_capability_count,
             summary.missing_capability_count,
-            summary.platform_profile.as_deref(),
-            summary.fan_rpm.as_deref(),
+            TooltipTelemetry {
+                platform_profile: summary.platform_profile.as_deref(),
+                fan_rpm: summary.fan_rpm.as_deref(),
+                gpu_pending_reboot: summary.gpu_pending_reboot.as_deref(),
+                fan_curve_snapshot: summary.fan_curve_snapshot.as_deref(),
+            },
         );
         summary
     }
@@ -83,6 +123,12 @@ impl TraySummary {
         if let Some(fan_rpm) = &self.fan_rpm {
             lines.push(format!("fan_rpm={fan_rpm}"));
         }
+        if let Some(gpu_pending_reboot) = &self.gpu_pending_reboot {
+            lines.push(format!("gpu_pending_reboot={gpu_pending_reboot}"));
+        }
+        if let Some(fan_curve_snapshot) = &self.fan_curve_snapshot {
+            lines.push(format!("last_known_good_fan_curve={fan_curve_snapshot}"));
+        }
         lines
     }
 }
@@ -92,15 +138,27 @@ fn capability_tooltip(
     product_version: &str,
     available_count: usize,
     missing_count: usize,
-    platform_profile: Option<&str>,
-    fan_rpm: Option<&str>,
+    telemetry_state: TooltipTelemetry<'_>,
 ) -> String {
-    let telemetry = match (platform_profile, fan_rpm) {
-        (Some(profile), Some(fan_rpm)) => format!("profile {profile}, fan {fan_rpm}, "),
-        (Some(profile), None) => format!("profile {profile}, "),
-        (None, Some(fan_rpm)) => format!("fan {fan_rpm}, "),
-        (None, None) => String::new(),
+    let mut telemetry = Vec::new();
+    if let Some(profile) = telemetry_state.platform_profile {
+        telemetry.push(format!("profile {profile}"));
+    }
+    if let Some(fan_rpm) = telemetry_state.fan_rpm {
+        telemetry.push(format!("fan {fan_rpm}"));
+    }
+    if let Some(gpu_pending_reboot) = telemetry_state.gpu_pending_reboot {
+        telemetry.push(format!("pending reboot {gpu_pending_reboot}"));
+    }
+    if let Some(fan_curve_snapshot) = telemetry_state.fan_curve_snapshot {
+        telemetry.push(format!("saved fan curve {fan_curve_snapshot}"));
+    }
+    let telemetry = if telemetry.is_empty() {
+        String::new()
+    } else {
+        format!("{}, ", telemetry.join(", "))
     };
+
     if missing_count == 0 {
         format!(
             "{product_name} {product_version}: {telemetry}{available_count} available capabilities"
@@ -130,8 +188,8 @@ fn fan_rpm_label(sensors: &[HwmonSensor]) -> Option<String> {
 #[cfg(test)]
 mod tests {
     use legion_common::{
-        Capability, CapabilityRegistry, CapabilityStatus, HardwareSummary, HwmonSensor,
-        PlatformProfileCapability, RiskLevel,
+        Capability, CapabilityRegistry, CapabilityStatus, FanCurvePointSnapshot, FanCurveSnapshot,
+        GpuModePending, HardwareSummary, HwmonSensor, PlatformProfileCapability, RiskLevel,
     };
     use legion_control_ui::UiStatus;
 
@@ -242,7 +300,7 @@ mod tests {
             ..Default::default()
         };
 
-        let summary = TraySummary::from_status_and_report(&status, &report);
+        let summary = TraySummary::from_status_and_report(&status, &report, None, None);
 
         assert_eq!(
             summary.tooltip,
@@ -256,6 +314,63 @@ mod tests {
         assert!(summary
             .render_lines()
             .contains(&"fan_rpm=2410 RPM".to_owned()));
+    }
+
+    #[test]
+    fn tray_summary_tooltip_includes_pending_gpu_and_saved_fan_curve() {
+        let status = UiStatus::from_parts(
+            HardwareSummary {
+                sysfs_root: "/tmp/fixture".to_owned(),
+                vendor: Some("LENOVO".to_owned()),
+                product_name: Some("82WM".to_owned()),
+                product_version: Some("Legion Pro 5 16ARX8".to_owned()),
+                product_sku: None,
+            },
+            vec![capability("platform_profile", "Platform profiles")],
+        )
+        .unwrap();
+        let report = CapabilityRegistry {
+            platform_profile: Some(PlatformProfileCapability {
+                current: Some("balanced".to_owned()),
+                choices: vec!["balanced".to_owned()],
+                path: "/sys/firmware/acpi/platform_profile".to_owned(),
+                choices_path: "/sys/firmware/acpi/platform_profile_choices".to_owned(),
+            }),
+            ..Default::default()
+        };
+        let gpu_pending = GpuModePending {
+            requested_mode: "hybrid".to_owned(),
+            previous_mode: Some("nvidia".to_owned()),
+            reboot_required: true,
+        };
+        let fan_snapshot = FanCurveSnapshot {
+            curve_id: "legion_hwmon".to_owned(),
+            path: Some("/tmp/fixture/sys/class/hwmon/hwmon7".to_owned()),
+            points: vec![FanCurvePointSnapshot {
+                path: "/tmp/fixture/sys/class/hwmon/hwmon7/pwm1_auto_point1_temp".to_owned(),
+                value: "42000".to_owned(),
+            }],
+        };
+
+        let summary = TraySummary::from_status_and_report(
+            &status,
+            &report,
+            Some(&gpu_pending),
+            Some(&fan_snapshot),
+        );
+
+        assert!(summary
+            .tooltip
+            .contains("pending reboot hybrid previous=nvidia reboot_required=true"));
+        assert!(summary
+            .tooltip
+            .contains("saved fan curve 1 values from legion_hwmon"));
+        assert!(summary.render_lines().contains(
+            &"gpu_pending_reboot=hybrid previous=nvidia reboot_required=true".to_owned()
+        ));
+        assert!(summary
+            .render_lines()
+            .contains(&"last_known_good_fan_curve=1 values from legion_hwmon".to_owned()));
     }
 
     fn capability(id: &str, label: &str) -> Capability {

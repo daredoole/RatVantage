@@ -32,6 +32,7 @@ Pre-alpha implementation scaffold exists:
 - GPU dry-run plans include reboot-required metadata and rollback guidance; execution remains disabled.
 - App-state-only GPU pending-reboot tracking in `/var/lib/legion-control/state.toml`; no hardware writes are performed.
 - App-state-only last-known-good fan curve capture in the same TOML state file; no fan writes are performed.
+- Tray/status output and GTK read-only pages surface pending GPU reboot state and saved fan curve snapshots.
 - Local CI script and GitHub Actions CI.
 
 No hardware write path exists yet. Write support must wait for validators, polkit policy, rollback behavior, and manual target-machine validation.

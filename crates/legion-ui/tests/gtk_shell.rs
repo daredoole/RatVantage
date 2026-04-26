@@ -3,8 +3,9 @@
 use adw::prelude::*;
 use legion_common::{
     BatteryChargeTypeCapability, BatteryTelemetry, Capability, CapabilityRegistry,
-    CapabilityStatus, FanCurveCapability, HardwareSummary, HwmonSensor, IdeapadToggleCapability,
-    LedCapability, PlatformProfileCapability, RiskLevel,
+    CapabilityStatus, FanCurveCapability, FanCurvePointSnapshot, FanCurveSnapshot, GpuModePending,
+    HardwareSummary, HwmonSensor, IdeapadToggleCapability, LedCapability,
+    PlatformProfileCapability, RiskLevel,
 };
 use legion_control_ui::{gtk_shell, DiagnosticsBundle, UiStatus};
 
@@ -14,7 +15,7 @@ fn status_and_error_pages_build_under_headless_display() {
     std::env::set_var("GTK_A11Y", "none");
     adw::init().expect("GTK/libadwaita must initialize under Xvfb");
 
-    let page = gtk_shell::status_page(Ok(sample_status()));
+    let page = gtk_shell::status_page(Ok(sample_status()), Ok(None));
     let page = page
         .downcast::<gtk4::Box>()
         .expect("status page should be a vertical box");
@@ -23,10 +24,28 @@ fn status_and_error_pages_build_under_headless_display() {
     assert_eq!(page.spacing(), 12);
     assert_eq!(page.observe_children().n_items(), 3);
 
-    let page = gtk_shell::fans_page(Ok(sample_diagnostics()));
+    let page = gtk_shell::status_page(Ok(sample_status()), Ok(Some(sample_gpu_pending())));
+    let page = page
+        .downcast::<gtk4::Box>()
+        .expect("status page with runtime state should be a vertical box");
+
+    assert_eq!(page.orientation(), gtk4::Orientation::Vertical);
+    assert_eq!(page.spacing(), 12);
+    assert_eq!(page.observe_children().n_items(), 3);
+
+    let page = gtk_shell::fans_page(Ok(sample_diagnostics()), Ok(None));
     let page = page
         .downcast::<gtk4::Box>()
         .expect("fans page should be a vertical box");
+
+    assert_eq!(page.orientation(), gtk4::Orientation::Vertical);
+    assert_eq!(page.spacing(), 12);
+    assert_eq!(page.observe_children().n_items(), 4);
+
+    let page = gtk_shell::fans_page(Ok(sample_diagnostics()), Ok(Some(sample_fan_snapshot())));
+    let page = page
+        .downcast::<gtk4::Box>()
+        .expect("fans page with runtime state should be a vertical box");
 
     assert_eq!(page.orientation(), gtk4::Orientation::Vertical);
     assert_eq!(page.spacing(), 12);
@@ -68,7 +87,12 @@ fn status_and_error_pages_build_under_headless_display() {
     assert_eq!(page.spacing(), 12);
     assert_eq!(page.observe_children().n_items(), 3);
 
-    let page = gtk_shell::dashboard_page(Ok(sample_status()), Ok(sample_diagnostics()));
+    let page = gtk_shell::dashboard_page(
+        Ok(sample_status()),
+        Ok(sample_diagnostics()),
+        Ok(None),
+        Ok(None),
+    );
     let page = page
         .downcast::<gtk4::Box>()
         .expect("dashboard page should be a vertical box");
@@ -76,7 +100,7 @@ fn status_and_error_pages_build_under_headless_display() {
     assert_eq!(page.orientation(), gtk4::Orientation::Vertical);
     assert_eq!(page.observe_children().n_items(), 2);
 
-    let page = gtk_shell::status_page(Err(anyhow::anyhow!("daemon unavailable")));
+    let page = gtk_shell::status_page(Err(anyhow::anyhow!("daemon unavailable")), Ok(None));
     let page = page
         .downcast::<gtk4::Box>()
         .expect("error page should be a vertical box");
@@ -84,7 +108,7 @@ fn status_and_error_pages_build_under_headless_display() {
     assert_eq!(page.orientation(), gtk4::Orientation::Vertical);
     assert_eq!(page.observe_children().n_items(), 2);
 
-    let page = gtk_shell::fans_page(Err(anyhow::anyhow!("daemon unavailable")));
+    let page = gtk_shell::fans_page(Err(anyhow::anyhow!("daemon unavailable")), Ok(None));
     let page = page
         .downcast::<gtk4::Box>()
         .expect("fans error page should be a vertical box");
@@ -238,4 +262,23 @@ fn sample_diagnostics() -> DiagnosticsBundle {
         Some("6.17.0-test".to_owned()),
         vec!["2026-04-25T17:44:00 legion-control-daemon started".to_owned()],
     )
+}
+
+fn sample_gpu_pending() -> GpuModePending {
+    GpuModePending {
+        requested_mode: "hybrid".to_owned(),
+        previous_mode: Some("nvidia".to_owned()),
+        reboot_required: true,
+    }
+}
+
+fn sample_fan_snapshot() -> FanCurveSnapshot {
+    FanCurveSnapshot {
+        curve_id: "legion_hwmon".to_owned(),
+        path: Some("/tmp/fixture/sys/class/hwmon/hwmon7".to_owned()),
+        points: vec![FanCurvePointSnapshot {
+            path: "/tmp/fixture/sys/class/hwmon/hwmon7/pwm1_auto_point1_temp".to_owned(),
+            value: "42000".to_owned(),
+        }],
+    }
 }

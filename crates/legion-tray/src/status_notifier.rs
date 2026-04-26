@@ -160,6 +160,8 @@ fn load_summary(bus_address: Option<&str>) -> Result<TraySummary> {
     Ok(TraySummary::from_status_and_report(
         &client.status()?,
         &client.raw_probe_report()?,
+        client.gpu_mode_pending()?.as_ref(),
+        client.last_known_good_fan_curve()?.as_ref(),
     ))
 }
 
