@@ -20,8 +20,9 @@ use crate::{DesktopSession, TrayAction, TrayMenu, TrayMenuEntry, TrayMenuItem, T
 
 const TRAY_ID: &str = "org.ratvantage.LegionControl";
 const ICON_NAME: &str = "applications-system";
-const AUTO_REFRESH_INTERVAL: Duration = Duration::from_secs(5);
+const AUTO_REFRESH_INTERVAL: Duration = Duration::from_secs(1);
 const RESUME_REFRESH_GAP: Duration = Duration::from_secs(90);
+const DESKTOP_NOTIFICATION_REUSE_WINDOW: Duration = Duration::from_secs(6);
 
 pub struct StatusNotifierTray {
     summary: TraySummary,
@@ -33,6 +34,7 @@ pub struct StatusNotifierTray {
     last_write_status: Option<String>,
     last_snapshot: Option<RuntimeSnapshot>,
     last_notification_ids: HashMap<&'static str, u32>,
+    last_notification_times: HashMap<&'static str, Instant>,
     state_stale: bool,
     state_loader: StateLoader,
     action_executor: ActionExecutor,
@@ -88,6 +90,7 @@ impl StatusNotifierTray {
             last_write_status: None,
             last_snapshot: None,
             last_notification_ids: HashMap::new(),
+            last_notification_times: HashMap::new(),
             state_stale: false,
             state_loader,
             action_executor,
@@ -123,21 +126,24 @@ impl StatusNotifierTray {
                 self.last_write_status = None;
                 self.state_stale = false;
                 let mut notification_errors = Vec::new();
+                let notification_now = Instant::now();
                 for notification in state_notifications {
-                    let replaces_id = self
-                        .last_notification_ids
-                        .get(notification.key)
-                        .copied()
-                        .unwrap_or(0);
+                    let replaces_id = reusable_notification_id(
+                        self.last_notification_ids.get(notification.key).copied(),
+                        self.last_notification_times.get(notification.key).copied(),
+                        notification_now,
+                    );
                     match (self.notification_sender)(&notification, replaces_id) {
                         Ok(notification_id) => {
                             self.last_notification_ids
                                 .insert(notification.key, notification_id);
+                            self.last_notification_times
+                                .insert(notification.key, notification_now);
                         }
                         Err(error) => {
-                        let message = format!("failed to send desktop notification: {error}");
-                        eprintln!("{message}");
-                        notification_errors.push(message);
+                            let message = format!("failed to send desktop notification: {error}");
+                            eprintln!("{message}");
+                            notification_errors.push(message);
                         }
                     }
                 }
@@ -391,6 +397,21 @@ fn execute_tray_action(
 fn should_auto_refresh(now: Instant, last_refresh: Instant, last_tick: Instant) -> bool {
     now.duration_since(last_refresh) >= AUTO_REFRESH_INTERVAL
         || now.duration_since(last_tick) >= RESUME_REFRESH_GAP
+}
+
+fn reusable_notification_id(
+    last_notification_id: Option<u32>,
+    last_notification_time: Option<Instant>,
+    now: Instant,
+) -> u32 {
+    match (last_notification_id, last_notification_time) {
+        (Some(notification_id), Some(notification_time))
+            if now.duration_since(notification_time) <= DESKTOP_NOTIFICATION_REUSE_WINDOW =>
+        {
+            notification_id
+        }
+        _ => 0,
+    }
 }
 
 fn state_change_notifications(
@@ -1316,20 +1337,34 @@ mod tests {
     fn auto_refresh_triggers_for_periodic_and_resume_gaps() {
         let base = Instant::now();
         assert!(!should_auto_refresh(
-            base + Duration::from_secs(4),
+            base + Duration::from_millis(900),
             base,
-            base + Duration::from_secs(3)
+            base + Duration::from_millis(500)
         ));
         assert!(should_auto_refresh(
             base + AUTO_REFRESH_INTERVAL,
             base,
-            base + Duration::from_secs(1)
+            base + Duration::from_millis(500)
         ));
         assert!(should_auto_refresh(
             base + RESUME_REFRESH_GAP + Duration::from_secs(1),
             base + Duration::from_secs(2),
             base
         ));
+    }
+
+    #[test]
+    fn reusable_notification_id_only_reuses_recent_popup_ids() {
+        let base = Instant::now();
+        assert_eq!(reusable_notification_id(None, None, base), 0);
+        assert_eq!(
+            reusable_notification_id(Some(91), Some(base), base + Duration::from_secs(3)),
+            91
+        );
+        assert_eq!(
+            reusable_notification_id(Some(91), Some(base), base + Duration::from_secs(7)),
+            0
+        );
     }
 
     fn tray_state_fixture(
