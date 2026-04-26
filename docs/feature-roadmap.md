@@ -18,6 +18,7 @@ Current pre-alpha code provides the safe read-only base:
 - Read-only sysfs fixture capture workflow for adding real hardware reports.
 - Read-only compatibility bundle workflow for external hardware submissions, including generated summary files and PR body text.
 - StatusNotifier tray smoke script and manual checklist.
+- KDE StatusNotifier smoke report workflow with reusable report bundles.
 - Disabled draft write-method contracts for platform profile, battery charge type, GPU mode, and fan presets.
 - Pure validators for platform profile, battery charge type, EnvyControl GPU mode, and packaged fan preset choices.
 - Validator-backed dry-run planning for platform profile, battery charge type, GPU mode, and fan presets.
@@ -42,7 +43,7 @@ Current pre-alpha code provides the safe read-only base:
 
 ## Next immediate work
 
-- Keep tray autostart disabled; GNOME AppIndicator extension path is untested.
+- Keep tray autostart disabled; GNOME AppIndicator extension path is still untested.
 - Collect more captured fixtures through the compatibility bundle workflow when additional supported Legion machines are available.
 - If no new hardware reports are available, continue with read-only UI/tray polish, with KDE-specific tray behavior as the most relevant local path.
 - Keep progress docs current after each completed roadmap slice.
@@ -181,7 +182,7 @@ Expose only when probed and with warnings:
 - Better PowerProfiles D-Bus owner detection.
 - Optional sync policy between Lenovo platform profile and generic desktop power profile.
 - Notifications for profile/fan reset after resume.
-- KDE-specific tray behavior testing.
+- KDE-specific tray behavior testing. [implemented as report-capable smoke workflow with recorded KDE Wayland evidence]
 - GNOME-specific AppIndicator extension detection and smoke testing.
 
 ### Preset automation, local only

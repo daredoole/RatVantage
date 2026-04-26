@@ -21,22 +21,24 @@
   - `3dde848` (`Add disabled tray battery entries`)
   - `ab128c4` (`Add disabled tray fan preset entries`)
   - `c61cef8` (`Polish tray tooltip details`)
-- Latest known milestone: read-only pre-alpha scaffold with GTK smoke coverage, hardened packaging metadata, disabled write planning, runtime/current 82WM fixture and validation evidence, diagnostics log excerpts and compact summary counts, packaged fan preset assets with dry-run planning, fan restore/default dry-run planning, app-state-only GPU pending-reboot tracking, app-state-only last-known-good fan curve capture, overview/tray/GTK state visibility, diagnostics/export parity for `gpu_mode_pending` and `last_known_good_fan_curve`, read-only StatusNotifier tray backend, tray dashboard bus-address forwarding, tray tooltip profile/fan/count details, disabled quick fan preset and battery charge tray entries, GNOME tray extension guidance, KDE StatusNotifier tooltip/menu/quit smoke evidence, documented GNOME untested path, read-only battery overview telemetry, read-only EnvyControl GPU query, UI status/overview/diagnostics/dry-run output with LED brightness and firmware toggle values, GPU dry-run planning with reboot-required messaging and rollback guidance, diagnostics choice-source paths, per-capability status labels, GTK read-only Status, Profiles, Battery, Fans, Appearance, and Diagnostics tabs, and a compatibility bundle/PR intake workflow for outside Legion hardware submissions.
+- Latest known milestone: read-only pre-alpha scaffold with GTK smoke coverage, hardened packaging metadata, disabled write planning, runtime/current 82WM fixture and validation evidence, diagnostics log excerpts and compact summary counts, packaged fan preset assets with dry-run planning, fan restore/default dry-run planning, app-state-only GPU pending-reboot tracking, app-state-only last-known-good fan curve capture, overview/tray/GTK state visibility, diagnostics/export parity for `gpu_mode_pending` and `last_known_good_fan_curve`, read-only StatusNotifier tray backend, tray dashboard bus-address forwarding, tray tooltip profile/fan/count details, disabled quick fan preset and battery charge tray entries, GNOME tray extension guidance, KDE StatusNotifier tooltip/menu/quit smoke evidence, report-capable KDE tray smoke bundles under `target/smoke/`, documented GNOME untested path, read-only battery overview telemetry, read-only EnvyControl GPU query, UI status/overview/diagnostics/dry-run output with LED brightness and firmware toggle values, GPU dry-run planning with reboot-required messaging and rollback guidance, diagnostics choice-source paths, per-capability status labels, GTK read-only Status, Profiles, Battery, Fans, Appearance, and Diagnostics tabs, and a compatibility bundle/PR intake workflow for outside Legion hardware submissions.
 - Rust toolchain: pinned stable in `rust-toolchain.toml`; local stable installed because GTK stack requires rustc 1.92+.
 
 ## Current task
 
-- Completed slice: added a contributor-friendly compatibility intake workflow on top of the existing fixture capture path.
-- `scripts/capture-compat-report.sh` now captures a narrow read-only fixture, runs `legion-probe`, and writes:
-  - `fixture/`
-  - `probe.json`
-  - `compat-report.json`
-  - `compat-report.md`
-  - `pull-request-body.md`
-- `.github/PULL_REQUEST_TEMPLATE/hardware-compatibility.md` provides a matching review checklist for fixture PRs.
-- `docs/fixture-capture.md` and `README.md` now document the external hardware submission flow.
+- Completed slice: KDE tray smoke is now report-capable and repeatable from the existing `scripts/smoke-statusnotifier-tray.sh` workflow.
+- The smoke script accepts `--report-dir` and writes:
+  - `environment.txt`
+  - `watcher-counts.txt`
+  - `watcher-protocol.txt`
+  - `watcher-items.txt`
+  - `tray-status.txt`
+  - `tray-tooltip.txt`
+  - `item-properties.txt`
+  - `smoke-report.md`
+- Recorded local KDE Wayland report bundle path: `target/smoke/statusnotifier-kde-wayland-2026-04-25`.
 - This remains a read-only slice. No hardware writes, no new mutation paths, and no safety-constraint changes were introduced.
-- Next recommended task from the updated roadmap: wait for outside compatibility submissions or captured fixtures, and continue with read-only KDE/UI tray polish locally while hardware coverage is still limited.
+- Next recommended task from the updated roadmap: keep autostart disabled until GNOME-with-extension smoke exists; otherwise continue with read-only tray/UI polish and wait for outside hardware submissions through the compatibility bundle flow.
 
 ## Implemented
 
@@ -79,6 +81,7 @@
 - Tray tooltip reports current platform profile, fan RPM, and available/missing capability counts.
 - StatusNotifier tray smoke script and manual checklist; autostart is still disabled.
 - KDE Plasma Wayland StatusNotifier smoke passed with fixture daemon: registration, screenshot capture, tooltip properties, read-only menu export, refresh, quit, and disabled write actions were verified.
+- KDE Plasma Wayland StatusNotifier smoke can now emit reusable report bundles with watcher counts, raw item properties, tray status/tooltip output, and environment metadata under `target/smoke/`.
 - GNOME AppIndicator extension path is intentionally untested for now: GNOME Shell and the extension are installed, but the active graphical session is KDE Wayland. Keep tray autostart disabled.
 - Tray startup emits GNOME AppIndicator/KStatusNotifier extension guidance when the desktop session reports GNOME.
 - Disabled tray autostart packaging placeholder.
@@ -126,6 +129,7 @@ cargo run -p legion-control-tray -- --bus-address <dbus-address>
 cargo run -p legion-control-tray -- --status --bus-address <dbus-address>
 cargo run -p legion-control-tray -- --tooltip --bus-address <dbus-address>
 scripts/smoke-statusnotifier-tray.sh --hold-seconds 15
+scripts/smoke-statusnotifier-tray.sh --bus-address "$DBUS_SESSION_BUS_ADDRESS" --hold-seconds 15 --report-dir target/smoke/statusnotifier-<desktop>-<date>
 cargo run -p legion-probe -- --json --sysfs-root tests/fixtures/sysfs-82wm-runtime-capture
 ```
 
@@ -136,9 +140,10 @@ Do not turn GitHub CI off completely yet. Use local CI before pushing, then keep
 ## Next tasks
 
 1. Collect additional captured fixtures through the compatibility bundle workflow when outside Legion submissions become available.
-2. If no new hardware reports are available, continue with read-only KDE/UI tray polish and smoke coverage.
-3. Keep progress docs current after each completed roadmap slice.
-4. Keep all hardware mutation disabled until the safety checklist below is satisfied.
+2. Keep tray autostart disabled until GNOME-with-extension smoke exists; KDE smoke is no longer the blocker.
+3. If no new hardware reports are available, continue with read-only KDE/UI tray polish.
+4. Keep progress docs current after each completed roadmap slice.
+5. Keep all hardware mutation disabled until the safety checklist below is satisfied.
 
 ## Working process
 

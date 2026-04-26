@@ -17,6 +17,7 @@ Pre-alpha implementation scaffold exists:
 - Read-only tray/status helper scaffold.
 - Tray dashboard launch forwards custom D-Bus addresses for private/session-bus smoke workflows.
 - Tray status separates available and missing capabilities in tooltips.
+- KDE StatusNotifier smoke can emit a reusable report bundle with environment, watcher, and tray summary data.
 - UI status output includes per-capability status and risk labels.
 - Disabled tray autostart packaging placeholder.
 - Runtime-captured 82WM fixture coverage, including bracketed battery `charge_types` current-value parsing.
@@ -128,6 +129,7 @@ Completed scaffold:
 - Read-only StatusNotifier tray backend with disabled write actions.
 - StatusNotifier dashboard launch keeps `--bus-address` when the tray uses a private bus.
 - Tray tooltip reports platform profile, fan RPM, and available/missing capability counts.
+- KDE StatusNotifier smoke report workflow with recorded local evidence.
 - Disabled tray autostart packaging placeholder.
 - Headless GTK smoke coverage.
 - Fedora packaging metadata and validation.
@@ -151,7 +153,7 @@ Completed scaffold:
 
 Next:
 
-- Desktop smoke testing for the StatusNotifier tray backend before enabling autostart.
+- GNOME-with-extension smoke for the StatusNotifier tray backend before enabling autostart.
 - External compatibility PRs from more supported Legion machines through the bundle workflow.
 - Read-only KDE/UI tray polish while waiting on more hardware reports.
 

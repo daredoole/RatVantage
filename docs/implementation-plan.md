@@ -11,9 +11,10 @@ The repository now has a working pre-alpha scaffold:
 - UI status, overview, diagnostics, app-state, tray, and dry-run planning clients with deterministic output, including reboot-required GPU mode planning with rollback guidance, pending-reboot display, fan curve snapshot capture, overview/tray/GTK state visibility, diagnostics/export parity for durable app-state fields `gpu_mode_pending` and `last_known_good_fan_curve`, fan preset and fan restore/default validation, and read-only appearance/peripheral values, plus optional GTK4/libadwaita shell with read-only Status, Profiles, Battery, Fans, Appearance, and Diagnostics tabs behind `gtk-ui`.
 - Packaged read-only fan preset TOML assets with CI schema validation and runtime dry-run planning.
 - Read-only compatibility bundle workflow for external Legion submissions, including generated probe summaries and PR template support.
+- KDE StatusNotifier smoke report workflow with reusable report bundles under `target/smoke/`.
 - Local CI script, Fedora dependency installer, GitHub Actions CI, and pinned stable Rust toolchain.
 
-Next implementation work should collect more captured fixtures through the compatibility bundle workflow when additional supported Legion machines are available, or continue with read-only UI/tray polish if no new hardware reports are available. Hardware writes remain design-only until validators, polkit policy, rollback, write-specific manual validation, and recovery instructions are complete.
+Next implementation work should collect more captured fixtures through the compatibility bundle workflow when additional supported Legion machines are available, continue with read-only UI/tray polish if no new hardware reports are available, and leave autostart disabled until GNOME-with-extension smoke exists. Hardware writes remain design-only until validators, polkit policy, rollback, write-specific manual validation, and recovery instructions are complete.
 
 ## Repo structure
 
