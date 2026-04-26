@@ -1061,6 +1061,21 @@ fn restore_auto_fan_plan_cli_prints_read_only_write_preview_json() {
 }
 
 #[test]
+fn fan_curve_live_cli_prints_read_only_sysfs_snapshot_json() {
+    let (_bus, _service_connection, address) = runtime_fixture_service();
+    let output = Command::new(env!("CARGO_BIN_EXE_legion-control-ui"))
+        .args(["--fan-curve-live", "--bus-address", &address])
+        .output()
+        .unwrap();
+
+    assert!(output.status.success());
+    assert!(output.stderr.is_empty());
+    let json: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(json["curve_id"], "legion_hwmon");
+    assert!(json["points"].as_array().unwrap().len() >= 20);
+}
+
+#[test]
 fn gpu_pending_cli_prints_and_clears_empty_state() {
     let state_path = unique_state_path("ui-pending-empty");
     let (_bus, _service_connection, address) = fixture_service_with_state(&state_path);

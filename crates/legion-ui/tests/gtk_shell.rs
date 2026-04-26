@@ -66,7 +66,7 @@ fn status_and_error_pages_build_under_headless_display() {
 
     assert_eq!(page.orientation(), gtk4::Orientation::Vertical);
     assert_eq!(page.spacing(), 12);
-    assert_eq!(page.observe_children().n_items(), 4);
+    assert_eq!(page.observe_children().n_items(), 8);
 
     let page = gtk_shell::fans_page(Ok(sample_diagnostics()), Ok(Some(sample_fan_snapshot())));
     let page = page
@@ -75,7 +75,7 @@ fn status_and_error_pages_build_under_headless_display() {
 
     assert_eq!(page.orientation(), gtk4::Orientation::Vertical);
     assert_eq!(page.spacing(), 12);
-    assert_eq!(page.observe_children().n_items(), 4);
+    assert_eq!(page.observe_children().n_items(), 8);
 
     let page = gtk_shell::appearance_page(Ok(sample_diagnostics()));
     let page = page
@@ -288,6 +288,8 @@ fn dashboard_pages_render_quick_apply_and_gpu_controls() {
     assert!(fans_text.iter().any(|text| text == "Capture snapshot"));
     assert!(fans_text.iter().any(|text| text == "Preset plan preview"));
     assert!(fans_text.iter().any(|text| text == "Restore plan preview"));
+    assert!(fans_text.iter().any(|text| text == "Live curve readings"));
+    assert!(fans_text.iter().any(|text| text == "Refresh live readings"));
 
     let gpu_text = collect_widget_text(&gpu.clone().upcast());
     assert!(gpu_text.iter().any(|text| text == "GPU Mode"));

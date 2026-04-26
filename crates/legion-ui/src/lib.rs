@@ -877,6 +877,11 @@ impl LegionControlClient {
         self.call_json("GetLastKnownGoodFanCurve")
     }
 
+    /// Read current fan curve sysfs values without persisting the last-known-good snapshot.
+    pub fn live_fan_curve_readings(&self) -> Result<FanCurveSnapshot> {
+        self.call_json("GetLiveFanCurveReadings")
+    }
+
     pub fn capture_last_known_good_fan_curve(&self) -> Result<FanCurveSnapshot> {
         self.call_json("CaptureLastKnownGoodFanCurve")
     }

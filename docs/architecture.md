@@ -122,6 +122,7 @@ PlanPlatformProfileWrite(s requested) -> s        # JSON dry-run plan
 PlanBatteryChargeTypeWrite(s requested) -> s      # JSON dry-run plan
 PlanGpuModeWrite(s requested) -> s                # JSON dry-run plan, reboot required
 PlanFanPresetWrite(s requested) -> s              # JSON dry-run plan
+GetLiveFanCurveReadings() -> s                     # JSON sysfs point read snapshot; does not persist state
 ```
 
 Future write-capable methods must remain absent until their validators, polkit

@@ -21,7 +21,7 @@ use zbus::{blocking::Connection, blocking::ConnectionBuilder, fdo, interface, me
 
 pub const DBUS_INTERFACE: &str = "org.ratvantage.LegionControl1";
 pub const DBUS_PATH: &str = "/org/ratvantage/LegionControl1";
-pub const READ_ONLY_METHODS: &str = "GetHardwareSummary,GetCapabilities,RefreshCapabilities,GetTelemetry,GetRawProbeReport,GetGpuModePending,GetLastKnownGoodFanCurve,PlanPlatformProfileWrite,PlanBatteryChargeTypeWrite,PlanLedStateWrite,PlanIdeapadToggleWrite,PlanGpuModeWrite,PlanFanPresetWrite,PlanRestoreAutoFanWrite,SetGpuModePending,ClearGpuModePending,CaptureLastKnownGoodFanCurve";
+pub const READ_ONLY_METHODS: &str = "GetHardwareSummary,GetCapabilities,RefreshCapabilities,GetTelemetry,GetRawProbeReport,GetGpuModePending,GetLastKnownGoodFanCurve,GetLiveFanCurveReadings,PlanPlatformProfileWrite,PlanBatteryChargeTypeWrite,PlanLedStateWrite,PlanIdeapadToggleWrite,PlanGpuModeWrite,PlanFanPresetWrite,PlanRestoreAutoFanWrite,SetGpuModePending,ClearGpuModePending,CaptureLastKnownGoodFanCurve";
 pub const GATED_WRITE_METHODS: &str =
     "SetPlatformProfile,SetBatteryChargeType,SetLedState,SetIdeapadToggle";
 pub const DEFAULT_STATE_PATH: &str = "/var/lib/legion-control/state.toml";
@@ -625,9 +625,14 @@ impl LegionControl {
             .map_err(|_| fdo::Error::Failed("daemon state lock poisoned".to_owned()))
     }
 
+    pub fn live_fan_curve_readings(&self) -> fdo::Result<FanCurveSnapshot> {
+        let registry = self.planning_snapshot().map_err(planning_to_fdo)?;
+        read_fan_curve_snapshot(&registry)
+    }
+
     pub fn capture_last_known_good_fan_curve(&self) -> fdo::Result<FanCurveSnapshot> {
         let registry = self.planning_snapshot().map_err(planning_to_fdo)?;
-        let snapshot = capture_fan_curve_snapshot(&registry)?;
+        let snapshot = read_fan_curve_snapshot(&registry)?;
         let mut state = self
             .state
             .lock()
@@ -759,6 +764,10 @@ impl LegionControl {
 
     fn GetLastKnownGoodFanCurve(&self) -> fdo::Result<String> {
         to_json(&self.last_known_good_fan_curve()?)
+    }
+
+    fn GetLiveFanCurveReadings(&self) -> fdo::Result<String> {
+        to_json(&self.live_fan_curve_readings()?)
     }
 
     fn PlanPlatformProfileWrite(&self, requested: &str) -> fdo::Result<String> {
@@ -916,7 +925,7 @@ fn ideapad_toggle_policy_message(toggle_id: &str) -> String {
     }
 }
 
-fn capture_fan_curve_snapshot(registry: &CapabilityRegistry) -> fdo::Result<FanCurveSnapshot> {
+fn read_fan_curve_snapshot(registry: &CapabilityRegistry) -> fdo::Result<FanCurveSnapshot> {
     let curve = registry
         .fan_curves
         .first()

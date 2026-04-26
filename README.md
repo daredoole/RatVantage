@@ -122,6 +122,7 @@ cargo run -p legion-control-ui -- --set-gpu-mode-pending hybrid --bus-address <d
 cargo run -p legion-control-ui -- --clear-gpu-mode-pending --bus-address <dbus-address>
 cargo run -p legion-control-ui -- --last-known-good-fan-curve --bus-address <dbus-address>
 cargo run -p legion-control-ui -- --capture-last-known-good-fan-curve --bus-address <dbus-address>
+cargo run -p legion-control-ui -- --fan-curve-live --bus-address <dbus-address>
 cargo run -p legion-control-tray -- --status --bus-address <dbus-address>
 cargo run -p legion-control-tray -- --tooltip --bus-address <dbus-address>
 cargo run -p legion-control-tray -- --desktop-check

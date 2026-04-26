@@ -1,8 +1,8 @@
 use std::{fs, sync::Arc};
 
 use legion_common::{
-    Capability, CapabilityRegistry, GpuModePending, HardwareSummary, TelemetrySnapshot,
-    WriteDryRunPlan, WriteExecutionResult, WriteExecutionStatus,
+    Capability, CapabilityRegistry, FanCurveSnapshot, GpuModePending, HardwareSummary,
+    TelemetrySnapshot, WriteDryRunPlan, WriteExecutionResult, WriteExecutionStatus,
 };
 use legion_control_daemon::{
     BatteryChargeTypeWriter, IdeapadToggleWriter, LedStateWriter, LegionControl,
@@ -72,6 +72,16 @@ fn read_only_methods_return_expected_json_contracts() {
 
     let refreshed: Vec<Capability> = call_json(&proxy, "RefreshCapabilities");
     assert_eq!(refreshed, capabilities);
+
+    let live: FanCurveSnapshot = call_json(&proxy, "GetLiveFanCurveReadings");
+    assert_eq!(live.curve_id, "legion-hwmon");
+    assert!(
+        live.points
+            .iter()
+            .any(|point| point.path.contains("pwm1_auto")),
+        "expected pwm auto point paths in live readings: {:?}",
+        live.points
+    );
 
     let payload: String = proxy
         .call("PlanPlatformProfileWrite", &("performance",))
@@ -162,6 +172,7 @@ fn introspection_exposes_gated_reversible_write_methods_only() {
             "GetGpuModePending",
             "GetHardwareSummary",
             "GetLastKnownGoodFanCurve",
+            "GetLiveFanCurveReadings",
             "GetRawProbeReport",
             "GetTelemetry",
             "PlanBatteryChargeTypeWrite",

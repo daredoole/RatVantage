@@ -8,7 +8,7 @@ The repository now has a working pre-alpha scaffold:
 - Read-only probe that builds hardware summary, capability, telemetry, and raw report JSON.
 - Daemon exposing read-only hardware/capability/telemetry/raw-report methods, dry-run planning methods for GPU mode, fan presets, fan restore/default, and ideapad toggles, gated platform-profile, battery charge type, ylogo LED, restricted `fn_lock`, and warning-gated `camera_power` and `usb_charging` execution paths with rollback coverage, plus app-state-only GPU pending-reboot tracking and fan curve snapshots.
 - Private D-Bus contract tests that verify method introspection and JSON contracts.
-- UI status, overview, diagnostics, app-state, tray, and dry-run planning clients with deterministic output, including reboot-required GPU mode planning with rollback guidance, pending-reboot display, fan curve snapshot capture, overview/tray/GTK state visibility, diagnostics/export parity for durable app-state fields `gpu_mode_pending` and `last_known_good_fan_curve`, fan preset and fan restore/default validation, and appearance/peripheral values, plus optional GTK4/libadwaita shell with gated Profiles/Battery/Appearance quick-apply controls, a GTK Fans tab with packaged preset dry-run previews plus restore-to-auto previews and last-known-good capture (planning-only), GPU tab planning, and tray quick actions for reversible platform profile, battery charge type, ylogo LED, and restricted `fn_lock` writes behind `gtk-ui`, plus dashboard-confirmed `camera_power` and `usb_charging` controls.
+- UI status, overview, diagnostics, app-state, tray, and dry-run planning clients with deterministic output, including reboot-required GPU mode planning with rollback guidance, pending-reboot display, fan curve snapshot capture, read-only live fan curve sysfs readings via D-Bus, overview/tray/GTK state visibility, diagnostics/export parity for durable app-state fields `gpu_mode_pending` and `last_known_good_fan_curve`, fan preset and fan restore/default validation, and appearance/peripheral values, plus optional GTK4/libadwaita shell with gated Profiles/Battery/Appearance quick-apply controls, a GTK Fans tab with packaged preset dry-run previews plus restore-to-auto previews, live curve inspection, and last-known-good capture (planning-only), GPU tab planning, and tray quick actions for reversible platform profile, battery charge type, ylogo LED, and restricted `fn_lock` writes behind `gtk-ui`, plus dashboard-confirmed `camera_power` and `usb_charging` controls.
 - Packaged read-only fan preset TOML assets with CI schema validation and runtime dry-run planning.
 - Read-only compatibility bundle workflow for external Legion submissions, including generated probe summaries and PR template support.
 - Live write-validation harness with private-bus plan-only report capture and explicit execute-mode evidence capture for the current reversible write set.
@@ -413,6 +413,7 @@ ApplyFanCurve(s curve_json) -> ()
 ApplyFanPreset(s preset_id) -> ()
 RestoreAutoFan() -> ()
 GetLastKnownGoodFanCurve() -> s
+GetLiveFanCurveReadings() -> s
 CaptureLastKnownGoodFanCurve() -> s
 
 GetGpuMode() -> s

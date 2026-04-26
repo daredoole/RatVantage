@@ -41,7 +41,7 @@ Current pre-alpha code provides the safe read-only base:
 - UI dry-run plan previews for platform profile, battery charge type, LED state, ideapad toggle, GPU mode, fan preset, and fan restore/default writes, plus gated execution output for the currently enabled reversible methods.
 - UI status output includes per-capability status and risk labels.
 - Read-only GTK Profiles and Battery tabs show platform profile choices, battery charge choices, and battery telemetry from the diagnostics bundle.
-- The GTK Fans tab shows fan telemetry, curve paths, last-known-good snapshot status, packaged preset selection with daemon dry-run previews for fan preset and restore-to-auto plans, and capture for the durable last-known-good snapshot (execution remains disabled in the dashboard).
+- The GTK Fans tab shows fan telemetry, curve paths, last-known-good snapshot status, packaged preset selection with daemon dry-run previews for fan preset and restore-to-auto plans, capture for the durable last-known-good snapshot, and read-only live sysfs curve readings (execution remains disabled in the dashboard).
 - GTK runtime refresh loop now reprobes on focus/visibility, keeps the last good page during daemon outages, surfaces recovery/drift notices after reconnect, and serves as the shared post-write refresh path when the dashboard shell is active.
 - Read-only GTK Appearance tab shows LED brightness nodes and firmware toggle values from the diagnostics bundle.
 - Read-only GTK diagnostics tab for the same hardware/debug bundle, including Copy JSON.

@@ -16,6 +16,7 @@
 - Completed slice: the GTK shell now has a dedicated GPU tab that shows the current EnvyControl mode, previews dry-run GPU switch plans with rollback guidance, and records or clears the pending-reboot app state without enabling direct GPU-mode execution.
 - Completed slice: the GPU tab is wired into `--gtk-page gpu`, headless GTK coverage, the screenshot-smoke workflow, and the progress docs so the implemented shell matches the documented page layout.
 - Completed slice: the GTK Fans tab now exposes packaged preset selection with daemon-backed dry-run previews for `ApplyFanPreset` and `RestoreAutoFan`, plus a capture control for the durable last-known-good fan curve snapshot (still planning-only; fan preset execution remains disabled in the dashboard).
+- Completed slice: read-only live fan curve sysfs readings via `GetLiveFanCurveReadings`, CLI `--fan-curve-live`, and GTK Fans "Refresh live readings" (no app-state mutation).
 - Completed slice: default GTK smoke capture includes the `gpu` page alongside `fans`; `scripts/run-local-session-app.sh` documents `--gtk-page gpu`.
 - Validation for the latest slices passed with `cargo fmt --all`, `xvfb-run -a cargo test -p legion-control-ui --features gtk-ui --test gtk_shell`, and `./scripts/ci-local.sh`.
 - Current user-visible GTK surface now includes `Status`, `Profiles`, `Battery`, `GPU`, `Fans`, `Appearance`, and `Diagnostics`.
@@ -35,6 +36,7 @@
 - Fan restore/default dry-run planning through `PlanRestoreAutoFanWrite` and `--plan-restore-auto-fan`; write execution remains disabled.
 - Durable app-state-only GPU pending-reboot tracking via `GetGpuModePending`, `SetGpuModePending`, `ClearGpuModePending`, and the UI `--gpu-mode-pending`, `--set-gpu-mode-pending`, `--clear-gpu-mode-pending` commands.
 - Durable app-state-only last-known-good fan curve capture via `GetLastKnownGoodFanCurve`, `CaptureLastKnownGoodFanCurve`, and the UI `--last-known-good-fan-curve`, `--capture-last-known-good-fan-curve` commands.
+- Read-only live fan curve sysfs readings via `GetLiveFanCurveReadings` and `legion-control-ui --fan-curve-live` (GTK Fans tab includes a refresh control).
 - Tray/status output, UI `--overview`, and GTK Status/Fans pages surface the durable GPU pending and saved fan curve state.
 - UI `--overview` command for platform profile, battery charge type, fan RPM, temperatures, GPU mode, durable app state, battery telemetry, LED brightness, and firmware toggle values.
 - UI `--diagnostics` command for a read-only JSON debug bundle containing hardware summary, compact capability/sensor/fan/path counts, kernel version, detected sysfs paths, durable app-state fields `gpu_mode_pending` and `last_known_good_fan_curve`, recent daemon log excerpts, and raw probe report.
@@ -42,7 +44,7 @@
 - Platform profile and battery charge type models include both current-value paths and choice-list paths for diagnostics.
 - UI status output includes per-capability status and risk labels.
 - Optional GTK Profiles, Battery, and Appearance tabs render the diagnostics bundle data and expose gated quick-apply controls with inline write-result feedback where the write surface is currently allowed.
-- Optional GTK Fans tab renders fan telemetry, fan curve paths, last-known-good snapshot status, packaged preset selection with dry-run plan previews for fan preset and restore-to-auto flows, and capture for the durable last-known-good curve (no `ApplyFanPreset` / `RestoreAutoFan` execution in the dashboard).
+- Optional GTK Fans tab renders fan telemetry, fan curve paths, last-known-good snapshot status, packaged preset selection with dry-run plan previews for fan preset and restore-to-auto flows, capture for the durable last-known-good curve, and read-only live sysfs curve readings (no `ApplyFanPreset` / `RestoreAutoFan` execution in the dashboard).
 - Optional GTK Appearance tab renders LED brightness and firmware toggle values and now exposes gated quick-apply controls for ylogo LED, restricted `fn_lock`, and dashboard-confirmed `camera_power` plus `usb_charging`.
 - Optional GTK diagnostics tab for the same read-only hardware/debug bundle, with compact counts and Copy JSON parity for durable app-state fields.
 - Packaged read-only fan preset TOML assets in `data/presets/`, validated by `scripts/validate-packaging.sh`, installed by the RPM spec, and validated at runtime for dry-run fan preset planning.
@@ -135,6 +137,7 @@ cargo run -p legion-control-ui -- --set-gpu-mode-pending hybrid --bus-address <d
 cargo run -p legion-control-ui -- --clear-gpu-mode-pending --bus-address <dbus-address>
 cargo run -p legion-control-ui -- --last-known-good-fan-curve --bus-address <dbus-address>
 cargo run -p legion-control-ui -- --capture-last-known-good-fan-curve --bus-address <dbus-address>
+cargo run -p legion-control-ui -- --fan-curve-live --bus-address <dbus-address>
 cargo run -p legion-control-tray -- --bus-address <dbus-address>
 cargo run -p legion-control-tray -- --status --bus-address <dbus-address>
 cargo run -p legion-control-tray -- --tooltip --bus-address <dbus-address>

@@ -67,6 +67,9 @@ struct Args {
     capture_last_known_good_fan_curve: bool,
 
     #[arg(long)]
+    fan_curve_live: bool,
+
+    #[arg(long)]
     bus_address: Option<String>,
 
     #[cfg(feature = "gtk-ui")]
@@ -101,6 +104,7 @@ fn main() -> Result<()> {
         args.clear_gpu_mode_pending,
         args.last_known_good_fan_curve,
         args.capture_last_known_good_fan_curve,
+        args.fan_curve_live,
     ]
     .into_iter()
     .filter(|enabled| *enabled)
@@ -150,6 +154,8 @@ fn main() -> Result<()> {
             print_json(&client.last_known_good_fan_curve()?)?;
         } else if args.capture_last_known_good_fan_curve {
             print_json(&client.capture_last_known_good_fan_curve()?)?;
+        } else if args.fan_curve_live {
+            print_json(&client.live_fan_curve_readings()?)?;
         } else if args.diagnostics {
             print_diagnostics(&client.diagnostics_bundle()?)?;
         } else if args.overview {

@@ -737,6 +737,69 @@ fn append_fans(
         bundle.raw_probe_report.fan_curves.as_slice(),
         last_known_row,
     ));
+
+    if !bundle.raw_probe_report.fan_curves.is_empty() {
+        append_fan_live_curve_readings(page);
+    }
+}
+
+fn format_fan_snapshot_multiline(snapshot: &FanCurveSnapshot) -> String {
+    let mut out = format!("curve_id={}\n", snapshot.curve_id);
+    if let Some(root) = snapshot.path.as_deref() {
+        out.push_str(&format!("hwmon_root={root}\n"));
+    }
+    out.push('\n');
+    for point in &snapshot.points {
+        out.push_str(&format!("{} = {}\n", point.path, point.value));
+    }
+    out
+}
+
+fn append_fan_live_curve_readings(page: &gtk4::Box) {
+    let section_title = gtk4::Label::new(Some("Live curve readings"));
+    section_title.add_css_class("title-3");
+    section_title.set_xalign(0.0);
+    page.append(&section_title);
+
+    let hint = gtk4::Label::new(Some(
+        "Read-only sysfs snapshot from the daemon. This does not update the last-known-good capture.",
+    ));
+    hint.set_wrap(true);
+    hint.set_xalign(0.0);
+    page.append(&hint);
+
+    let actions = gtk4::Box::new(gtk4::Orientation::Horizontal, 8);
+    let refresh = gtk4::Button::with_label("Refresh live readings");
+    actions.append(&refresh);
+    page.append(&actions);
+
+    let text = gtk4::TextView::new();
+    text.set_editable(false);
+    text.set_cursor_visible(false);
+    text.set_monospace(true);
+    text.set_wrap_mode(gtk4::WrapMode::WordChar);
+    text.buffer().set_text(
+        "Click \"Refresh live readings\" to fetch the current pwm/temp point values from sysfs.",
+    );
+
+    let scroller = gtk4::ScrolledWindow::builder()
+        .min_content_height(140)
+        .vexpand(false)
+        .child(&text)
+        .build();
+    page.append(&scroller);
+
+    let text_for_refresh = text.clone();
+    refresh.connect_clicked(move |_| {
+        match LegionControlClient::system().and_then(|client| client.live_fan_curve_readings()) {
+            Ok(snapshot) => text_for_refresh
+                .buffer()
+                .set_text(&format_fan_snapshot_multiline(&snapshot)),
+            Err(error) => text_for_refresh
+                .buffer()
+                .set_text(&format!("Live readings failed:\n{error}")),
+        }
+    });
 }
 
 fn append_appearance(page: &gtk4::Box, bundle: &DiagnosticsBundle) {
