@@ -61,7 +61,7 @@ fn status_and_error_pages_build_under_headless_display() {
 
     assert_eq!(page.orientation(), gtk4::Orientation::Vertical);
     assert_eq!(page.spacing(), 12);
-    assert_eq!(page.observe_children().n_items(), 3);
+    assert_eq!(page.observe_children().n_items(), 5);
 
     let page = gtk_shell::diagnostics_page(Ok(sample_diagnostics()));
     let page = page
@@ -202,6 +202,15 @@ fn profiles_and_battery_pages_render_quick_apply_controls() {
     assert!(battery_text
         .iter()
         .any(|text| text == "No write attempted yet."));
+
+    let appearance = gtk_shell::appearance_page(Ok(sample_diagnostics()))
+        .downcast::<gtk4::Box>()
+        .expect("appearance page should be a vertical box");
+    let appearance_text = collect_widget_text(&appearance.clone().upcast());
+    assert!(appearance_text.iter().any(|text| text == "LED quick apply"));
+    assert!(appearance_text.iter().any(|text| text == "Y-logo LED"));
+    assert!(appearance_text.iter().any(|text| text == "Turn off"));
+    assert!(appearance_text.iter().any(|text| text == "Turn on"));
 }
 
 #[gtk4::test]
@@ -211,11 +220,12 @@ fn profiles_and_battery_pages_disable_quick_apply_when_capability_is_unavailable
     let mut diagnostics = sample_diagnostics();
     diagnostics.raw_probe_report.platform_profile = None;
     diagnostics.raw_probe_report.battery_charge_type = None;
+    diagnostics.raw_probe_report.leds.clear();
 
     let profiles = gtk_shell::profiles_page(Ok(diagnostics.clone()))
         .downcast::<gtk4::Box>()
         .expect("profiles page should be a vertical box");
-    let battery = gtk_shell::battery_page(Ok(diagnostics))
+    let battery = gtk_shell::battery_page(Ok(diagnostics.clone()))
         .downcast::<gtk4::Box>()
         .expect("battery page should be a vertical box");
 
@@ -236,6 +246,16 @@ fn profiles_and_battery_pages_disable_quick_apply_when_capability_is_unavailable
         .iter()
         .any(|text| text == "unavailable - quick apply disabled"));
     assert!(!battery_text.iter().any(|text| text == "Apply charge type"));
+
+    let appearance = gtk_shell::appearance_page(Ok(diagnostics))
+        .downcast::<gtk4::Box>()
+        .expect("appearance page should be a vertical box");
+    let appearance_text = collect_widget_text(&appearance.clone().upcast());
+    assert!(appearance_text.iter().any(|text| text == "LED quick apply"));
+    assert!(appearance_text
+        .iter()
+        .any(|text| text == "unavailable - quick apply disabled"));
+    assert!(!appearance_text.iter().any(|text| text == "Turn on"));
 }
 
 #[test]

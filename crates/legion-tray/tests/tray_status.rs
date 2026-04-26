@@ -83,6 +83,7 @@ value = "42000"
     assert!(stdout.contains("label=Battery charge type: Standard"));
     assert!(stdout.contains("label=Charge choices: Standard, Conservation, Fast"));
     assert!(stdout.contains("label=Battery: 79% / Charging / Good"));
+    assert!(stdout.contains("label=LED: platform::ylogo on"));
     assert!(stdout.contains("label=Fan: CPU Fan 2410 RPM"));
     assert!(stdout.contains("label=GPU pending: hybrid (previous nvidia, reboot required)"));
     assert!(stdout.contains("label=Saved fan curve: 1 values from legion_hwmon"));
@@ -102,6 +103,10 @@ value = "42000"
     ));
     assert!(stdout.contains(
         "enabled action=set_battery_charge_type:Fast label=Set battery charge type: Fast"
+    ));
+    assert!(stdout.contains("label=LED actions"));
+    assert!(stdout.contains(
+        "enabled action=set_led_state:platform::ylogo:off label=Set LED state: platform::ylogo off"
     ));
     assert!(stdout.contains("enabled action=open_dashboard label=Open dashboard"));
     assert!(stdout.contains("enabled action=refresh_status label=Refresh status"));

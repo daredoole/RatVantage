@@ -13,6 +13,7 @@ pub enum TrayAction {
     NoOp,
     SetPlatformProfile(String),
     SetBatteryChargeType(String),
+    SetLedState(String, bool),
     OpenDashboard,
     RefreshStatus,
     Quit,
@@ -25,6 +26,12 @@ impl TrayAction {
             Self::SetPlatformProfile(profile) => format!("set_platform_profile:{profile}"),
             Self::SetBatteryChargeType(charge_type) => {
                 format!("set_battery_charge_type:{charge_type}")
+            }
+            Self::SetLedState(led_id, enabled) => {
+                format!(
+                    "set_led_state:{led_id}:{}",
+                    if *enabled { "on" } else { "off" }
+                )
             }
             Self::OpenDashboard => "open_dashboard".to_owned(),
             Self::RefreshStatus => "refresh_status".to_owned(),
@@ -101,6 +108,9 @@ impl TrayMenu {
         }
         if let Some(battery_row) = battery_row(report) {
             entries.push(TrayMenuEntry::Item(info_item(battery_row)));
+        }
+        for led_row in led_rows(report) {
+            entries.push(TrayMenuEntry::Item(info_item(led_row)));
         }
 
         for fan_row in fan_rows(&report.telemetry.sensors) {
@@ -223,6 +233,22 @@ fn battery_row(report: &CapabilityRegistry) -> Option<String> {
     }
 }
 
+fn led_rows(report: &CapabilityRegistry) -> Vec<String> {
+    report
+        .leds
+        .iter()
+        .filter_map(|led| {
+            led.brightness.map(|brightness| {
+                format!(
+                    "LED: {} {}",
+                    led.name,
+                    if brightness == 0 { "off" } else { "on" }
+                )
+            })
+        })
+        .collect()
+}
+
 fn append_quick_actions(entries: &mut Vec<TrayMenuEntry>, report: &CapabilityRegistry) {
     let mut sections = Vec::new();
 
@@ -258,6 +284,10 @@ fn append_quick_actions(entries: &mut Vec<TrayMenuEntry>, report: &CapabilityReg
         sections.extend(section);
     }
 
+    if let Some(section) = led_quick_action_section(report) {
+        sections.extend(section);
+    }
+
     if !sections.is_empty() {
         entries.push(TrayMenuEntry::Separator);
         entries.extend(sections);
@@ -290,6 +320,40 @@ where
             format!("{action_prefix}: {choice}"),
             action(choice),
         )));
+    }
+    Some(entries)
+}
+
+fn led_quick_action_section(report: &CapabilityRegistry) -> Option<Vec<TrayMenuEntry>> {
+    let led = report
+        .leds
+        .iter()
+        .find(|led| led.name == "platform::ylogo" && led.max_brightness == Some(1))?;
+    let current = led.brightness?;
+    if current != 0 && current != 1 {
+        return None;
+    }
+
+    let mut entries = vec![TrayMenuEntry::Item(info_item("LED actions".to_owned()))];
+    entries.push(TrayMenuEntry::Item(action_item(
+        format!("Set LED state: {} off", led.name),
+        TrayAction::SetLedState(led.name.clone(), false),
+    )));
+    entries.push(TrayMenuEntry::Item(action_item(
+        format!("Set LED state: {} on", led.name),
+        TrayAction::SetLedState(led.name.clone(), true),
+    )));
+    for entry in &mut entries {
+        if let TrayMenuEntry::Item(item) = entry {
+            if item.label.ends_with(" off") && current == 0 {
+                item.enabled = false;
+                item.action = TrayAction::NoOp;
+            }
+            if item.label.ends_with(" on") && current == 1 {
+                item.enabled = false;
+                item.action = TrayAction::NoOp;
+            }
+        }
     }
     Some(entries)
 }
@@ -353,7 +417,7 @@ mod tests {
     use legion_common::{
         BatteryChargeTypeCapability, BatteryTelemetry, Capability, CapabilityRegistry,
         CapabilityStatus, FanCurvePointSnapshot, FanCurveSnapshot, GpuModePending, HardwareSummary,
-        HwmonSensor, PlatformProfileCapability, RiskLevel,
+        HwmonSensor, LedCapability, PlatformProfileCapability, RiskLevel,
     };
 
     use super::*;
@@ -412,6 +476,12 @@ mod tests {
                     health: Some("Good".to_owned()),
                 }),
             },
+            leds: vec![LedCapability {
+                name: "platform::ylogo".to_owned(),
+                path: "/tmp/platform::ylogo/brightness".to_owned(),
+                brightness: Some(1),
+                max_brightness: Some(1),
+            }],
             ..Default::default()
         };
         let gpu_pending = GpuModePending {
@@ -444,6 +514,7 @@ mod tests {
                 "Battery charge type: Standard",
                 "Charge choices: Standard, Conservation, Fast",
                 "Battery: 79% / Charging / Good",
+                "LED: platform::ylogo on",
                 "Fan: CPU Fan 2410 RPM",
                 "GPU pending: hybrid (previous nvidia, reboot required)",
                 "Saved fan curve: 1 values from legion_hwmon",
@@ -452,6 +523,8 @@ mod tests {
                 "Missing: gpu",
                 "Platform profile actions",
                 "Battery charge type actions",
+                "LED actions",
+                "Set LED state: platform::ylogo on",
             ]
         );
         assert_eq!(
@@ -461,6 +534,7 @@ mod tests {
                 "Set platform profile: performance",
                 "Set battery charge type: Conservation",
                 "Set battery charge type: Fast",
+                "Set LED state: platform::ylogo off",
                 "Open dashboard",
                 "Refresh status",
                 "Quit",
@@ -560,6 +634,9 @@ mod tests {
         assert!(!enabled_labels(&menu)
             .iter()
             .any(|label| label.starts_with("Set battery charge type:")));
+        assert!(!enabled_labels(&menu)
+            .iter()
+            .any(|label| label.starts_with("Set LED state:")));
     }
 
     #[test]
@@ -619,6 +696,12 @@ mod tests {
                 path: "/tmp/charge_type".to_owned(),
                 choices_path: "/tmp/charge_types".to_owned(),
             }),
+            leds: vec![LedCapability {
+                name: "platform::ylogo".to_owned(),
+                path: "/tmp/platform::ylogo/brightness".to_owned(),
+                brightness: Some(1),
+                max_brightness: Some(1),
+            }],
             ..Default::default()
         };
 

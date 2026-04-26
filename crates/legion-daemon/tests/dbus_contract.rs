@@ -5,8 +5,8 @@ use legion_common::{
     WriteDryRunPlan, WriteExecutionResult, WriteExecutionStatus,
 };
 use legion_control_daemon::{
-    BatteryChargeTypeWriter, LegionControl, PlatformProfileWriter, WriteAccessPolicy,
-    WriteAuthorizer, DBUS_INTERFACE, DBUS_PATH,
+    BatteryChargeTypeWriter, LedStateWriter, LegionControl, PlatformProfileWriter,
+    WriteAccessPolicy, WriteAuthorizer, DBUS_INTERFACE, DBUS_PATH,
 };
 use legion_probe::ProbeOptions;
 use ratvantage_test_support::{
@@ -89,6 +89,14 @@ fn read_only_methods_return_expected_json_contracts() {
     assert_eq!(battery_plan.requested_value, "Conservation");
     assert_eq!(battery_plan.previous_value, "Standard");
 
+    let payload: String = proxy
+        .call("PlanLedStateWrite", &("platform::ylogo", false))
+        .unwrap();
+    let led_plan: WriteDryRunPlan = serde_json::from_str(&payload).unwrap();
+    assert_eq!(led_plan.method, "SetLedState");
+    assert_eq!(led_plan.requested_value, "0");
+    assert_eq!(led_plan.previous_value, "1");
+
     let payload: String = proxy.call("SetPlatformProfile", &("performance",)).unwrap();
     let execution: WriteExecutionResult = serde_json::from_str(&payload).unwrap();
     assert_eq!(execution.status, WriteExecutionStatus::BlockedByPolicy);
@@ -104,6 +112,15 @@ fn read_only_methods_return_expected_json_contracts() {
     assert!(!execution.applied);
     assert_eq!(execution.plan.method, "SetBatteryChargeType");
     assert_eq!(execution.plan.requested_value, "Conservation");
+
+    let payload: String = proxy
+        .call("SetLedState", &("platform::ylogo", false))
+        .unwrap();
+    let execution: WriteExecutionResult = serde_json::from_str(&payload).unwrap();
+    assert_eq!(execution.status, WriteExecutionStatus::BlockedByPolicy);
+    assert!(!execution.applied);
+    assert_eq!(execution.plan.method, "SetLedState");
+    assert_eq!(execution.plan.requested_value, "0");
 }
 
 #[test]
@@ -127,11 +144,13 @@ fn introspection_exposes_gated_reversible_write_methods_only() {
             "PlanBatteryChargeTypeWrite",
             "PlanFanPresetWrite",
             "PlanGpuModeWrite",
+            "PlanLedStateWrite",
             "PlanPlatformProfileWrite",
             "PlanRestoreAutoFanWrite",
             "RefreshCapabilities",
             "SetBatteryChargeType",
             "SetGpuModePending",
+            "SetLedState",
             "SetPlatformProfile",
         ]
     );
@@ -165,8 +184,21 @@ fn daemon_builds_dry_run_plans_without_other_dbus_write_methods() {
     assert_eq!(battery_plan.rollback_value, "Standard");
     assert!(battery_plan.readback_required);
 
+    let led_plan = service
+        .plan_led_state_write("platform::ylogo", false)
+        .unwrap();
+    assert_eq!(led_plan.method, "SetLedState");
+    assert_eq!(led_plan.capability_id, "leds");
+    assert_eq!(led_plan.previous_value, "1");
+    assert_eq!(led_plan.requested_value, "0");
+    assert_eq!(led_plan.rollback_value, "1");
+    assert!(led_plan.readback_required);
+
     assert!(service.plan_platform_profile_write("custom").is_err());
     assert!(service.plan_battery_charge_type_write("Invalid").is_err());
+    assert!(service
+        .plan_led_state_write("platform::fnlock", true)
+        .is_err());
     assert!(service.plan_gpu_mode_write("hybrid").is_err());
     assert!(service.plan_fan_preset_write("balanced-daily").is_err());
 
@@ -188,10 +220,12 @@ fn platform_profile_write_applies_when_policy_and_authorizer_allow_it() {
         WriteAccessPolicy {
             platform_profile_enabled: true,
             battery_charge_type_enabled: false,
+            led_state_enabled: false,
         },
         Arc::new(AllowAllAuthorizer),
         Arc::new(RealFixturePlatformProfileWriter),
         Arc::new(RealFixtureBatteryChargeTypeWriter),
+        Arc::new(RealFixtureLedStateWriter),
     );
 
     let result = service
@@ -223,10 +257,12 @@ fn platform_profile_write_rejects_invalid_choice_before_write() {
         WriteAccessPolicy {
             platform_profile_enabled: true,
             battery_charge_type_enabled: false,
+            led_state_enabled: false,
         },
         Arc::new(AllowAllAuthorizer),
         Arc::new(RealFixturePlatformProfileWriter),
         Arc::new(RealFixtureBatteryChargeTypeWriter),
+        Arc::new(RealFixtureLedStateWriter),
     );
 
     assert!(service.set_platform_profile("custom", ":1.99").is_err());
@@ -253,10 +289,12 @@ fn platform_profile_write_reports_write_failure_without_changing_value() {
         WriteAccessPolicy {
             platform_profile_enabled: true,
             battery_charge_type_enabled: false,
+            led_state_enabled: false,
         },
         Arc::new(AllowAllAuthorizer),
         Arc::new(FailingPlatformProfileWriter),
         Arc::new(RealFixtureBatteryChargeTypeWriter),
+        Arc::new(RealFixtureLedStateWriter),
     );
 
     let result = service
@@ -288,10 +326,12 @@ fn platform_profile_write_rolls_back_after_readback_mismatch() {
         WriteAccessPolicy {
             platform_profile_enabled: true,
             battery_charge_type_enabled: false,
+            led_state_enabled: false,
         },
         Arc::new(AllowAllAuthorizer),
         Arc::new(MismatchingPlatformProfileWriter),
         Arc::new(RealFixtureBatteryChargeTypeWriter),
+        Arc::new(RealFixtureLedStateWriter),
     );
 
     let result = service
@@ -326,10 +366,12 @@ fn battery_charge_type_write_applies_when_policy_and_authorizer_allow_it() {
         WriteAccessPolicy {
             platform_profile_enabled: false,
             battery_charge_type_enabled: true,
+            led_state_enabled: false,
         },
         Arc::new(AllowAllAuthorizer),
         Arc::new(RealFixturePlatformProfileWriter),
         Arc::new(RealFixtureBatteryChargeTypeWriter),
+        Arc::new(RealFixtureLedStateWriter),
     );
 
     let result = service
@@ -361,10 +403,12 @@ fn battery_charge_type_write_rolls_back_after_readback_mismatch() {
         WriteAccessPolicy {
             platform_profile_enabled: false,
             battery_charge_type_enabled: true,
+            led_state_enabled: false,
         },
         Arc::new(AllowAllAuthorizer),
         Arc::new(RealFixturePlatformProfileWriter),
         Arc::new(MismatchingBatteryChargeTypeWriter),
+        Arc::new(RealFixtureLedStateWriter),
     );
 
     let result = service
@@ -381,6 +425,81 @@ fn battery_charge_type_write_rolls_back_after_readback_mismatch() {
             .unwrap()
             .trim(),
         "Standard"
+    );
+
+    let _ = fs::remove_file(state_path);
+    let _ = fs::remove_dir_all(fixture);
+}
+
+#[test]
+fn led_state_write_applies_when_policy_and_authorizer_allow_it() {
+    let fixture = copied_fixture_root("led-state-write-success");
+    let state_path = unique_state_path("led-state-write-success");
+    let service = LegionControl::new_with_runtime(
+        ProbeOptions {
+            sysfs_root: fixture.clone(),
+        },
+        &state_path,
+        WriteAccessPolicy {
+            platform_profile_enabled: false,
+            battery_charge_type_enabled: false,
+            led_state_enabled: true,
+        },
+        Arc::new(AllowAllAuthorizer),
+        Arc::new(RealFixturePlatformProfileWriter),
+        Arc::new(RealFixtureBatteryChargeTypeWriter),
+        Arc::new(RealFixtureLedStateWriter),
+    );
+
+    let result = service
+        .set_led_state("platform::ylogo", false, ":1.99")
+        .unwrap();
+    assert_eq!(result.status, WriteExecutionStatus::Applied);
+    assert!(result.applied);
+    assert_eq!(result.readback_value.as_deref(), Some("0"));
+    assert_eq!(
+        fs::read_to_string(fixture.join("sys/class/leds/platform::ylogo/brightness"))
+            .unwrap()
+            .trim(),
+        "0"
+    );
+
+    let _ = fs::remove_file(state_path);
+    let _ = fs::remove_dir_all(fixture);
+}
+
+#[test]
+fn led_state_write_rolls_back_after_readback_mismatch() {
+    let fixture = copied_fixture_root("led-state-write-rollback");
+    let state_path = unique_state_path("led-state-write-rollback");
+    let service = LegionControl::new_with_runtime(
+        ProbeOptions {
+            sysfs_root: fixture.clone(),
+        },
+        &state_path,
+        WriteAccessPolicy {
+            platform_profile_enabled: false,
+            battery_charge_type_enabled: false,
+            led_state_enabled: true,
+        },
+        Arc::new(AllowAllAuthorizer),
+        Arc::new(RealFixturePlatformProfileWriter),
+        Arc::new(RealFixtureBatteryChargeTypeWriter),
+        Arc::new(MismatchingLedStateWriter),
+    );
+
+    let result = service
+        .set_led_state("platform::ylogo", false, ":1.99")
+        .unwrap();
+    assert_eq!(result.status, WriteExecutionStatus::Failed);
+    assert!(!result.applied);
+    assert!(result.message.contains("restored previous value `1`"));
+    assert_eq!(result.readback_value.as_deref(), Some("1"));
+    assert_eq!(
+        fs::read_to_string(fixture.join("sys/class/leds/platform::ylogo/brightness"))
+            .unwrap()
+            .trim(),
+        "1"
     );
 
     let _ = fs::remove_file(state_path);
@@ -555,6 +674,14 @@ impl BatteryChargeTypeWriter for RealFixtureBatteryChargeTypeWriter {
     }
 }
 
+struct RealFixtureLedStateWriter;
+
+impl LedStateWriter for RealFixtureLedStateWriter {
+    fn write_led_state(&self, path: &str, enabled: bool) -> std::result::Result<(), String> {
+        fs::write(path, if enabled { "1" } else { "0" }).map_err(|error| error.to_string())
+    }
+}
+
 struct FailingPlatformProfileWriter;
 
 impl PlatformProfileWriter for FailingPlatformProfileWriter {
@@ -598,5 +725,13 @@ impl BatteryChargeTypeWriter for MismatchingBatteryChargeTypeWriter {
             requested
         };
         fs::write(path, value).map_err(|error| error.to_string())
+    }
+}
+
+struct MismatchingLedStateWriter;
+
+impl LedStateWriter for MismatchingLedStateWriter {
+    fn write_led_state(&self, path: &str, _enabled: bool) -> std::result::Result<(), String> {
+        fs::write(path, "1").map_err(|error| error.to_string())
     }
 }

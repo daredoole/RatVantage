@@ -9,10 +9,10 @@ use anyhow::Result;
 use legion_common::{
     plan_battery_charge_type_write as plan_battery_charge_type,
     plan_fan_preset_write as plan_fan_preset, plan_gpu_mode_write as plan_gpu_mode,
-    plan_platform_profile_write as plan_platform_profile,
+    plan_led_state_write as plan_led_state, plan_platform_profile_write as plan_platform_profile,
     plan_restore_auto_fan_write as plan_restore_auto_fan, validate_gpu_mode_choice,
-    CapabilityRegistry, DaemonState, FanCurveSnapshot, FanPreset, GpuModePending, ValidationError,
-    WriteDryRunPlan, WriteExecutionResult,
+    CapabilityRegistry, DaemonState, FanCurveSnapshot, FanPreset, GpuModePending, LedCapability,
+    ValidationError, WriteDryRunPlan, WriteExecutionResult,
 };
 use legion_probe::{probe, ProbeOptions};
 use serde::Serialize;
@@ -20,8 +20,8 @@ use zbus::{blocking::Connection, blocking::ConnectionBuilder, fdo, interface, me
 
 pub const DBUS_INTERFACE: &str = "org.ratvantage.LegionControl1";
 pub const DBUS_PATH: &str = "/org/ratvantage/LegionControl1";
-pub const READ_ONLY_METHODS: &str = "GetHardwareSummary,GetCapabilities,RefreshCapabilities,GetTelemetry,GetRawProbeReport,GetGpuModePending,GetLastKnownGoodFanCurve,PlanPlatformProfileWrite,PlanBatteryChargeTypeWrite,PlanGpuModeWrite,PlanFanPresetWrite,PlanRestoreAutoFanWrite,SetGpuModePending,ClearGpuModePending,CaptureLastKnownGoodFanCurve";
-pub const GATED_WRITE_METHODS: &str = "SetPlatformProfile,SetBatteryChargeType";
+pub const READ_ONLY_METHODS: &str = "GetHardwareSummary,GetCapabilities,RefreshCapabilities,GetTelemetry,GetRawProbeReport,GetGpuModePending,GetLastKnownGoodFanCurve,PlanPlatformProfileWrite,PlanBatteryChargeTypeWrite,PlanLedStateWrite,PlanGpuModeWrite,PlanFanPresetWrite,PlanRestoreAutoFanWrite,SetGpuModePending,ClearGpuModePending,CaptureLastKnownGoodFanCurve";
+pub const GATED_WRITE_METHODS: &str = "SetPlatformProfile,SetBatteryChargeType,SetLedState";
 pub const DEFAULT_STATE_PATH: &str = "/var/lib/legion-control/state.toml";
 
 const PACKAGED_FAN_PRESETS: &[&str] = &[
@@ -33,12 +33,14 @@ const PACKAGED_FAN_PRESETS: &[&str] = &[
 
 const PLATFORM_PROFILE_WRITE_METHOD: &str = "SetPlatformProfile";
 const BATTERY_CHARGE_TYPE_WRITE_METHOD: &str = "SetBatteryChargeType";
+const LED_STATE_WRITE_METHOD: &str = "SetLedState";
 const PKCHECK_MISSING: &str = "pkcheck is required for polkit authorization";
 
 #[derive(Debug, Clone, Default)]
 pub struct WriteAccessPolicy {
     pub platform_profile_enabled: bool,
     pub battery_charge_type_enabled: bool,
+    pub led_state_enabled: bool,
 }
 
 impl WriteAccessPolicy {
@@ -49,6 +51,9 @@ impl WriteAccessPolicy {
         }
         if self.battery_charge_type_enabled {
             methods.push(BATTERY_CHARGE_TYPE_WRITE_METHOD);
+        }
+        if self.led_state_enabled {
+            methods.push(LED_STATE_WRITE_METHOD);
         }
         methods
     }
@@ -107,6 +112,10 @@ pub trait BatteryChargeTypeWriter: Send + Sync {
     ) -> std::result::Result<(), String>;
 }
 
+pub trait LedStateWriter: Send + Sync {
+    fn write_led_state(&self, path: &str, enabled: bool) -> std::result::Result<(), String>;
+}
+
 #[derive(Debug, Default)]
 pub struct SysfsPlatformProfileWriter;
 
@@ -133,6 +142,15 @@ impl BatteryChargeTypeWriter for SysfsBatteryChargeTypeWriter {
     }
 }
 
+#[derive(Debug, Default)]
+pub struct SysfsLedStateWriter;
+
+impl LedStateWriter for SysfsLedStateWriter {
+    fn write_led_state(&self, path: &str, enabled: bool) -> std::result::Result<(), String> {
+        fs::write(path, if enabled { "1" } else { "0" }).map_err(|error| error.to_string())
+    }
+}
+
 pub struct LegionControl {
     options: ProbeOptions,
     registry: Mutex<CapabilityRegistry>,
@@ -142,6 +160,7 @@ pub struct LegionControl {
     authorizer: Arc<dyn WriteAuthorizer>,
     platform_profile_writer: Arc<dyn PlatformProfileWriter>,
     battery_charge_type_writer: Arc<dyn BatteryChargeTypeWriter>,
+    led_state_writer: Arc<dyn LedStateWriter>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -164,6 +183,7 @@ impl LegionControl {
             Arc::new(PkcheckAuthorizer),
             Arc::new(SysfsPlatformProfileWriter),
             Arc::new(SysfsBatteryChargeTypeWriter),
+            Arc::new(SysfsLedStateWriter),
         )
     }
 
@@ -174,6 +194,7 @@ impl LegionControl {
         authorizer: Arc<dyn WriteAuthorizer>,
         platform_profile_writer: Arc<dyn PlatformProfileWriter>,
         battery_charge_type_writer: Arc<dyn BatteryChargeTypeWriter>,
+        led_state_writer: Arc<dyn LedStateWriter>,
     ) -> Self {
         let state_path = state_path.into();
         let registry = probe(&options);
@@ -188,6 +209,7 @@ impl LegionControl {
             authorizer,
             platform_profile_writer,
             battery_charge_type_writer,
+            led_state_writer,
         }
     }
 
@@ -214,6 +236,15 @@ impl LegionControl {
         let registry = self.planning_snapshot()?;
         plan_battery_charge_type(registry.battery_charge_type.as_ref(), requested)
             .map_err(PlanningError::Validation)
+    }
+
+    pub fn plan_led_state_write(
+        &self,
+        led_id: &str,
+        enabled: bool,
+    ) -> Result<WriteDryRunPlan, PlanningError> {
+        let registry = self.planning_snapshot()?;
+        plan_led_state(&registry.leds, led_id, enabled).map_err(PlanningError::Validation)
     }
 
     pub fn plan_gpu_mode_write(&self, requested: &str) -> Result<WriteDryRunPlan, PlanningError> {
@@ -361,6 +392,70 @@ impl LegionControl {
         }
     }
 
+    pub fn set_led_state(
+        &self,
+        led_id: &str,
+        enabled: bool,
+        sender: &str,
+    ) -> fdo::Result<WriteExecutionResult> {
+        let plan = self
+            .plan_led_state_write(led_id, enabled)
+            .map_err(planning_to_fdo)?;
+        if !self.write_policy.led_state_enabled {
+            return Ok(WriteExecutionResult::blocked_by_policy(
+                plan,
+                "LED writes are disabled by daemon policy",
+            ));
+        }
+        if let Err(reason) = self.authorizer.authorize(&plan.polkit_action, sender) {
+            return Ok(WriteExecutionResult::blocked_by_authorization(plan, reason));
+        }
+
+        let path = plan.path.clone();
+        let previous_enabled = plan.previous_value == "1";
+        if let Err(error) = self.led_state_writer.write_led_state(&path, enabled) {
+            return Ok(WriteExecutionResult::failed(
+                plan,
+                format!("failed to write LED state: {error}"),
+                None,
+            ));
+        }
+
+        let readback = self.refresh_led_state(led_id)?;
+        let requested_value = if enabled { "1" } else { "0" };
+        if readback == requested_value {
+            return Ok(WriteExecutionResult::applied(
+                plan,
+                "LED state write applied and read back successfully",
+                Some(readback),
+            ));
+        }
+
+        match self
+            .led_state_writer
+            .write_led_state(&path, previous_enabled)
+        {
+            Ok(()) => {
+                let rollback_readback = self.refresh_led_state(led_id)?;
+                Ok(WriteExecutionResult::failed(
+                    plan,
+                    format!(
+                        "LED state read-back mismatch after write; restored previous value `{}`",
+                        if previous_enabled { "1" } else { "0" }
+                    ),
+                    Some(rollback_readback),
+                ))
+            }
+            Err(rollback_error) => Ok(WriteExecutionResult::failed(
+                plan,
+                format!(
+                    "LED state read-back mismatch after write and rollback failed: expected `{requested_value}` got `{readback}`; rollback error: {rollback_error}"
+                ),
+                Some(readback),
+            )),
+        }
+    }
+
     pub fn gpu_mode_pending(&self) -> fdo::Result<Option<GpuModePending>> {
         self.state
             .lock()
@@ -459,6 +554,18 @@ impl LegionControl {
                 )
             })
     }
+
+    fn refresh_led_state(&self, led_id: &str) -> fdo::Result<String> {
+        let refreshed = self.refresh()?;
+        refreshed_led(&refreshed.leds, led_id)
+            .and_then(|led| led.brightness)
+            .map(|brightness| brightness.to_string())
+            .ok_or_else(|| {
+                fdo::Error::Failed(format!(
+                    "LED current value missing after write/read-back for {led_id}"
+                ))
+            })
+    }
 }
 
 #[allow(non_snake_case)]
@@ -500,6 +607,10 @@ impl LegionControl {
         to_plan_json(self.plan_battery_charge_type_write(requested))
     }
 
+    fn PlanLedStateWrite(&self, led_id: &str, enabled: bool) -> fdo::Result<String> {
+        to_plan_json(self.plan_led_state_write(led_id, enabled))
+    }
+
     fn PlanGpuModeWrite(&self, requested: &str) -> fdo::Result<String> {
         to_plan_json(self.plan_gpu_mode_write(requested))
     }
@@ -528,6 +639,16 @@ impl LegionControl {
     ) -> fdo::Result<String> {
         let sender = sender_from_header(&header)?;
         to_json(&self.set_battery_charge_type(requested, &sender)?)
+    }
+
+    fn SetLedState(
+        &self,
+        led_id: &str,
+        enabled: bool,
+        #[zbus(header)] header: Header<'_>,
+    ) -> fdo::Result<String> {
+        let sender = sender_from_header(&header)?;
+        to_json(&self.set_led_state(led_id, enabled, &sender)?)
     }
 
     fn SetGpuModePending(&self, requested: &str) -> fdo::Result<String> {
@@ -576,6 +697,10 @@ fn planning_to_fdo(error: PlanningError) -> fdo::Error {
         PlanningError::PresetUnavailable(error) => fdo::Error::Failed(error),
         PlanningError::Validation(error) => validation_to_fdo(error),
     }
+}
+
+fn refreshed_led<'a>(leds: &'a [LedCapability], led_id: &str) -> Option<&'a LedCapability> {
+    leds.iter().find(|led| led.name == led_id)
 }
 
 fn validation_to_fdo(error: ValidationError) -> fdo::Error {
@@ -678,9 +803,10 @@ mod tests {
             WriteAccessPolicy {
                 platform_profile_enabled: true,
                 battery_charge_type_enabled: true,
+                led_state_enabled: true,
             }
             .enabled_methods(),
-            ["SetPlatformProfile", "SetBatteryChargeType"]
+            ["SetPlatformProfile", "SetBatteryChargeType", "SetLedState"]
         );
     }
 }

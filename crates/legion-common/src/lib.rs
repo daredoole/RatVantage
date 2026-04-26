@@ -250,6 +250,29 @@ pub const WRITE_METHOD_CONTRACTS: &[WriteMethodContract] = &[
         safety_notes: &["write method remains disabled; dry-run planning only"],
     },
     WriteMethodContract {
+        method: "SetLedState",
+        capability_id: "leds",
+        polkit_action: "org.ratvantage.LegionControl1.set-led-state",
+        request_type: r#"{"led_id":"platform::ylogo","enabled":"bool"}"#,
+        risk: RiskLevel::ReversibleWrite,
+        enabled: false,
+        reboot_required: false,
+        preconditions: &[
+            "target LED capability is detected",
+            "daemon has read current brightness and max_brightness for the LED",
+        ],
+        validators: &[
+            "requested led_id exactly matches a probed LED node",
+            "only explicitly allowed binary LEDs are writable",
+            "post-write read-back matches requested LED state",
+        ],
+        rollback: &[
+            "store previous LED brightness before write",
+            "restore previous LED brightness if read-back fails",
+        ],
+        safety_notes: &["write method remains disabled; dry-run planning only"],
+    },
+    WriteMethodContract {
         method: "SetGpuMode",
         capability_id: "gpu",
         polkit_action: "org.ratvantage.LegionControl1.set-gpu-mode",
@@ -432,6 +455,73 @@ pub fn validate_gpu_mode_choice(
     )
 }
 
+pub fn validate_led_state_request(
+    leds: &[LedCapability],
+    led_id: &str,
+) -> Result<(), ValidationError> {
+    if led_id.is_empty() {
+        return Err(ValidationError::EmptyValue {
+            field: "led_id".to_owned(),
+        });
+    }
+
+    let Some(led) = leds.iter().find(|led| led.name == led_id) else {
+        return Err(ValidationError::MissingCapability {
+            capability_id: format!("leds:{led_id}"),
+        });
+    };
+
+    if led.name == "platform::fnlock" {
+        return Err(ValidationError::BlockedChoice {
+            capability_id: "leds".to_owned(),
+            requested: led_id.to_owned(),
+            reason: "platform::fnlock remains indicator-only until functional fn_lock writes exist"
+                .to_owned(),
+        });
+    }
+
+    if led.name != "platform::ylogo" {
+        return Err(ValidationError::BlockedChoice {
+            capability_id: "leds".to_owned(),
+            requested: led_id.to_owned(),
+            reason: "only platform::ylogo is enabled for reversible LED writes right now"
+                .to_owned(),
+        });
+    }
+
+    match led.max_brightness {
+        Some(1) => {}
+        Some(max_brightness) => {
+            return Err(ValidationError::BlockedChoice {
+                capability_id: "leds".to_owned(),
+                requested: led_id.to_owned(),
+                reason: format!(
+                    "only binary LED nodes are supported; detected max_brightness={max_brightness}"
+                ),
+            })
+        }
+        None => {
+            return Err(ValidationError::BlockedChoice {
+                capability_id: "leds".to_owned(),
+                requested: led_id.to_owned(),
+                reason: "LED max_brightness is required before enabling writes".to_owned(),
+            })
+        }
+    }
+
+    match led.brightness {
+        Some(0 | 1) => Ok(()),
+        Some(value) => Err(ValidationError::BlockedChoice {
+            capability_id: "leds".to_owned(),
+            requested: led_id.to_owned(),
+            reason: format!("only binary LED states are supported; detected brightness={value}"),
+        }),
+        None => Err(ValidationError::MissingCurrentValue {
+            capability_id: format!("leds:{led_id}"),
+        }),
+    }
+}
+
 pub fn validate_fan_preset_choice(
     fan_curves: &[FanCurveCapability],
     presets: &[FanPreset],
@@ -600,6 +690,29 @@ pub fn plan_gpu_mode_write(
             .as_deref()
             .expect("validated GPU mode current value must exist"),
         requested,
+    )
+}
+
+pub fn plan_led_state_write(
+    leds: &[LedCapability],
+    led_id: &str,
+    enabled: bool,
+) -> Result<WriteDryRunPlan, ValidationError> {
+    validate_led_state_request(leds, led_id)?;
+    let led = leds
+        .iter()
+        .find(|led| led.name == led_id)
+        .expect("validated LED capability must exist");
+    let previous_value = led
+        .brightness
+        .expect("validated LED brightness must exist")
+        .to_string();
+    let requested_value = if enabled { "1" } else { "0" };
+    plan_write(
+        write_contract("SetLedState"),
+        &led.path,
+        &previous_value,
+        requested_value,
     )
 }
 
@@ -857,6 +970,7 @@ mod tests {
             [
                 "SetPlatformProfile",
                 "SetBatteryChargeType",
+                "SetLedState",
                 "SetGpuMode",
                 "ApplyFanPreset",
                 "RestoreAutoFan"
@@ -977,6 +1091,54 @@ mod tests {
             validate_battery_charge_type_choice(Some(&capability), "Long_Life"),
             Ok(())
         );
+    }
+
+    #[test]
+    fn led_state_validator_accepts_supported_binary_ylogo() {
+        assert_eq!(
+            validate_led_state_request(
+                &[LedCapability {
+                    name: "platform::ylogo".to_owned(),
+                    path: "/tmp/platform::ylogo/brightness".to_owned(),
+                    brightness: Some(1),
+                    max_brightness: Some(1),
+                }],
+                "platform::ylogo"
+            ),
+            Ok(())
+        );
+    }
+
+    #[test]
+    fn led_state_validator_rejects_unknown_non_binary_and_blocked_leds() {
+        assert!(matches!(
+            validate_led_state_request(&[], "platform::ylogo"),
+            Err(ValidationError::MissingCapability { .. })
+        ));
+        assert!(matches!(
+            validate_led_state_request(
+                &[LedCapability {
+                    name: "platform::ylogo".to_owned(),
+                    path: "/tmp/platform::ylogo/brightness".to_owned(),
+                    brightness: Some(2),
+                    max_brightness: Some(2),
+                }],
+                "platform::ylogo"
+            ),
+            Err(ValidationError::BlockedChoice { .. })
+        ));
+        assert!(matches!(
+            validate_led_state_request(
+                &[LedCapability {
+                    name: "platform::fnlock".to_owned(),
+                    path: "/tmp/platform::fnlock/brightness".to_owned(),
+                    brightness: Some(0),
+                    max_brightness: Some(1),
+                }],
+                "platform::fnlock"
+            ),
+            Err(ValidationError::BlockedChoice { .. })
+        ));
     }
 
     #[test]
@@ -1140,6 +1302,33 @@ mod tests {
         assert_eq!(plan.rollback_value, "Standard");
         assert!(plan.readback_required);
         assert!(!plan.reboot_required);
+    }
+
+    #[test]
+    fn led_state_dry_run_plan_uses_validator_and_contract_metadata() {
+        let plan = plan_led_state_write(
+            &[LedCapability {
+                name: "platform::ylogo".to_owned(),
+                path: "/tmp/platform::ylogo/brightness".to_owned(),
+                brightness: Some(1),
+                max_brightness: Some(1),
+            }],
+            "platform::ylogo",
+            false,
+        )
+        .unwrap();
+
+        assert_eq!(plan.method, "SetLedState");
+        assert_eq!(plan.capability_id, "leds");
+        assert_eq!(
+            plan.polkit_action,
+            "org.ratvantage.LegionControl1.set-led-state"
+        );
+        assert_eq!(plan.path, "/tmp/platform::ylogo/brightness");
+        assert_eq!(plan.previous_value, "1");
+        assert_eq!(plan.requested_value, "0");
+        assert_eq!(plan.rollback_value, "1");
+        assert!(plan.readback_required);
     }
 
     #[test]

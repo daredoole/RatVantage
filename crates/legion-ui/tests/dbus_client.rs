@@ -2,8 +2,8 @@ use std::{fs, process::Command, sync::Arc};
 
 use legion_common::{Capability, CapabilityStatus, HardwareSummary, RiskLevel};
 use legion_control_daemon::{
-    BatteryChargeTypeWriter, LegionControl, PlatformProfileWriter, WriteAccessPolicy,
-    WriteAuthorizer, DBUS_INTERFACE, DBUS_PATH,
+    BatteryChargeTypeWriter, LedStateWriter, LegionControl, PlatformProfileWriter,
+    WriteAccessPolicy, WriteAuthorizer, DBUS_INTERFACE, DBUS_PATH,
 };
 use legion_control_ui::{
     render_diagnostics_json, render_overview_lines, DiagnosticsBundle, LegionControlClient,
@@ -184,6 +184,70 @@ fn client_reads_daemon_contract_over_private_bus() {
     assert_eq!(battery_plan.method, "SetBatteryChargeType");
     assert_eq!(battery_plan.previous_value, "Standard");
     assert_eq!(battery_plan.requested_value, "Conservation");
+
+    let led_plan = client
+        .plan_led_state_write("platform::ylogo", false)
+        .unwrap();
+    assert_eq!(led_plan.method, "SetLedState");
+    assert_eq!(led_plan.previous_value, "1");
+    assert_eq!(led_plan.requested_value, "0");
+}
+
+#[test]
+fn refresh_runtime_snapshot_reprobes_before_reading_runtime_state() {
+    let state_path = unique_state_path("refresh-runtime-snapshot");
+    fs::write(
+        &state_path,
+        r#"schema_version = 1
+
+[gpu_mode_pending]
+requested_mode = "hybrid"
+previous_mode = "nvidia"
+reboot_required = true
+
+[last_known_good_fan_curve]
+curve_id = "legion_hwmon"
+path = "/tmp/fixture/sys/class/hwmon/hwmon7"
+
+[[last_known_good_fan_curve.points]]
+path = "/tmp/fixture/sys/class/hwmon/hwmon7/pwm1_auto_point1_temp"
+value = "42000"
+"#,
+    )
+    .unwrap();
+    let (_bus, _service_connection, address) = fixture_service_with_state(&state_path);
+    let client = LegionControlClient::address(&address).unwrap();
+
+    let snapshot = client.refresh_runtime_snapshot().unwrap();
+
+    assert_eq!(snapshot.status.hardware.product_name, "82WM");
+    assert_eq!(
+        snapshot
+            .diagnostics
+            .raw_probe_report
+            .platform_profile
+            .as_ref()
+            .and_then(|profile| profile.current.as_deref()),
+        Some("balanced")
+    );
+    assert_eq!(
+        snapshot
+            .diagnostics
+            .gpu_mode_pending
+            .as_ref()
+            .map(|pending| pending.requested_mode.as_str()),
+        Some("hybrid")
+    );
+    assert_eq!(
+        snapshot
+            .diagnostics
+            .last_known_good_fan_curve
+            .as_ref()
+            .map(|snapshot| snapshot.curve_id.as_str()),
+        Some("legion_hwmon")
+    );
+
+    let _ = fs::remove_file(state_path);
 }
 
 #[test]
@@ -482,10 +546,12 @@ fn set_platform_profile_cli_executes_gated_write_and_prints_result() {
             WriteAccessPolicy {
                 platform_profile_enabled: true,
                 battery_charge_type_enabled: false,
+                led_state_enabled: false,
             },
             Arc::new(AllowAllAuthorizer),
             Arc::new(RealFixturePlatformProfileWriter),
             Arc::new(RealFixtureBatteryChargeTypeWriter),
+            Arc::new(RealFixtureLedStateWriter),
         ));
     let output = Command::new(env!("CARGO_BIN_EXE_legion-control-ui"))
         .args([
@@ -551,10 +617,12 @@ fn set_battery_charge_type_cli_executes_gated_write_and_prints_result() {
             WriteAccessPolicy {
                 platform_profile_enabled: false,
                 battery_charge_type_enabled: true,
+                led_state_enabled: false,
             },
             Arc::new(AllowAllAuthorizer),
             Arc::new(RealFixturePlatformProfileWriter),
             Arc::new(RealFixtureBatteryChargeTypeWriter),
+            Arc::new(RealFixtureLedStateWriter),
         ));
     let output = Command::new(env!("CARGO_BIN_EXE_legion-control-ui"))
         .args([
@@ -579,6 +647,76 @@ fn set_battery_charge_type_cli_executes_gated_write_and_prints_result() {
             .unwrap()
             .trim(),
         "Conservation"
+    );
+
+    let _ = fs::remove_file(state_path);
+    let _ = fs::remove_dir_all(fixture);
+}
+
+#[test]
+fn set_led_state_cli_reports_policy_block_when_write_is_disabled() {
+    let (_bus, _service_connection, address) = fixture_service();
+    let output = Command::new(env!("CARGO_BIN_EXE_legion-control-ui"))
+        .args([
+            "--set-led-state",
+            "platform::ylogo=off",
+            "--bus-address",
+            &address,
+        ])
+        .output()
+        .unwrap();
+
+    assert!(output.status.success());
+    assert!(output.stderr.is_empty());
+    let json: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(json["status"], "blocked_by_policy");
+    assert_eq!(json["applied"], false);
+    assert_eq!(json["plan"]["method"], "SetLedState");
+    assert_eq!(json["plan"]["requested_value"], "0");
+}
+
+#[test]
+fn set_led_state_cli_executes_gated_write_and_prints_result() {
+    let fixture = copied_fixture_root("ui-led-state-write");
+    let state_path = unique_state_path("ui-led-state-write");
+    let (_bus, _service_connection, address) =
+        fixture_service_with_runtime(LegionControl::new_with_runtime(
+            ProbeOptions {
+                sysfs_root: fixture.clone(),
+            },
+            &state_path,
+            WriteAccessPolicy {
+                platform_profile_enabled: false,
+                battery_charge_type_enabled: false,
+                led_state_enabled: true,
+            },
+            Arc::new(AllowAllAuthorizer),
+            Arc::new(RealFixturePlatformProfileWriter),
+            Arc::new(RealFixtureBatteryChargeTypeWriter),
+            Arc::new(RealFixtureLedStateWriter),
+        ));
+    let output = Command::new(env!("CARGO_BIN_EXE_legion-control-ui"))
+        .args([
+            "--set-led-state",
+            "platform::ylogo=off",
+            "--bus-address",
+            &address,
+        ])
+        .output()
+        .unwrap();
+
+    assert!(output.status.success());
+    assert!(output.stderr.is_empty());
+    let json: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(json["status"], "applied");
+    assert_eq!(json["applied"], true);
+    assert_eq!(json["readback_value"], "0");
+    assert_eq!(json["plan"]["method"], "SetLedState");
+    assert_eq!(
+        fs::read_to_string(fixture.join("sys/class/leds/platform::ylogo/brightness"))
+            .unwrap()
+            .trim(),
+        "0"
     );
 
     let _ = fs::remove_file(state_path);
@@ -906,5 +1044,13 @@ impl BatteryChargeTypeWriter for RealFixtureBatteryChargeTypeWriter {
         requested: &str,
     ) -> std::result::Result<(), String> {
         fs::write(path, requested).map_err(|error| error.to_string())
+    }
+}
+
+struct RealFixtureLedStateWriter;
+
+impl LedStateWriter for RealFixtureLedStateWriter {
+    fn write_led_state(&self, path: &str, enabled: bool) -> std::result::Result<(), String> {
+        fs::write(path, if enabled { "1" } else { "0" }).map_err(|error| error.to_string())
     }
 }

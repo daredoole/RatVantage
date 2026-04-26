@@ -4,7 +4,7 @@ use std::process::Command;
 use anyhow::Result;
 use legion_common::{
     Capability, CapabilityRegistry, CapabilityStatus, FanCurveSnapshot, GpuModePending,
-    HardwareSummary, RiskLevel, TelemetrySnapshot, WriteDryRunPlan,
+    HardwareSummary, RiskLevel, TelemetrySnapshot, WriteDryRunPlan, WriteExecutionResult,
 };
 use serde::{de::DeserializeOwned, Serialize};
 use zbus::blocking::{Connection, ConnectionBuilder, Proxy};
@@ -17,6 +17,12 @@ pub const DBUS_PATH: &str = "/org/ratvantage/LegionControl1";
 
 pub struct LegionControlClient {
     connection: Connection,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RuntimeSnapshot {
+    pub status: UiStatus,
+    pub diagnostics: DiagnosticsBundle,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -539,6 +545,22 @@ impl LegionControlClient {
         .with_runtime_state(self.gpu_mode_pending()?, self.last_known_good_fan_curve()?))
     }
 
+    pub fn refresh_runtime_snapshot(&self) -> Result<RuntimeSnapshot> {
+        let capabilities = self.refresh_capabilities()?;
+        let report = self.raw_probe_report()?;
+        let gpu_pending = self.gpu_mode_pending()?;
+        let fan_snapshot = self.last_known_good_fan_curve()?;
+        Ok(RuntimeSnapshot {
+            status: UiStatus::from_parts(report.hardware.clone(), capabilities)?,
+            diagnostics: DiagnosticsBundle::from_report_with_logs(
+                report,
+                kernel_version(),
+                recent_daemon_logs(),
+            )
+            .with_runtime_state(gpu_pending, fan_snapshot),
+        })
+    }
+
     pub fn plan_platform_profile_write(&self, requested: &str) -> Result<WriteDryRunPlan> {
         self.call_json_arg("PlanPlatformProfileWrite", requested)
     }
@@ -554,11 +576,20 @@ impl LegionControlClient {
         self.call_json_arg("PlanBatteryChargeTypeWrite", requested)
     }
 
-    pub fn set_battery_charge_type(
-        &self,
-        requested: &str,
-    ) -> Result<legion_common::WriteExecutionResult> {
+    pub fn set_battery_charge_type(&self, requested: &str) -> Result<WriteExecutionResult> {
         self.call_json_arg("SetBatteryChargeType", requested)
+    }
+
+    pub fn plan_led_state_write(&self, led_id: &str, enabled: bool) -> Result<WriteDryRunPlan> {
+        let proxy = Proxy::new(&self.connection, DBUS_INTERFACE, DBUS_PATH, DBUS_INTERFACE)?;
+        let payload: String = proxy.call("PlanLedStateWrite", &(led_id, enabled))?;
+        Ok(serde_json::from_str(&payload)?)
+    }
+
+    pub fn set_led_state(&self, led_id: &str, enabled: bool) -> Result<WriteExecutionResult> {
+        let proxy = Proxy::new(&self.connection, DBUS_INTERFACE, DBUS_PATH, DBUS_INTERFACE)?;
+        let payload: String = proxy.call("SetLedState", &(led_id, enabled))?;
+        Ok(serde_json::from_str(&payload)?)
     }
 
     pub fn plan_gpu_mode_write(&self, requested: &str) -> Result<WriteDryRunPlan> {

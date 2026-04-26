@@ -7,19 +7,21 @@
 - Branch: `main`
 - Worktree at handoff: intended to be clean after the latest local tray menu diagnostics commit; run `git status --short --branch` and `git log --oneline -1` for the exact state before continuing.
 - Global Codex config: GitHub MCP is disabled, not removed, in `/home/darrian/.codex/config.toml`. New sessions should not rely on GitHub MCP unless the user explicitly re-enables it.
-- Latest local commits: run `git log --oneline -5` before continuing. Recent work includes diagnostics/export parity, compatibility bundle intake, KDE smoke report bundles, tray desktop diagnostics, the runtime-derived tray menu plus `--menu-check`, caller-aware reversible platform/battery writes, and GTK/tray quick actions.
-- Latest known milestone: pre-alpha scaffold with GTK smoke coverage, hardened packaging metadata, disabled high-risk write planning, runtime/current 82WM fixture and validation evidence, diagnostics log excerpts and compact summary counts, packaged fan preset assets with dry-run planning, fan restore/default dry-run planning, app-state-only GPU pending-reboot tracking, app-state-only last-known-good fan curve capture, overview/tray/GTK state visibility, diagnostics/export parity for `gpu_mode_pending` and `last_known_good_fan_curve`, StatusNotifier tray backend, tray dashboard bus-address forwarding, tray tooltip profile/fan/count details, runtime-derived tray menu rows for detected profile/charge choices plus packaged presets and pending state, GTK Profile/Battery quick-apply controls with inline feedback, tray quick actions for reversible profile and charge-type writes, GNOME tray extension guidance, KDE StatusNotifier tooltip/menu/quit smoke evidence, report-capable KDE tray smoke bundles under `target/smoke/`, tray desktop diagnostics via `legion-control-tray --desktop-check`, tray menu diagnostics via `legion-control-tray --menu-check`, documented GNOME untested path, read-only battery overview telemetry, read-only EnvyControl GPU query, UI status/overview/diagnostics/dry-run output with LED brightness and firmware toggle values, GPU dry-run planning with reboot-required messaging and rollback guidance, gated platform-profile and battery charge type execution paths with `pkcheck` authorization and rollback tests, diagnostics choice-source paths, per-capability status labels, GTK Status, Profiles, Battery, Fans, Appearance, and Diagnostics tabs, and a compatibility bundle/PR intake workflow for outside Legion hardware submissions.
+- Latest local commits: run `git log --oneline -5` before continuing. Recent work includes diagnostics/export parity, compatibility bundle intake, KDE smoke report bundles, tray desktop diagnostics, the runtime-derived tray menu plus `--menu-check`, caller-aware reversible platform/battery writes, GTK/tray quick actions, and reversible ylogo LED writes with tray reload improvements.
+- Latest known milestone: pre-alpha scaffold with GTK smoke coverage, hardened packaging metadata, disabled high-risk write planning, runtime/current 82WM fixture and validation evidence, diagnostics log excerpts and compact summary counts, packaged fan preset assets with dry-run planning, fan restore/default dry-run planning, app-state-only GPU pending-reboot tracking, app-state-only last-known-good fan curve capture, overview/tray/GTK state visibility, diagnostics/export parity for `gpu_mode_pending` and `last_known_good_fan_curve`, StatusNotifier tray backend, tray dashboard bus-address forwarding, tray tooltip profile/fan/count details, runtime-derived tray menu rows for detected profile/charge/LED choices plus packaged presets and pending state, GTK Profile/Battery/Appearance quick-apply controls with inline feedback, tray quick actions for reversible profile, charge-type, and ylogo LED writes, GNOME tray extension guidance, KDE StatusNotifier tooltip/menu/quit smoke evidence, report-capable KDE tray smoke bundles under `target/smoke/`, tray desktop diagnostics via `legion-control-tray --desktop-check`, tray menu diagnostics via `legion-control-tray --menu-check`, periodic/resume-style tray reloads, documented GNOME untested path, read-only battery overview telemetry, read-only EnvyControl GPU query, UI status/overview/diagnostics/dry-run output with LED brightness and firmware toggle values, GPU dry-run planning with reboot-required messaging and rollback guidance, gated platform-profile, battery charge type, and ylogo LED execution paths with `pkcheck` authorization and rollback tests, diagnostics choice-source paths, per-capability status labels, GTK Status, Profiles, Battery, Fans, Appearance, and Diagnostics tabs, and a compatibility bundle/PR intake workflow for outside Legion hardware submissions.
 - Rust toolchain: pinned stable in `rust-toolchain.toml`; local stable installed because GTK stack requires rustc 1.92+.
 
 ## Current task
 
-- Completed slice: brought reversible platform-profile and battery charge type execution into GTK and tray quick actions with shared result feedback and test coverage.
+- Completed slice: extended the reversible write surface to ylogo LED, wired GTK Appearance and tray quick actions to it, and added shared tray reload behavior for reprobe-driven refresh and suspend-like gaps.
 - The daemon now exposes:
   - `SetPlatformProfile`
   - `SetBatteryChargeType`
+  - `SetLedState`
 - The UI CLI now exposes:
   - `--set-platform-profile <profile>`
   - `--set-battery-charge-type <charge_type>`
+  - `--set-led-state <led_id=on|off>`
 - The execution flow for both methods:
   - validates against detected choices
   - requires the matching daemon policy flag to be enabled
@@ -28,15 +30,16 @@
   - refreshes and reads back
   - restores the previous value if read-back does not match
 - Default behavior is still blocked unless the daemon is started with the explicit write-enable flags.
-- The GTK shell now exposes quick-apply controls in the Profiles and Battery tabs and renders idle/success/blocked/failed write feedback inline.
-- The StatusNotifier tray now exposes runtime-derived quick actions for non-current platform profile and battery charge type choices, then refreshes the menu after each attempted write.
+- The GTK shell now exposes quick-apply controls in the Profiles, Battery, and Appearance tabs and renders idle/success/blocked/failed write feedback inline.
+- The StatusNotifier tray now exposes runtime-derived quick actions for non-current platform profile, battery charge type, and ylogo LED choices, then refreshes the menu after each attempted write.
+- Tray runtime reload now uses a shared client reprobe helper and auto-refreshes after periodic intervals and suspend-like gaps.
 - Automated coverage exists in:
   - `crates/legion-daemon/src/lib.rs`
   - `crates/legion-daemon/tests/dbus_contract.rs`
   - `crates/legion-ui/src/main.rs`
   - `crates/legion-ui/tests/dbus_client.rs`
 - This still does not enable GPU, fan preset, or fan restore writes yet.
-- Next recommended task from the updated roadmap: extend the reversible write pattern to additional low-risk appearance/peripheral controls, then add tray/UI refresh and resume handling around the new write paths.
+- Next recommended task from the updated roadmap: extend the reversible write pattern beyond ylogo LED to additional low-risk toggles such as selected ideapad controls, while keeping the shared refresh/resume path and recovery behavior intact.
 
 ## Implemented
 
@@ -56,7 +59,7 @@
 - UI `--set-platform-profile` and `--set-battery-charge-type` commands for gated reversible execution results over D-Bus.
 - Platform profile and battery charge type models include both current-value paths and choice-list paths for diagnostics.
 - UI status output includes per-capability status and risk labels.
-- Optional GTK Profiles and Battery tabs render the diagnostics bundle data and expose gated quick-apply controls with inline write-result feedback.
+- Optional GTK Profiles, Battery, and Appearance tabs render the diagnostics bundle data and expose gated quick-apply controls with inline write-result feedback where the write surface is currently allowed.
 - Optional GTK read-only Fans tab renders fan telemetry, fan curve paths, and packaged preset IDs without write controls.
 - Optional GTK read-only Appearance tab renders LED brightness and firmware toggle values without write controls.
 - Optional GTK diagnostics tab for the same read-only hardware/debug bundle, with compact counts and Copy JSON parity for durable app-state fields.
@@ -76,8 +79,8 @@
 - UI `--status`, `--plan-platform-profile`, `--set-platform-profile`, `--plan-battery-charge-type`, `--set-battery-charge-type`, `--plan-gpu-mode`, and `--plan-fan-preset` commands, plus optional GTK4/libadwaita shell behind `gtk-ui`.
 - Read-only `legion-control-tray --status` summary output.
 - `legion-control-tray --menu-check` diagnostics for the runtime-derived tray menu, including reversible quick-action entries.
-- `legion-control-tray` StatusNotifier backend with dashboard, refresh, quit, informational runtime menu rows, and reversible quick actions for platform profile and battery charge type.
-- Tray menu shows detected platform profile choices, battery charge choices, packaged fan preset labels, capability summaries, pending app state, and quick actions for non-current reversible choices.
+- `legion-control-tray` StatusNotifier backend with dashboard, refresh, quit, periodic/resume reloads, informational runtime menu rows, and reversible quick actions for platform profile, battery charge type, and ylogo LED.
+- Tray menu shows detected platform profile choices, battery charge choices, LED state, packaged fan preset labels, capability summaries, pending app state, and quick actions for non-current reversible choices.
 - StatusNotifier tray dashboard launch forwards `--bus-address` when the tray runs against a private/session bus.
 - Tray tooltip reports current platform profile, fan RPM, and available/missing capability counts.
 - StatusNotifier tray smoke script and manual checklist; autostart is still disabled.
@@ -94,9 +97,9 @@
 - Read-only sysfs fixture capture workflow, validated against the existing 82WM fixture in local CI.
 - Read-only compatibility bundle workflow via `scripts/capture-compat-report.sh`, validated against the existing 82WM fixture in local and GitHub CI.
 - Hardware compatibility PR template in `.github/PULL_REQUEST_TEMPLATE/hardware-compatibility.md`.
-- Disabled draft write-method contracts for GPU mode and fan presets, plus gated platform-profile and battery charge type execution paths.
-- Pure validators for platform profile, battery charge type, EnvyControl GPU mode, and packaged fan preset choices; the reversible platform/battery writes remain disabled by default unless the daemon write flags are enabled.
-- Validator-backed dry-run planning for platform profile, battery charge type, GPU mode, and fan presets; `SetPlatformProfile` and `SetBatteryChargeType` are exposed over D-Bus with policy/auth gates and rollback handling.
+- Disabled draft write-method contracts for GPU mode and fan presets, plus gated platform-profile, battery charge type, and ylogo LED execution paths.
+- Pure validators for platform profile, battery charge type, ylogo LED state, EnvyControl GPU mode, and packaged fan preset choices; the reversible platform/battery/LED writes remain disabled by default unless the daemon write flags are enabled.
+- Validator-backed dry-run planning for platform profile, battery charge type, ylogo LED state, GPU mode, and fan presets; `SetPlatformProfile`, `SetBatteryChargeType`, and `SetLedState` are exposed over D-Bus with policy/auth gates and rollback handling.
 - Daemon-side Rust adapters for dry-run planning, tested directly and through private-bus contract tests.
 - Local CI and GitHub CI.
 - `docs/implementation-plan.md` intentionally has both layouts:
@@ -114,7 +117,7 @@ scripts/capture-compat-report.sh --output compat/<machine-label>
 cargo run -p legion-probe -- --json --sysfs-root tests/fixtures/sysfs-82wm-confirmed
 cargo run -p legion-control-daemon -- --dry-run
 cargo run -p legion-control-daemon -- --session --sysfs-root tests/fixtures/sysfs-82wm-confirmed
-cargo run -p legion-control-daemon -- --enable-platform-profile-write --enable-battery-charge-type-write
+cargo run -p legion-control-daemon -- --enable-platform-profile-write --enable-battery-charge-type-write --enable-led-state-write
 cargo run -p legion-control-ui --features gtk-ui
 cargo run -p legion-control-ui -- --overview --bus-address <dbus-address>
 cargo run -p legion-control-ui -- --diagnostics --bus-address <dbus-address>
@@ -122,6 +125,8 @@ cargo run -p legion-control-ui -- --plan-platform-profile performance --bus-addr
 cargo run -p legion-control-ui -- --set-platform-profile performance --bus-address <dbus-address>
 cargo run -p legion-control-ui -- --plan-battery-charge-type Conservation --bus-address <dbus-address>
 cargo run -p legion-control-ui -- --set-battery-charge-type Conservation --bus-address <dbus-address>
+cargo run -p legion-control-ui -- --plan-led-state platform::ylogo=off --bus-address <dbus-address>
+cargo run -p legion-control-ui -- --set-led-state platform::ylogo=off --bus-address <dbus-address>
 cargo run -p legion-control-ui -- --plan-gpu-mode hybrid --bus-address <dbus-address>
 cargo run -p legion-control-ui -- --plan-fan-preset balanced-daily --bus-address <dbus-address>
 cargo run -p legion-control-ui -- --plan-restore-auto-fan --bus-address <dbus-address>
@@ -146,9 +151,9 @@ Do not turn GitHub CI off completely yet. Use local CI before pushing, then keep
 
 ## Next tasks
 
-1. Bring the new reversible execution result model into GTK and tray quick actions so successful, blocked, and failed writes are visible in the UI.
+1. Extend the reversible write pattern beyond ylogo LED to another low-risk control only after validating its side effects and recovery path.
 2. Keep tray autostart disabled until GNOME-with-extension smoke exists; KDE smoke is no longer the blocker.
-3. If no new hardware reports are available, continue with read-only tray/UI polish and stronger smoke/report evidence.
+3. If no new hardware reports are available, continue with tray/UI polish and stronger smoke/report evidence.
 4. Keep progress docs current after each completed roadmap slice.
 5. Keep all higher-risk hardware mutation disabled until the safety checklist below is satisfied.
 

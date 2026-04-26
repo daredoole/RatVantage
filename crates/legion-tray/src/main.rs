@@ -50,10 +50,11 @@ fn main() -> Result<()> {
             Some(address) => LegionControlClient::address(&address)?,
             None => LegionControlClient::system()?,
         };
-        let status = client.status()?;
-        let report = client.raw_probe_report()?;
-        let gpu_pending = client.gpu_mode_pending()?;
-        let fan_snapshot = client.last_known_good_fan_curve()?;
+        let snapshot = client.refresh_runtime_snapshot()?;
+        let status = snapshot.status;
+        let report = snapshot.diagnostics.raw_probe_report;
+        let gpu_pending = snapshot.diagnostics.gpu_mode_pending;
+        let fan_snapshot = snapshot.diagnostics.last_known_good_fan_curve;
         let summary = TraySummary::from_status_and_report(
             &status,
             &report,

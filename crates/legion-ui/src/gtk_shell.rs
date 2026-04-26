@@ -1,12 +1,12 @@
 use crate::{
     capability_status_label, render_diagnostics_json, risk_level_label, DiagnosticsBundle,
-    LegionControlClient, UiStatus,
+    LegionControlClient, RuntimeSnapshot, UiStatus,
 };
 use adw::prelude::*;
 use anyhow::{anyhow, Result};
 use legion_common::{
-    BatteryChargeTypeCapability, FanCurveSnapshot, GpuModePending, PlatformProfileCapability,
-    WriteExecutionResult, WriteExecutionStatus,
+    BatteryChargeTypeCapability, FanCurveSnapshot, GpuModePending, LedCapability,
+    PlatformProfileCapability, WriteExecutionResult, WriteExecutionStatus,
 };
 
 pub fn run() -> Result<()> {
@@ -15,13 +15,18 @@ pub fn run() -> Result<()> {
         .build();
 
     app.connect_activate(|app| {
-        let status = LegionControlClient::system().and_then(|client| client.status());
-        let diagnostics =
-            LegionControlClient::system().and_then(|client| client.diagnostics_bundle());
-        let gpu_pending =
-            LegionControlClient::system().and_then(|client| client.gpu_mode_pending());
-        let fan_snapshot =
-            LegionControlClient::system().and_then(|client| client.last_known_good_fan_curve());
+        let snapshot =
+            LegionControlClient::system().and_then(|client| client.refresh_runtime_snapshot());
+        let status = snapshot
+            .as_ref()
+            .map(|snapshot| snapshot.status.clone())
+            .map_err(clone_error);
+        let diagnostics = snapshot
+            .as_ref()
+            .map(|snapshot| snapshot.diagnostics.clone())
+            .map_err(clone_error);
+        let gpu_pending = runtime_snapshot_gpu_pending(&snapshot);
+        let fan_snapshot = runtime_snapshot_fan_snapshot(&snapshot);
         let window = adw::ApplicationWindow::builder()
             .application(app)
             .title("Legion Control")
@@ -237,21 +242,25 @@ fn append_profiles(page: &gtk4::Box, bundle: &DiagnosticsBundle) {
     let group = adw::PreferencesGroup::new();
     group.set_title("Platform Profile");
     if let Some(profile) = &bundle.raw_probe_report.platform_profile {
-        group.add(&info_row(
-            "Current",
-            profile.current.as_deref().unwrap_or("unknown"),
-        ));
+        let current = info_row("Current", profile.current.as_deref().unwrap_or("unknown"));
+        group.add(&current);
         group.add(&info_row("Choices", &profile.choices.join(", ")));
         group.add(&info_row("Profile path", &profile.path));
         group.add(&info_row("Choices path", &profile.choices_path));
+        page.append(&group);
+
+        let controls = build_platform_profile_controls(
+            bundle.raw_probe_report.platform_profile.as_ref(),
+            Some(current),
+        );
+        page.append(&controls);
     } else {
         group.add(&info_row("Platform profile", "unavailable"));
-    }
-    page.append(&group);
+        page.append(&group);
 
-    let controls =
-        build_platform_profile_controls(bundle.raw_probe_report.platform_profile.as_ref());
-    page.append(&controls);
+        let controls = build_platform_profile_controls(None, None);
+        page.append(&controls);
+    }
 
     let feedback = build_write_feedback_group("Platform profile");
     page.append(&feedback);
@@ -266,13 +275,14 @@ fn append_battery(page: &gtk4::Box, bundle: &DiagnosticsBundle) {
     let charge_type = adw::PreferencesGroup::new();
     charge_type.set_title("Charge Type");
     if let Some(charge_type_capability) = &bundle.raw_probe_report.battery_charge_type {
-        charge_type.add(&info_row(
+        let current = info_row(
             "Current",
             charge_type_capability
                 .current
                 .as_deref()
                 .unwrap_or("unknown"),
-        ));
+        );
+        charge_type.add(&current);
         charge_type.add(&info_row(
             "Choices",
             &charge_type_capability.choices.join(", "),
@@ -282,14 +292,20 @@ fn append_battery(page: &gtk4::Box, bundle: &DiagnosticsBundle) {
             "Choices path",
             &charge_type_capability.choices_path,
         ));
+        page.append(&charge_type);
+
+        let controls = build_battery_charge_type_controls(
+            bundle.raw_probe_report.battery_charge_type.as_ref(),
+            Some(current),
+        );
+        page.append(&controls);
     } else {
         charge_type.add(&info_row("Charge type", "unavailable"));
-    }
-    page.append(&charge_type);
+        page.append(&charge_type);
 
-    let controls =
-        build_battery_charge_type_controls(bundle.raw_probe_report.battery_charge_type.as_ref());
-    page.append(&controls);
+        let controls = build_battery_charge_type_controls(None, None);
+        page.append(&controls);
+    }
 
     let feedback = build_write_feedback_group("Battery charge type");
     page.append(&feedback);
@@ -395,23 +411,24 @@ fn append_appearance(page: &gtk4::Box, bundle: &DiagnosticsBundle) {
     leds.set_title("LEDs");
     if bundle.raw_probe_report.leds.is_empty() {
         leds.add(&info_row("LEDs", "unavailable"));
+        page.append(&leds);
+        page.append(&build_led_state_controls(None, None));
     } else {
+        let mut ylogo_row = None;
         for led in &bundle.raw_probe_report.leds {
-            let brightness = led
-                .brightness
-                .map(|brightness| brightness.to_string())
-                .unwrap_or_else(|| "unknown".to_owned());
-            let max = led
-                .max_brightness
-                .map(|max| max.to_string())
-                .unwrap_or_else(|| "unknown".to_owned());
-            leds.add(&info_row(
-                &led.name,
-                &format!("brightness {brightness} / max {max} - {}", led.path),
-            ));
+            let row = info_row(&led.name, &render_led_row(led));
+            if led.name == "platform::ylogo" {
+                ylogo_row = Some(row.clone());
+            }
+            leds.add(&row);
         }
+        page.append(&leds);
+        page.append(&build_led_state_controls(
+            writable_ylogo(bundle.raw_probe_report.leds.as_slice()),
+            ylogo_row,
+        ));
     }
-    page.append(&leds);
+    page.append(&build_write_feedback_group("Y-logo LED"));
 
     let toggles = adw::PreferencesGroup::new();
     toggles.set_title("Firmware Toggles");
@@ -506,6 +523,28 @@ fn clone_result<T: Clone>(result: &Result<T>) -> Result<T> {
     }
 }
 
+fn clone_error(error: &anyhow::Error) -> anyhow::Error {
+    anyhow!(error.to_string())
+}
+
+fn runtime_snapshot_gpu_pending(
+    snapshot: &Result<RuntimeSnapshot>,
+) -> Result<Option<GpuModePending>> {
+    snapshot
+        .as_ref()
+        .map(|snapshot| snapshot.diagnostics.gpu_mode_pending.clone())
+        .map_err(clone_error)
+}
+
+fn runtime_snapshot_fan_snapshot(
+    snapshot: &Result<RuntimeSnapshot>,
+) -> Result<Option<FanCurveSnapshot>> {
+    snapshot
+        .as_ref()
+        .map(|snapshot| snapshot.diagnostics.last_known_good_fan_curve.clone())
+        .map_err(clone_error)
+}
+
 fn render_gpu_pending_row(pending: Result<Option<GpuModePending>>) -> String {
     match pending {
         Ok(Some(pending)) => {
@@ -553,6 +592,7 @@ fn info_row(title: &str, value: &str) -> adw::ActionRow {
 
 fn build_platform_profile_controls(
     capability: Option<&PlatformProfileCapability>,
+    current_row: Option<adw::ActionRow>,
 ) -> adw::PreferencesGroup {
     build_write_controls(
         "Platform profile quick apply",
@@ -564,11 +604,17 @@ fn build_platform_profile_controls(
         |requested| {
             LegionControlClient::system().and_then(|client| client.set_platform_profile(requested))
         },
+        move |_| {
+            if let Some(row) = &current_row {
+                refresh_platform_profile_row(row);
+            }
+        },
     )
 }
 
 fn build_battery_charge_type_controls(
     capability: Option<&BatteryChargeTypeCapability>,
+    current_row: Option<adw::ActionRow>,
 ) -> adw::PreferencesGroup {
     build_write_controls(
         "Battery charge type quick apply",
@@ -581,10 +627,82 @@ fn build_battery_charge_type_controls(
             LegionControlClient::system()
                 .and_then(|client| client.set_battery_charge_type(requested))
         },
+        move |_| {
+            if let Some(row) = &current_row {
+                refresh_battery_charge_type_row(row);
+            }
+        },
     )
 }
 
-fn build_write_controls<F>(
+fn build_led_state_controls(
+    led: Option<&LedCapability>,
+    current_row: Option<adw::ActionRow>,
+) -> adw::PreferencesGroup {
+    let group = adw::PreferencesGroup::new();
+    group.set_title("LED quick apply");
+
+    let Some(led) = led else {
+        group.add(&info_row(
+            "Y-logo LED",
+            "unavailable - quick apply disabled",
+        ));
+        return group;
+    };
+
+    let row = adw::ActionRow::builder()
+        .title("Y-logo LED")
+        .subtitle("Apply a reversible on/off change to the detected ylogo LED.")
+        .selectable(false)
+        .build();
+
+    let off = gtk4::Button::with_label("Turn off");
+    let on = gtk4::Button::with_label("Turn on");
+    off.set_sensitive(led.brightness != Some(0));
+    on.set_sensitive(led.brightness != Some(1));
+    row.add_suffix(&off);
+    row.add_suffix(&on);
+    group.add(&row);
+
+    let feedback_row = write_feedback_row(None);
+    group.add(&feedback_row);
+
+    let led_id = led.name.clone();
+    let path = led.path.clone();
+    let max_brightness = led.max_brightness.unwrap_or(1);
+    let feedback_row_for_off = feedback_row.clone();
+    let current_row_for_off = current_row.clone();
+    off.connect_clicked(move |_| {
+        handle_led_button_click(
+            &feedback_row_for_off,
+            current_row_for_off.as_ref(),
+            &led_id,
+            &path,
+            max_brightness,
+            false,
+        );
+    });
+
+    let led_id = led.name.clone();
+    let path = led.path.clone();
+    let feedback_row_for_on = feedback_row.clone();
+    let current_row_for_on = current_row.clone();
+    on.connect_clicked(move |_| {
+        handle_led_button_click(
+            &feedback_row_for_on,
+            current_row_for_on.as_ref(),
+            &led_id,
+            &path,
+            max_brightness,
+            true,
+        );
+    });
+
+    group
+}
+
+#[allow(clippy::too_many_arguments)]
+fn build_write_controls<F, G>(
     title: &str,
     current: Option<&str>,
     choices: Option<&[String]>,
@@ -592,9 +710,11 @@ fn build_write_controls<F>(
     button_label: &str,
     capability_label: &str,
     execute: F,
+    on_result: G,
 ) -> adw::PreferencesGroup
 where
     F: Fn(&str) -> Result<WriteExecutionResult> + 'static,
+    G: Fn(&WriteExecutionResult) + 'static,
 {
     let group = adw::PreferencesGroup::new();
     group.set_title(title);
@@ -657,6 +777,7 @@ where
             Ok(result) => {
                 feedback_row_for_click.set_title(write_feedback_title(Some(&result)));
                 feedback_row_for_click.set_subtitle(&write_feedback_subtitle(Some(&result)));
+                on_result(&result);
             }
             Err(error) => {
                 feedback_row_for_click.set_title("Apply error");
@@ -710,4 +831,102 @@ pub fn write_feedback_subtitle(result: Option<&WriteExecutionResult>) -> String 
             format!("{}{}", result.message, readback)
         }
     }
+}
+
+fn refresh_platform_profile_row(row: &adw::ActionRow) {
+    if let Ok(snapshot) =
+        LegionControlClient::system().and_then(|client| client.refresh_runtime_snapshot())
+    {
+        if let Some(profile) = snapshot.diagnostics.raw_probe_report.platform_profile {
+            row.set_subtitle(profile.current.as_deref().unwrap_or("unknown"));
+        }
+    }
+}
+
+fn refresh_battery_charge_type_row(row: &adw::ActionRow) {
+    if let Ok(snapshot) =
+        LegionControlClient::system().and_then(|client| client.refresh_runtime_snapshot())
+    {
+        if let Some(charge_type) = snapshot.diagnostics.raw_probe_report.battery_charge_type {
+            row.set_subtitle(charge_type.current.as_deref().unwrap_or("unknown"));
+        }
+    }
+}
+
+fn handle_led_button_click(
+    feedback_row: &adw::ActionRow,
+    current_row: Option<&adw::ActionRow>,
+    led_id: &str,
+    path: &str,
+    max_brightness: i64,
+    enabled: bool,
+) {
+    feedback_row.set_title("Apply result");
+    feedback_row.set_subtitle("Applying write request...");
+
+    match LegionControlClient::system().and_then(|client| client.set_led_state(led_id, enabled)) {
+        Ok(result) => {
+            feedback_row.set_title(write_feedback_title(Some(&result)));
+            feedback_row.set_subtitle(&write_feedback_subtitle(Some(&result)));
+            if let Some(row) = current_row {
+                refresh_led_row(row, led_id, path, max_brightness, &result);
+            }
+        }
+        Err(error) => {
+            feedback_row.set_title("Apply error");
+            feedback_row.set_subtitle(&format!(
+                "Failed - daemon call could not be completed: {error}"
+            ));
+        }
+    }
+}
+
+fn refresh_led_row(
+    row: &adw::ActionRow,
+    led_id: &str,
+    path: &str,
+    max_brightness: i64,
+    result: &WriteExecutionResult,
+) {
+    if let Ok(snapshot) =
+        LegionControlClient::system().and_then(|client| client.refresh_runtime_snapshot())
+    {
+        if let Some(led) = snapshot
+            .diagnostics
+            .raw_probe_report
+            .leds
+            .into_iter()
+            .find(|led| led.name == led_id)
+        {
+            row.set_subtitle(&render_led_row(&led));
+            return;
+        }
+    }
+
+    if let Some(readback) = result.readback_value.as_deref() {
+        row.set_subtitle(&format!(
+            "brightness {} / max {} - {}",
+            readback, max_brightness, path
+        ));
+    }
+}
+
+fn writable_ylogo(leds: &[LedCapability]) -> Option<&LedCapability> {
+    leds.iter().find(|led| {
+        led.name == "platform::ylogo"
+            && led.max_brightness == Some(1)
+            && matches!(led.brightness, Some(0 | 1))
+    })
+}
+
+fn render_led_row(led: &LedCapability) -> String {
+    let brightness = led
+        .brightness
+        .map(|brightness| brightness.to_string())
+        .unwrap_or_else(|| "unknown".to_owned());
+    let max = led
+        .max_brightness
+        .map(|max| max.to_string())
+        .unwrap_or_else(|| "unknown".to_owned());
+    format!("brightness {brightness} / max {max} - {}", led.path)
 }

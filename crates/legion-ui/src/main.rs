@@ -30,6 +30,12 @@ struct Args {
     #[arg(long, value_name = "CHARGE_TYPE")]
     set_battery_charge_type: Option<String>,
 
+    #[arg(long, value_name = "LED_ID=on|off")]
+    plan_led_state: Option<String>,
+
+    #[arg(long, value_name = "LED_ID=on|off")]
+    set_led_state: Option<String>,
+
     #[arg(long, value_name = "MODE")]
     plan_gpu_mode: Option<String>,
 
@@ -69,6 +75,8 @@ fn main() -> Result<()> {
         args.set_platform_profile.is_some(),
         args.plan_battery_charge_type.is_some(),
         args.set_battery_charge_type.is_some(),
+        args.plan_led_state.is_some(),
+        args.set_led_state.is_some(),
         args.plan_gpu_mode.is_some(),
         args.plan_fan_preset.is_some(),
         args.plan_restore_auto_fan,
@@ -98,6 +106,12 @@ fn main() -> Result<()> {
             print_write_plan(&client.plan_battery_charge_type_write(&charge_type)?)?;
         } else if let Some(charge_type) = args.set_battery_charge_type {
             print_json(&client.set_battery_charge_type(&charge_type)?)?;
+        } else if let Some(spec) = args.plan_led_state {
+            let (led_id, enabled) = parse_led_state_spec(&spec)?;
+            print_write_plan(&client.plan_led_state_write(&led_id, enabled)?)?;
+        } else if let Some(spec) = args.set_led_state {
+            let (led_id, enabled) = parse_led_state_spec(&spec)?;
+            print_json(&client.set_led_state(&led_id, enabled)?)?;
         } else if let Some(mode) = args.plan_gpu_mode {
             print_write_plan(&client.plan_gpu_mode_write(&mode)?)?;
         } else if let Some(preset_id) = args.plan_fan_preset {
@@ -172,4 +186,18 @@ fn print_write_plan(plan: &legion_common::WriteDryRunPlan) -> Result<()> {
 fn print_json<T: serde::Serialize>(value: &T) -> Result<()> {
     println!("{}", render_write_plan_json(value)?);
     Ok(())
+}
+
+fn parse_led_state_spec(spec: &str) -> Result<(String, bool)> {
+    let Some((led_id, requested)) = spec.split_once('=') else {
+        bail!("expected LED spec in the form <led_id>=on|off");
+    };
+
+    let enabled = match requested {
+        "1" | "on" | "true" => true,
+        "0" | "off" | "false" => false,
+        _ => bail!("expected LED state to be one of: on, off, true, false, 1, 0"),
+    };
+
+    Ok((led_id.to_owned(), enabled))
 }

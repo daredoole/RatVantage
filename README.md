@@ -13,13 +13,14 @@ Pre-alpha implementation scaffold exists:
 - Rust workspace with shared models, read-only probe, read-only daemon, UI client, and test support crates.
 - Probe fixture coverage for confirmed and runtime-captured 82WM-style sysfs paths.
 - Private D-Bus contract tests for read-only daemon methods.
-- UI `--status`, `--overview`, and `--diagnostics` commands plus optional GTK4/libadwaita shell with Status, Profiles, Battery, Fans, Appearance, and Diagnostics tabs behind `gtk-ui`; the Profiles and Battery tabs now expose gated quick-apply controls with inline execution feedback.
-- Tray/status helper with a state-driven menu derived from detected profile choices, battery charge choices, packaged fan presets, pending runtime state, and gated quick actions for reversible profile and charge-type writes.
+- UI `--status`, `--overview`, and `--diagnostics` commands plus optional GTK4/libadwaita shell with Status, Profiles, Battery, Fans, Appearance, and Diagnostics tabs behind `gtk-ui`; the Profiles, Battery, and Appearance tabs now expose gated quick-apply controls with inline execution feedback for the currently supported reversible writes.
+- Tray/status helper with a state-driven menu derived from detected profile choices, battery charge choices, LED state, packaged fan presets, pending runtime state, and gated quick actions for reversible profile, charge-type, and ylogo LED writes.
 - Tray dashboard launch forwards custom D-Bus addresses for private/session-bus smoke workflows.
 - Tray status separates available and missing capabilities in tooltips.
 - KDE StatusNotifier smoke can emit a reusable report bundle with environment, watcher, and tray summary data.
 - `legion-control-tray --desktop-check` reports desktop/session state, watcher availability, and autostart gating for read-only tray diagnostics.
 - `legion-control-tray --menu-check` prints the same derived tray menu, including quick-action entries, so private-bus tests and smoke bundles can verify the exact runtime menu content.
+- Tray runtime state now reloads from a reprobe helper and auto-refreshes after idle intervals and suspend-like gaps.
 - UI status output includes per-capability status and risk labels.
 - Disabled tray autostart packaging placeholder.
 - Runtime-captured 82WM fixture coverage, including bracketed battery `charge_types` current-value parsing.
@@ -32,7 +33,7 @@ Pre-alpha implementation scaffold exists:
 - Disabled write-method contract drafts for platform profile, battery charge type, GPU mode, fan presets, and fan restore/default.
 - Pure validators for platform profile, battery charge type, EnvyControl GPU mode, and packaged fan preset choices.
 - Validator-backed dry-run planning for platform profile, battery charge type, GPU mode, fan presets, and fan restore/default.
-- Gated platform-profile and battery charge type execution paths with rollback-on-readback-mismatch coverage; the daemon now uses real `pkcheck` caller authorization and still blocks execution by default unless the write flags are enabled.
+- Gated platform-profile, battery charge type, and ylogo LED execution paths with rollback-on-readback-mismatch coverage; the daemon now uses real `pkcheck` caller authorization and still blocks execution by default unless the matching write flags are enabled.
 - Read-only D-Bus dry-run planning for GPU mode, fan presets, and fan restore/default.
 - GPU dry-run plans include reboot-required metadata and rollback guidance; execution remains disabled.
 - App-state-only GPU pending-reboot tracking in `/var/lib/legion-control/state.toml`; no hardware writes are performed.
@@ -41,7 +42,7 @@ Pre-alpha implementation scaffold exists:
 - Read-only diagnostics/export surfaces now include the same durable app-state fields, including `gpu_mode_pending` and `last_known_good_fan_curve`.
 - Local CI script and GitHub Actions CI.
 
-Only reversible platform-profile and battery charge-type execution paths exist so far, and both remain disabled by default unless the daemon is started with their explicit enable flags. Higher-risk write support must still wait for validators, rollback behavior, and manual target-machine validation.
+Only reversible platform-profile, battery charge-type, and ylogo LED execution paths exist so far, and all remain disabled by default unless the daemon is started with their explicit enable flags. Higher-risk write support must still wait for validators, rollback behavior, and manual target-machine validation.
 
 For continuation work, start from [docs/session-handoff.md](docs/session-handoff.md). It records the latest commits, next roadmap slice, safety constraints, validation commands, and the expected orchestrator/agent workflow for new Codex sessions.
 
@@ -132,7 +133,7 @@ Completed scaffold:
 
 - Read-only probe and capability model.
 - Read-only daemon D-Bus methods.
-- UI status, overview, diagnostics clients, and optional GTK shell with read-only Profiles, Battery, Fans, Appearance, and Diagnostics tabs.
+- UI status, overview, diagnostics clients, and optional GTK shell with gated Profiles, Battery, and Appearance quick-apply controls plus read-only Fans and Diagnostics tabs.
 - Read-only tray/status helper with a state-driven menu derived from runtime profile choices, battery choices, packaged presets, and pending app state.
 - Read-only StatusNotifier tray backend with dashboard, refresh, quit, and menu diagnostics that match the runtime-derived menu.
 - StatusNotifier dashboard launch keeps `--bus-address` when the tray uses a private bus.
@@ -149,7 +150,7 @@ Completed scaffold:
 - Packaged fan preset TOML assets with runtime dry-run validation.
 - Disabled write-method contract drafts.
 - Pure platform profile, battery charge type, and EnvyControl GPU mode validators.
-- Pure dry-run planning for GPU mode and fan preset writes, plus validated platform-profile and battery charge type execution paths with rollback tests.
+- Pure dry-run planning for GPU mode and fan preset writes, plus validated platform-profile, battery charge type, and ylogo LED execution paths with rollback tests.
 - Daemon planning methods over D-Bus plus gated `SetPlatformProfile` and `SetBatteryChargeType` execution; higher-risk write methods are still absent.
 - UI CLI previews for platform profile, battery charge type, GPU mode, and fan preset dry-run plans, plus `--set-platform-profile` and `--set-battery-charge-type` execution output.
 - Read-only diagnostics JSON bundle with hardware summary, compact counts, kernel version, detected sysfs paths, recent daemon log excerpts, and raw probe report.
@@ -165,7 +166,7 @@ Next:
 
 - GNOME-with-extension smoke for the StatusNotifier tray backend before enabling autostart.
 - External compatibility PRs from more supported Legion machines through the bundle workflow.
-- Additional read-only tray/UI polish while waiting on more hardware reports.
+- Additional tray/UI polish while waiting on more hardware reports.
 
 See [docs/feature-roadmap.md](docs/feature-roadmap.md) and [docs/implementation-plan.md](docs/implementation-plan.md).
 

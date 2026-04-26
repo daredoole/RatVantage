@@ -4,7 +4,7 @@ use std::sync::{
     Arc,
 };
 use std::thread;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use anyhow::{Context, Result};
 use ksni::blocking::TrayMethods;
@@ -17,6 +17,8 @@ use crate::{DesktopSession, TrayAction, TrayMenu, TrayMenuEntry, TrayMenuItem, T
 
 const TRAY_ID: &str = "org.ratvantage.LegionControl";
 const ICON_NAME: &str = "applications-system";
+const AUTO_REFRESH_INTERVAL: Duration = Duration::from_secs(30);
+const RESUME_REFRESH_GAP: Duration = Duration::from_secs(90);
 
 pub struct StatusNotifierTray {
     summary: TraySummary,
@@ -100,9 +102,9 @@ impl StatusNotifierTray {
     fn handle_action(&mut self, action: TrayAction) {
         match action {
             TrayAction::NoOp => {}
-            TrayAction::SetPlatformProfile(_) | TrayAction::SetBatteryChargeType(_) => {
-                self.execute_write_action(action)
-            }
+            TrayAction::SetPlatformProfile(_)
+            | TrayAction::SetBatteryChargeType(_)
+            | TrayAction::SetLedState(_, _) => self.execute_write_action(action),
             TrayAction::OpenDashboard => self.open_dashboard(),
             TrayAction::RefreshStatus => self.refresh_status(),
             TrayAction::Quit => self.request_shutdown(),
@@ -193,9 +195,17 @@ pub fn run_status_notifier_tray(bus_address: Option<String>) -> Result<()> {
     let handle = tray
         .spawn()
         .context("failed to register StatusNotifier tray item")?;
+    let mut last_refresh = Instant::now();
+    let mut last_tick = last_refresh;
 
     while !shutdown_requested.load(Ordering::Relaxed) && !handle.is_closed() {
         thread::sleep(Duration::from_millis(250));
+        let now = Instant::now();
+        if should_auto_refresh(now, last_refresh, last_tick) {
+            let _ = handle.update(|tray: &mut StatusNotifierTray| tray.refresh_status());
+            last_refresh = now;
+        }
+        last_tick = now;
     }
 
     handle.shutdown().wait();
@@ -213,10 +223,11 @@ fn load_tray_state(bus_address: Option<&str>) -> Result<LoadedTrayState> {
         Some(address) => LegionControlClient::address(address)?,
         None => LegionControlClient::system()?,
     };
-    let status = client.status()?;
-    let report = client.raw_probe_report()?;
-    let gpu_pending = client.gpu_mode_pending()?;
-    let fan_snapshot = client.last_known_good_fan_curve()?;
+    let snapshot = client.refresh_runtime_snapshot()?;
+    let status = snapshot.status;
+    let report = snapshot.diagnostics.raw_probe_report;
+    let gpu_pending = snapshot.diagnostics.gpu_mode_pending;
+    let fan_snapshot = snapshot.diagnostics.last_known_good_fan_curve;
     Ok(LoadedTrayState {
         summary: TraySummary::from_status_and_report(
             &status,
@@ -247,8 +258,14 @@ fn execute_tray_action(
         TrayAction::SetBatteryChargeType(charge_type) => {
             client.set_battery_charge_type(charge_type)
         }
+        TrayAction::SetLedState(led_id, enabled) => client.set_led_state(led_id, *enabled),
         _ => anyhow::bail!("unsupported tray write action"),
     }
+}
+
+fn should_auto_refresh(now: Instant, last_refresh: Instant, last_tick: Instant) -> bool {
+    now.duration_since(last_refresh) >= AUTO_REFRESH_INTERVAL
+        || now.duration_since(last_tick) >= RESUME_REFRESH_GAP
 }
 
 fn dashboard_command_args(bus_address: Option<&str>) -> Vec<String> {
@@ -333,6 +350,7 @@ mod tests {
             &menu,
             "Battery: 79% / Charging / Good"
         ));
+        assert!(menu_has_disabled_item(&menu, "LED: platform::ylogo on"));
         assert!(menu_has_disabled_item(&menu, "Fan: CPU Fan 2410 RPM"));
         assert!(menu_has_disabled_item(
             &menu,
@@ -353,6 +371,7 @@ mod tests {
         assert!(menu_has_disabled_item(&menu, "Missing: gpu"));
         assert!(menu_has_disabled_item(&menu, "Platform profile actions"));
         assert!(menu_has_disabled_item(&menu, "Battery charge type actions"));
+        assert!(menu_has_disabled_item(&menu, "LED actions"));
         assert!(menu_has_enabled_item(
             &menu,
             "Set platform profile: low-power"
@@ -369,6 +388,10 @@ mod tests {
             &menu,
             "Set battery charge type: Fast"
         ));
+        assert!(menu_has_enabled_item(
+            &menu,
+            "Set LED state: platform::ylogo off"
+        ));
         assert!(menu_has_enabled_item(&menu, "Open dashboard"));
         assert!(menu_has_enabled_item(&menu, "Refresh status"));
         assert!(menu_has_enabled_item(&menu, "Quit"));
@@ -380,7 +403,7 @@ mod tests {
     fn status_notifier_activation_executes_platform_profile_action_and_refreshes_menu() {
         let shutdown_requested = Arc::new(AtomicBool::new(false));
         let state = Arc::new(std::sync::Mutex::new(tray_state_fixture(
-            "balanced", "Standard",
+            "balanced", "Standard", true,
         )));
         let menu = state.lock().unwrap().menu.clone();
         let tray = StatusNotifierTray::new_with_runtime(
@@ -394,7 +417,7 @@ mod tests {
                 move |_, action| match action {
                     TrayAction::SetPlatformProfile(profile) => {
                         let mut guard = state.lock().unwrap();
-                        *guard = tray_state_fixture(profile, "Standard");
+                        *guard = tray_state_fixture(profile, "Standard", true);
                         Ok(applied_result("SetPlatformProfile", profile))
                     }
                     other => anyhow::bail!("unexpected action {other:?}"),
@@ -421,7 +444,7 @@ mod tests {
     fn status_notifier_activation_executes_battery_charge_type_action_and_refreshes_menu() {
         let shutdown_requested = Arc::new(AtomicBool::new(false));
         let state = Arc::new(std::sync::Mutex::new(tray_state_fixture(
-            "balanced", "Standard",
+            "balanced", "Standard", true,
         )));
         let menu = state.lock().unwrap().menu.clone();
         let tray = StatusNotifierTray::new_with_runtime(
@@ -435,7 +458,7 @@ mod tests {
                 move |_, action| match action {
                     TrayAction::SetBatteryChargeType(charge_type) => {
                         let mut guard = state.lock().unwrap();
-                        *guard = tray_state_fixture("balanced", charge_type);
+                        *guard = tray_state_fixture("balanced", charge_type, true);
                         Ok(applied_result("SetBatteryChargeType", charge_type))
                     }
                     other => anyhow::bail!("unexpected action {other:?}"),
@@ -459,10 +482,51 @@ mod tests {
     }
 
     #[test]
+    fn status_notifier_activation_executes_led_action_and_refreshes_menu() {
+        let shutdown_requested = Arc::new(AtomicBool::new(false));
+        let state = Arc::new(std::sync::Mutex::new(tray_state_fixture(
+            "balanced", "Standard", true,
+        )));
+        let menu = state.lock().unwrap().menu.clone();
+        let tray = StatusNotifierTray::new_with_runtime(
+            summary(),
+            menu,
+            None,
+            shutdown_requested,
+            loader_for_state(Arc::clone(&state)),
+            Arc::new({
+                let state = Arc::clone(&state);
+                move |_, action| match action {
+                    TrayAction::SetLedState(led_id, enabled) => {
+                        let mut guard = state.lock().unwrap();
+                        *guard = tray_state_fixture("balanced", "Standard", *enabled);
+                        Ok(applied_result(
+                            "SetLedState",
+                            &format!("{led_id}={}", if *enabled { "1" } else { "0" }),
+                        ))
+                    }
+                    other => anyhow::bail!("unexpected action {other:?}"),
+                }
+            }),
+        );
+        let mut tray = tray;
+
+        tray.handle_action(TrayAction::SetLedState("platform::ylogo".to_owned(), false));
+
+        let menu = tray.menu();
+        assert!(menu_has_disabled_item(&menu, "LED: platform::ylogo off"));
+        assert!(menu_has_enabled_item(
+            &menu,
+            "Set LED state: platform::ylogo on"
+        ));
+        assert!(tray.last_error.is_none());
+    }
+
+    #[test]
     fn status_notifier_activation_preserves_menu_and_records_error_on_write_failure() {
         let shutdown_requested = Arc::new(AtomicBool::new(false));
         let state = Arc::new(std::sync::Mutex::new(tray_state_fixture(
-            "balanced", "Standard",
+            "balanced", "Standard", true,
         )));
         let menu = state.lock().unwrap().menu.clone();
         let tray = StatusNotifierTray::new_with_runtime(
@@ -495,7 +559,7 @@ mod tests {
     fn status_notifier_activation_ignores_current_choice_noop_rows() {
         let shutdown_requested = Arc::new(AtomicBool::new(false));
         let state = Arc::new(std::sync::Mutex::new(tray_state_fixture(
-            "balanced", "Standard",
+            "balanced", "Standard", true,
         )));
         let menu = state.lock().unwrap().menu.clone();
         let call_count = Arc::new(std::sync::Mutex::new(0usize));
@@ -621,6 +685,12 @@ mod tests {
                     health: Some("Good".to_owned()),
                 }),
             },
+            leds: vec![legion_common::LedCapability {
+                name: "platform::ylogo".to_owned(),
+                path: "/tmp/platform::ylogo/brightness".to_owned(),
+                brightness: Some(1),
+                max_brightness: Some(1),
+            }],
             ..Default::default()
         };
         let gpu_pending = legion_common::GpuModePending {
@@ -640,7 +710,27 @@ mod tests {
         TrayMenu::from_status_and_report(&status, &report, Some(&gpu_pending), Some(&fan_snapshot))
     }
 
-    fn tray_state_fixture(profile: &str, charge_type: &str) -> LoadedTrayState {
+    #[test]
+    fn auto_refresh_triggers_for_periodic_and_resume_gaps() {
+        let base = Instant::now();
+        assert!(!should_auto_refresh(
+            base + Duration::from_secs(5),
+            base,
+            base + Duration::from_secs(4)
+        ));
+        assert!(should_auto_refresh(
+            base + AUTO_REFRESH_INTERVAL,
+            base,
+            base + Duration::from_secs(1)
+        ));
+        assert!(should_auto_refresh(
+            base + RESUME_REFRESH_GAP + Duration::from_secs(1),
+            base + Duration::from_secs(2),
+            base
+        ));
+    }
+
+    fn tray_state_fixture(profile: &str, charge_type: &str, ylogo_on: bool) -> LoadedTrayState {
         let status = UiStatus::from_parts(
             HardwareSummary {
                 sysfs_root: "/tmp/fixture".to_owned(),
@@ -690,6 +780,12 @@ mod tests {
                 path: "/tmp/charge_type".to_owned(),
                 choices_path: "/tmp/charge_types".to_owned(),
             }),
+            leds: vec![legion_common::LedCapability {
+                name: "platform::ylogo".to_owned(),
+                path: "/tmp/platform::ylogo/brightness".to_owned(),
+                brightness: Some(if ylogo_on { 1 } else { 0 }),
+                max_brightness: Some(1),
+            }],
             ..Default::default()
         };
         LoadedTrayState {
