@@ -123,6 +123,8 @@ copy_glob "sys/class/firmware-attributes/*/attributes/*/possible_values"
 copy_glob "sys/bus/platform/drivers/ideapad_acpi/*/camera_power"
 copy_glob "sys/bus/platform/drivers/ideapad_acpi/*/conservation_mode"
 copy_glob "sys/bus/platform/drivers/ideapad_acpi/*/fn_lock"
+copy_glob "sys/bus/platform/drivers/ideapad_acpi/*/touchpad"
+copy_glob "sys/bus/platform/drivers/ideapad_acpi/*/usb_charging"
 
 captured_count="$(grep -c '^captured:' "$manifest" || true)"
 echo "captured $captured_count files into $output"

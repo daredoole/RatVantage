@@ -46,6 +46,7 @@ pub struct WriteAccessPolicy {
     pub led_state_enabled: bool,
     pub ideapad_toggle_enabled: bool,
     pub camera_power_enabled: bool,
+    pub usb_charging_enabled: bool,
 }
 
 impl WriteAccessPolicy {
@@ -60,7 +61,7 @@ impl WriteAccessPolicy {
         if self.led_state_enabled {
             methods.push(LED_STATE_WRITE_METHOD);
         }
-        if self.ideapad_toggle_enabled || self.camera_power_enabled {
+        if self.ideapad_toggle_enabled || self.camera_power_enabled || self.usb_charging_enabled {
             methods.push(IDEAPAD_TOGGLE_WRITE_METHOD);
         }
         methods
@@ -723,6 +724,7 @@ impl LegionControl {
         match toggle_id {
             "fn_lock" => self.write_policy.ideapad_toggle_enabled,
             "camera_power" => self.write_policy.camera_power_enabled,
+            "usb_charging" => self.write_policy.usb_charging_enabled,
             _ => false,
         }
     }
@@ -908,6 +910,7 @@ fn pkcheck_args(action: &str, sender: &str) -> Vec<String> {
 fn ideapad_toggle_policy_message(toggle_id: &str) -> String {
     match toggle_id {
         "camera_power" => "camera power writes are disabled by daemon policy".to_owned(),
+        "usb_charging" => "usb charging writes are disabled by daemon policy".to_owned(),
         "fn_lock" => "fn_lock writes are disabled by daemon policy".to_owned(),
         _ => "ideapad toggle writes are disabled by daemon policy".to_owned(),
     }
@@ -995,6 +998,7 @@ mod tests {
                 led_state_enabled: true,
                 ideapad_toggle_enabled: true,
                 camera_power_enabled: true,
+                usb_charging_enabled: true,
             }
             .enabled_methods(),
             [

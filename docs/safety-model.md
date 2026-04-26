@@ -259,7 +259,7 @@ Do not log secrets, environment variables, or arbitrary command lines with user 
 | Set functional Fn-lock | Routine auth |
 | Toggle always-on USB charging | `auth_admin_keep` |
 | Toggle camera power | `auth_admin_keep` plus UI confirmation |
-| Toggle touchpad hardware power | `auth_admin_keep` plus UI confirmation |
+| Toggle touchpad hardware power | Deferred; keep out of the live write surface until fixture capture, recovery validation, and pointer-lockout handling exist |
 | Set GPU mode pending | `auth_admin_keep` plus UI confirmation |
 | Reboot now | Desktop/system policy, usually auth depending session |
 | Set PL1/SPL | `auth_admin` |

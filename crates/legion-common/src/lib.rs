@@ -276,7 +276,7 @@ pub const WRITE_METHOD_CONTRACTS: &[WriteMethodContract] = &[
         method: "SetIdeapadToggle",
         capability_id: "ideapad_toggles",
         polkit_action: "org.ratvantage.LegionControl1.set-ideapad-toggle",
-        request_type: r#"{"toggle_id":"fn_lock|camera_power","enabled":"bool"}"#,
+        request_type: r#"{"toggle_id":"fn_lock|camera_power|usb_charging","enabled":"bool"}"#,
         risk: RiskLevel::ReversibleWrite,
         enabled: false,
         reboot_required: false,
@@ -286,9 +286,10 @@ pub const WRITE_METHOD_CONTRACTS: &[WriteMethodContract] = &[
         ],
         validators: &[
             "requested toggle exactly matches one detected ideapad toggle id",
-            "only fn_lock and camera_power are enabled for reversible ideapad toggle writes right now",
+            "only fn_lock, camera_power, and usb_charging are enabled for reversible ideapad toggle writes right now",
             "fn_lock requires paired platform::fnlock LED corroboration before and after write",
             "camera_power requires binary current value and explicit UI warning/confirmation before frontend exposure",
+            "usb_charging requires binary current value and explicit UI warning/confirmation before frontend exposure",
             "post-write toggle read-back matches requested state",
         ],
         rollback: &[
@@ -297,7 +298,7 @@ pub const WRITE_METHOD_CONTRACTS: &[WriteMethodContract] = &[
         ],
         safety_notes: &[
             "write method remains disabled; dry-run planning only",
-            "current rollout is restricted to fn_lock and camera_power with per-toggle safety rules",
+            "current rollout is restricted to fn_lock, camera_power, and usb_charging with per-toggle safety rules",
         ],
     },
     WriteMethodContract {
@@ -567,12 +568,12 @@ pub fn validate_ideapad_toggle_request(
         });
     };
 
-    if toggle.name != "fn_lock" && toggle.name != "camera_power" {
+    if toggle.name != "fn_lock" && toggle.name != "camera_power" && toggle.name != "usb_charging" {
         return Err(ValidationError::BlockedChoice {
             capability_id: "ideapad_toggles".to_owned(),
             requested: toggle_id.to_owned(),
             reason:
-                "only fn_lock and camera_power are enabled for reversible ideapad toggle writes right now"
+                "only fn_lock, camera_power, and usb_charging are enabled for reversible ideapad toggle writes right now; touchpad remains blocked until dedicated fixture coverage and recovery validation exist"
                     .to_owned(),
         });
     }
@@ -606,7 +607,7 @@ pub fn validate_ideapad_toggle_request(
         });
     }
 
-    if toggle.name == "camera_power" {
+    if toggle.name == "camera_power" || toggle.name == "usb_charging" {
         return Ok(());
     }
 
@@ -1349,6 +1350,23 @@ mod tests {
     }
 
     #[test]
+    fn ideapad_toggle_validator_accepts_usb_charging_without_indicator_led() {
+        assert_eq!(
+            validate_ideapad_toggle_request(
+                &[IdeapadToggleCapability {
+                    name: "usb_charging".to_owned(),
+                    status: CapabilityStatus::ProbeOnly,
+                    path: Some("/tmp/usb_charging".to_owned()),
+                    current_value: Some("0".to_owned()),
+                }],
+                &[],
+                "usb_charging"
+            ),
+            Ok(())
+        );
+    }
+
+    #[test]
     fn ideapad_toggle_validator_rejects_missing_non_binary_and_blocked_toggles() {
         assert!(matches!(
             validate_ideapad_toggle_request(&[], &[], "fn_lock"),
@@ -1364,6 +1382,19 @@ mod tests {
                 }],
                 &[],
                 "camera_power"
+            ),
+            Ok(())
+        ));
+        assert!(matches!(
+            validate_ideapad_toggle_request(
+                &[IdeapadToggleCapability {
+                    name: "usb_charging".to_owned(),
+                    status: CapabilityStatus::ProbeOnly,
+                    path: Some("/tmp/usb_charging".to_owned()),
+                    current_value: Some("1".to_owned()),
+                }],
+                &[],
+                "usb_charging"
             ),
             Ok(())
         ));
@@ -1665,7 +1696,35 @@ mod tests {
         assert!(plan
             .safety_notes
             .iter()
-            .any(|note| note.contains("fn_lock and camera_power")));
+            .any(|note| note.contains("fn_lock, camera_power, and usb_charging")));
+        assert!(plan.readback_required);
+    }
+
+    #[test]
+    fn usb_charging_dry_run_plan_uses_validator_and_contract_metadata() {
+        let plan = plan_ideapad_toggle_write(
+            &[IdeapadToggleCapability {
+                name: "usb_charging".to_owned(),
+                status: CapabilityStatus::ProbeOnly,
+                path: Some("/tmp/usb_charging".to_owned()),
+                current_value: Some("0".to_owned()),
+            }],
+            &[],
+            "usb_charging",
+            true,
+        )
+        .unwrap();
+
+        assert_eq!(plan.method, "SetIdeapadToggle");
+        assert_eq!(plan.capability_id, "ideapad_toggles");
+        assert_eq!(plan.path, "/tmp/usb_charging");
+        assert_eq!(plan.previous_value, "0");
+        assert_eq!(plan.requested_value, "1");
+        assert_eq!(plan.rollback_value, "0");
+        assert!(plan
+            .safety_notes
+            .iter()
+            .any(|note| note.contains("usb_charging")));
         assert!(plan.readback_required);
     }
 

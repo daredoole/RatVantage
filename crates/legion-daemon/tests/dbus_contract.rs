@@ -265,6 +265,7 @@ fn platform_profile_write_applies_when_policy_and_authorizer_allow_it() {
             led_state_enabled: false,
             ideapad_toggle_enabled: false,
             camera_power_enabled: false,
+            usb_charging_enabled: false,
         },
         Arc::new(AllowAllAuthorizer),
         Arc::new(RealFixturePlatformProfileWriter),
@@ -305,6 +306,7 @@ fn platform_profile_write_rejects_invalid_choice_before_write() {
             led_state_enabled: false,
             ideapad_toggle_enabled: false,
             camera_power_enabled: false,
+            usb_charging_enabled: false,
         },
         Arc::new(AllowAllAuthorizer),
         Arc::new(RealFixturePlatformProfileWriter),
@@ -340,6 +342,7 @@ fn platform_profile_write_reports_write_failure_without_changing_value() {
             led_state_enabled: false,
             ideapad_toggle_enabled: false,
             camera_power_enabled: false,
+            usb_charging_enabled: false,
         },
         Arc::new(AllowAllAuthorizer),
         Arc::new(FailingPlatformProfileWriter),
@@ -380,6 +383,7 @@ fn platform_profile_write_rolls_back_after_readback_mismatch() {
             led_state_enabled: false,
             ideapad_toggle_enabled: false,
             camera_power_enabled: false,
+            usb_charging_enabled: false,
         },
         Arc::new(AllowAllAuthorizer),
         Arc::new(MismatchingPlatformProfileWriter),
@@ -423,6 +427,7 @@ fn battery_charge_type_write_applies_when_policy_and_authorizer_allow_it() {
             led_state_enabled: false,
             ideapad_toggle_enabled: false,
             camera_power_enabled: false,
+            usb_charging_enabled: false,
         },
         Arc::new(AllowAllAuthorizer),
         Arc::new(RealFixturePlatformProfileWriter),
@@ -463,6 +468,7 @@ fn battery_charge_type_write_rolls_back_after_readback_mismatch() {
             led_state_enabled: false,
             ideapad_toggle_enabled: false,
             camera_power_enabled: false,
+            usb_charging_enabled: false,
         },
         Arc::new(AllowAllAuthorizer),
         Arc::new(RealFixturePlatformProfileWriter),
@@ -506,6 +512,7 @@ fn led_state_write_applies_when_policy_and_authorizer_allow_it() {
             led_state_enabled: true,
             ideapad_toggle_enabled: false,
             camera_power_enabled: false,
+            usb_charging_enabled: false,
         },
         Arc::new(AllowAllAuthorizer),
         Arc::new(RealFixturePlatformProfileWriter),
@@ -546,6 +553,7 @@ fn led_state_write_rolls_back_after_readback_mismatch() {
             led_state_enabled: true,
             ideapad_toggle_enabled: false,
             camera_power_enabled: false,
+            usb_charging_enabled: false,
         },
         Arc::new(AllowAllAuthorizer),
         Arc::new(RealFixturePlatformProfileWriter),
@@ -587,6 +595,7 @@ fn ideapad_toggle_write_applies_when_policy_and_authorizer_allow_it() {
             led_state_enabled: false,
             ideapad_toggle_enabled: true,
             camera_power_enabled: false,
+            usb_charging_enabled: false,
         },
         Arc::new(AllowAllAuthorizer),
         Arc::new(RealFixturePlatformProfileWriter),
@@ -635,6 +644,7 @@ fn ideapad_toggle_write_rolls_back_after_readback_mismatch() {
             led_state_enabled: false,
             ideapad_toggle_enabled: true,
             camera_power_enabled: false,
+            usb_charging_enabled: false,
         },
         Arc::new(AllowAllAuthorizer),
         Arc::new(RealFixturePlatformProfileWriter),
@@ -684,6 +694,7 @@ fn camera_power_write_applies_when_policy_and_authorizer_allow_it() {
             led_state_enabled: false,
             ideapad_toggle_enabled: false,
             camera_power_enabled: true,
+            usb_charging_enabled: false,
         },
         Arc::new(AllowAllAuthorizer),
         Arc::new(RealFixturePlatformProfileWriter),
@@ -726,6 +737,7 @@ fn camera_power_write_rolls_back_after_readback_mismatch() {
             led_state_enabled: false,
             ideapad_toggle_enabled: false,
             camera_power_enabled: true,
+            usb_charging_enabled: false,
         },
         Arc::new(AllowAllAuthorizer),
         Arc::new(RealFixturePlatformProfileWriter),
@@ -744,6 +756,145 @@ fn camera_power_write_rolls_back_after_readback_mismatch() {
     assert_eq!(
         fs::read_to_string(
             fixture.join("sys/bus/platform/drivers/ideapad_acpi/VPC2004:00/camera_power")
+        )
+        .unwrap()
+        .trim(),
+        "1"
+    );
+
+    let _ = fs::remove_file(state_path);
+    let _ = fs::remove_dir_all(fixture);
+}
+
+#[test]
+fn usb_charging_write_reports_policy_block_when_write_is_disabled() {
+    let fixture = copied_runtime_fixture_root("usb-charging-write-blocked");
+    seed_usb_charging_toggle(&fixture, "1");
+    let state_path = unique_state_path("usb-charging-write-blocked");
+    let service = LegionControl::new_with_runtime(
+        ProbeOptions {
+            sysfs_root: fixture.clone(),
+        },
+        &state_path,
+        WriteAccessPolicy {
+            platform_profile_enabled: false,
+            battery_charge_type_enabled: false,
+            led_state_enabled: false,
+            ideapad_toggle_enabled: false,
+            camera_power_enabled: false,
+            usb_charging_enabled: false,
+        },
+        Arc::new(AllowAllAuthorizer),
+        Arc::new(RealFixturePlatformProfileWriter),
+        Arc::new(RealFixtureBatteryChargeTypeWriter),
+        Arc::new(RealFixtureLedStateWriter),
+        Arc::new(RealFixtureIdeapadToggleWriter),
+    );
+
+    let plan = service
+        .plan_ideapad_toggle_write("usb_charging", false)
+        .unwrap();
+    assert_eq!(plan.previous_value, "1");
+    assert_eq!(plan.requested_value, "0");
+
+    let result = service
+        .set_ideapad_toggle("usb_charging", false, ":1.99")
+        .unwrap();
+    assert_eq!(result.status, WriteExecutionStatus::BlockedByPolicy);
+    assert!(!result.applied);
+    assert!(result.message.contains("usb charging writes are disabled"));
+    assert_eq!(
+        fs::read_to_string(
+            fixture.join("sys/bus/platform/drivers/ideapad_acpi/VPC2004:00/usb_charging")
+        )
+        .unwrap()
+        .trim(),
+        "1"
+    );
+
+    let _ = fs::remove_file(state_path);
+    let _ = fs::remove_dir_all(fixture);
+}
+
+#[test]
+fn usb_charging_write_applies_when_policy_and_authorizer_allow_it() {
+    let fixture = copied_runtime_fixture_root("usb-charging-write-success");
+    seed_usb_charging_toggle(&fixture, "1");
+    let state_path = unique_state_path("usb-charging-write-success");
+    let service = LegionControl::new_with_runtime(
+        ProbeOptions {
+            sysfs_root: fixture.clone(),
+        },
+        &state_path,
+        WriteAccessPolicy {
+            platform_profile_enabled: false,
+            battery_charge_type_enabled: false,
+            led_state_enabled: false,
+            ideapad_toggle_enabled: false,
+            camera_power_enabled: false,
+            usb_charging_enabled: true,
+        },
+        Arc::new(AllowAllAuthorizer),
+        Arc::new(RealFixturePlatformProfileWriter),
+        Arc::new(RealFixtureBatteryChargeTypeWriter),
+        Arc::new(RealFixtureLedStateWriter),
+        Arc::new(RealFixtureIdeapadToggleWriter),
+    );
+
+    let result = service
+        .set_ideapad_toggle("usb_charging", false, ":1.99")
+        .unwrap();
+    assert_eq!(result.status, WriteExecutionStatus::Applied);
+    assert!(result.applied);
+    assert_eq!(result.readback_value.as_deref(), Some("0"));
+    assert_eq!(
+        fs::read_to_string(
+            fixture.join("sys/bus/platform/drivers/ideapad_acpi/VPC2004:00/usb_charging")
+        )
+        .unwrap()
+        .trim(),
+        "0"
+    );
+
+    let _ = fs::remove_file(state_path);
+    let _ = fs::remove_dir_all(fixture);
+}
+
+#[test]
+fn usb_charging_write_rolls_back_after_readback_mismatch() {
+    let fixture = copied_runtime_fixture_root("usb-charging-write-rollback");
+    seed_usb_charging_toggle(&fixture, "1");
+    let state_path = unique_state_path("usb-charging-write-rollback");
+    let service = LegionControl::new_with_runtime(
+        ProbeOptions {
+            sysfs_root: fixture.clone(),
+        },
+        &state_path,
+        WriteAccessPolicy {
+            platform_profile_enabled: false,
+            battery_charge_type_enabled: false,
+            led_state_enabled: false,
+            ideapad_toggle_enabled: false,
+            camera_power_enabled: false,
+            usb_charging_enabled: true,
+        },
+        Arc::new(AllowAllAuthorizer),
+        Arc::new(RealFixturePlatformProfileWriter),
+        Arc::new(RealFixtureBatteryChargeTypeWriter),
+        Arc::new(RealFixtureLedStateWriter),
+        Arc::new(MismatchingUsbChargingWriter),
+    );
+
+    let result = service
+        .set_ideapad_toggle("usb_charging", false, ":1.99")
+        .unwrap();
+    assert_eq!(result.status, WriteExecutionStatus::Failed);
+    assert!(!result.applied);
+    assert!(result.message.contains("restored previous value `1`"));
+    assert_eq!(result.readback_value.as_deref(), Some("1"));
+    assert_eq!(
+        fs::read_to_string(
+            fixture.join("sys/bus/platform/drivers/ideapad_acpi/VPC2004:00/usb_charging")
         )
         .unwrap()
         .trim(),
@@ -880,6 +1031,32 @@ fn runtime_fixture_root() -> std::path::PathBuf {
         .parent()
         .expect("fixture root must have parent")
         .join("sysfs-82wm-runtime-capture")
+}
+
+fn copied_runtime_fixture_root(label: &str) -> std::path::PathBuf {
+    let destination = std::path::PathBuf::from("/tmp").join(format!(
+        "ratvantage-{label}-{}-{}",
+        std::process::id(),
+        std::thread::current().name().unwrap_or("test")
+    ));
+    let status = std::process::Command::new("cp")
+        .args([
+            "-a",
+            runtime_fixture_root().to_str().unwrap(),
+            destination.to_str().unwrap(),
+        ])
+        .status()
+        .expect("cp must be available for runtime fixture copy tests");
+    assert!(status.success(), "cp -a runtime fixture copy must succeed");
+    destination
+}
+
+fn seed_usb_charging_toggle(root: &std::path::Path, value: &str) {
+    let path = root.join("sys/bus/platform/drivers/ideapad_acpi/VPC2004:00/usb_charging");
+    if let Some(parent) = path.parent() {
+        fs::create_dir_all(parent).unwrap();
+    }
+    fs::write(path, value).unwrap();
 }
 
 fn unique_state_path(label: &str) -> std::path::PathBuf {
@@ -1020,6 +1197,14 @@ impl IdeapadToggleWriter for MismatchingIdeapadToggleWriter {
 struct MismatchingCameraPowerWriter;
 
 impl IdeapadToggleWriter for MismatchingCameraPowerWriter {
+    fn write_ideapad_toggle(&self, path: &str, _enabled: bool) -> std::result::Result<(), String> {
+        fs::write(path, "1").map_err(|error| error.to_string())
+    }
+}
+
+struct MismatchingUsbChargingWriter;
+
+impl IdeapadToggleWriter for MismatchingUsbChargingWriter {
     fn write_ideapad_toggle(&self, path: &str, _enabled: bool) -> std::result::Result<(), String> {
         fs::write(path, "1").map_err(|error| error.to_string())
     }

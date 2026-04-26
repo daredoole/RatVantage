@@ -7,13 +7,13 @@
 - Branch: `main`
 - Worktree at handoff: intended to be clean after the latest local tray menu diagnostics commit; run `git status --short --branch` and `git log --oneline -1` for the exact state before continuing.
 - Global Codex config: GitHub MCP is disabled, not removed, in `/home/darrian/.codex/config.toml`. New sessions should not rely on GitHub MCP unless the user explicitly re-enables it.
-- Latest local commits: run `git log --oneline -5` before continuing. Recent work includes diagnostics/export parity, compatibility bundle intake, KDE smoke report bundles, tray desktop diagnostics, the runtime-derived tray menu plus `--menu-check`, caller-aware reversible platform/battery writes, GTK/tray quick actions, reversible ylogo LED writes with tray reload improvements, the restricted `fn_lock` ideapad-toggle write path, and dashboard-confirmed `camera_power` writes.
+- Latest local commits: run `git log --oneline -5` before continuing. Recent work includes diagnostics/export parity, compatibility bundle intake, KDE smoke report bundles, tray desktop diagnostics, the runtime-derived tray menu plus `--menu-check`, caller-aware reversible platform/battery writes, GTK/tray quick actions, reversible ylogo LED writes with tray reload improvements, the restricted `fn_lock` ideapad-toggle write path, dashboard-confirmed `camera_power` and `usb_charging` writes, and GTK runtime refresh/recovery wiring.
 - Latest known milestone: pre-alpha scaffold with GTK smoke coverage, hardened packaging metadata, disabled high-risk write planning, runtime/current 82WM fixture and validation evidence, diagnostics log excerpts and compact summary counts, packaged fan preset assets with dry-run planning, fan restore/default dry-run planning, app-state-only GPU pending-reboot tracking, app-state-only last-known-good fan curve capture, overview/tray/GTK state visibility, diagnostics/export parity for `gpu_mode_pending` and `last_known_good_fan_curve`, StatusNotifier tray backend, tray dashboard bus-address forwarding, tray tooltip profile/fan/count details, runtime-derived tray menu rows for detected profile/charge/LED/ideapad-toggle choices plus packaged presets and pending state, GTK Profile/Battery/Appearance quick-apply controls with inline feedback plus dashboard confirmation for camera power, tray quick actions for reversible profile, charge-type, ylogo LED, and restricted `fn_lock` writes, dashboard-routed tray guidance for `camera_power`, GNOME tray extension guidance, KDE StatusNotifier tooltip/menu/quit smoke evidence, report-capable KDE tray smoke bundles under `target/smoke/`, tray desktop diagnostics via `legion-control-tray --desktop-check`, tray menu diagnostics via `legion-control-tray --menu-check`, periodic/resume-style tray reloads, documented GNOME untested path, read-only battery overview telemetry, read-only EnvyControl GPU query, UI status/overview/diagnostics/dry-run output with LED brightness and firmware toggle values, GPU dry-run planning with reboot-required messaging and rollback guidance, gated platform-profile, battery charge type, ylogo LED, restricted `fn_lock`, and dashboard-confirmed `camera_power` execution paths with `pkcheck` authorization and rollback tests, diagnostics choice-source paths, per-capability status labels, GTK Status, Profiles, Battery, Fans, Appearance, and Diagnostics tabs, and a compatibility bundle/PR intake workflow for outside Legion hardware submissions.
 - Rust toolchain: pinned stable in `rust-toolchain.toml`; local stable installed because GTK stack requires rustc 1.92+.
 
 ## Current task
 
-- Completed slice: extended the reversible write surface from restricted `fn_lock` to warning-gated `camera_power`, wired GTK Appearance confirmation controls to it, and kept the existing reprobe/reload behavior as the shared refresh path after writes.
+- Completed slice: extended the reversible write surface from restricted `fn_lock` to warning-gated `camera_power` and `usb_charging`, wired GTK Appearance confirmation controls to them, kept tray exposure dashboard-routed for the warning-gated toggles, and added GTK-side periodic/focus refresh so tray and dashboard now share the same reprobe/recovery model.
 - The daemon now exposes:
   - `SetPlatformProfile`
   - `SetBatteryChargeType`
@@ -32,11 +32,11 @@
   - refreshes and reads back
   - restores the previous value if read-back does not match
 - Default behavior is still blocked unless the daemon is started with the explicit write-enable flags.
-- The current ideapad-toggle rollout is intentionally restricted to `fn_lock` and `camera_power`; validator/planning/execution still reject other ideapad toggles.
+- The current ideapad-toggle rollout is intentionally restricted to `fn_lock`, `camera_power`, and `usb_charging`; validator/planning/execution still reject other ideapad toggles, and `touchpad` is explicitly blocked pending fixture capture plus recovery validation.
 - `fn_lock` writes require the paired `platform::fnlock` LED to exist, be binary, and match the toggle state before the UI or tray exposes quick actions; post-write read-back also requires both the toggle and indicator LED to match, otherwise rollback runs.
-- `camera_power` writes use binary toggle read-back plus rollback, but the frontend policy is stricter: GTK requires explicit confirmation with recovery guidance, and the tray intentionally does not expose a direct on/off action.
+- `camera_power` and `usb_charging` writes use binary toggle read-back plus rollback, but the frontend policy is stricter: GTK requires explicit confirmation with recovery guidance, and the tray intentionally does not expose direct on/off actions for either toggle.
 - The GTK shell now exposes quick-apply controls in the Profiles, Battery, and Appearance tabs and renders idle/success/blocked/failed write feedback inline.
-- The StatusNotifier tray now exposes runtime-derived quick actions for non-current platform profile, battery charge type, ylogo LED, and `fn_lock` choices, plus a dashboard-routed guidance row for `camera_power`, then refreshes the menu after each attempted write.
+- The StatusNotifier tray now exposes runtime-derived quick actions for non-current platform profile, battery charge type, ylogo LED, and `fn_lock` choices, plus dashboard-routed guidance rows for `camera_power` and `usb_charging`, then refreshes the menu after each attempted write.
 - Tray runtime reload now uses a shared client reprobe helper and auto-refreshes after periodic intervals and suspend-like gaps.
 - Automated coverage exists in:
   - `crates/legion-daemon/src/lib.rs`
@@ -44,7 +44,7 @@
   - `crates/legion-ui/src/main.rs`
   - `crates/legion-ui/tests/dbus_client.rs`
 - This still does not enable GPU, fan preset, or fan restore writes yet.
-- Next recommended task from the updated roadmap: add the next carefully bounded write-path slice after `camera_power`, while keeping the shared refresh/resume path and recovery behavior intact.
+- Next recommended task from the updated roadmap: deepen resume/recovery behavior around the existing reversible write set, then decide whether another bounded toggle is worth exposing at all.
 
 ## Implemented
 
@@ -140,6 +140,8 @@ cargo run -p legion-control-ui -- --plan-ideapad-toggle fn_lock=on --bus-address
 cargo run -p legion-control-ui -- --set-ideapad-toggle fn_lock=on --bus-address <dbus-address>
 cargo run -p legion-control-ui -- --plan-ideapad-toggle camera_power=off --bus-address <dbus-address>
 cargo run -p legion-control-ui -- --set-ideapad-toggle camera_power=off --bus-address <dbus-address>
+cargo run -p legion-control-ui -- --plan-ideapad-toggle usb_charging=off --bus-address <dbus-address>
+cargo run -p legion-control-ui -- --set-ideapad-toggle usb_charging=off --bus-address <dbus-address>
 cargo run -p legion-control-ui -- --plan-gpu-mode hybrid --bus-address <dbus-address>
 cargo run -p legion-control-ui -- --plan-fan-preset balanced-daily --bus-address <dbus-address>
 cargo run -p legion-control-ui -- --plan-restore-auto-fan --bus-address <dbus-address>

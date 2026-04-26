@@ -56,9 +56,9 @@ These should be represented in the daemon's capability registry but hidden unles
 | `max-power` / Extreme profile | listed in `/sys/firmware/acpi/platform_profile_choices` | Only expose if literally listed | Provided choices did not include `max-power`; undefined behavior risk exists on some firmware | Low |
 | Fan target RPM | hwmon `fanX_target` | Only if driver exposes it; validate `0=auto` and min/max metadata | Not reported in scan | Medium-low |
 | Functional Fn-lock | `/sys/bus/platform/devices/VPC2004:*/fn_lock` | Path exists, read/write of `0`/`1` works, LED and behavior agree | Only LED indicator confirmed | Medium |
-| Touchpad hardware toggle | `/sys/bus/platform/devices/VPC2004:*/touchpad` | Path exists; user confirms warning | Not reported in scan | Medium |
+| Touchpad hardware toggle | `/sys/bus/platform/devices/VPC2004:*/touchpad` | Path exists; user confirms warning | Not reported in scan; keep blocked until fixture capture and recovery validation exist | Medium |
 | Camera power | `/sys/bus/platform/devices/VPC2004:*/camera_power` | Path exists; warn that active camera apps may break | Not reported in scan | Medium |
-| Always-on USB charging | `/sys/bus/platform/devices/VPC2004:*/usb_charging` | Path exists; read/write `0`/`1` | Not reported in scan | Medium |
+| Always-on USB charging | `/sys/bus/platform/devices/VPC2004:*/usb_charging` | Path exists; read/write `0`/`1` | Not reported in scan; treat as dashboard-confirmed only until broader validation exists | Medium |
 | Legacy conservation mode | `/sys/bus/platform/devices/VPC2004:*/conservation_mode` | Use only if `charge_types` is absent or as read-only compatibility | Newer Lenovo non-ThinkPad support is better represented by `charge_types` | Low-medium |
 | Legacy ideapad fan mode | `/sys/bus/platform/devices/VPC2004:*/fan_mode` | Hide if Legion platform profile + fan curve are available | Can conflict conceptually with platform profile and custom fan curve | Low |
 | DKMS rapid charge | `legion_laptop` module-specific path such as `rapidcharge` | Optional adapter only; never a hard dependency | Not upstream stable for this app | Low |

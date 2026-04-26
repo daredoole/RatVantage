@@ -8,7 +8,16 @@ use legion_common::{
     BatteryChargeTypeCapability, FanCurveSnapshot, GpuModePending, IdeapadToggleCapability,
     LedCapability, PlatformProfileCapability, WriteExecutionResult, WriteExecutionStatus,
 };
-use std::{cell::RefCell, rc::Rc};
+use std::{
+    cell::RefCell,
+    rc::Rc,
+    time::{Duration, Instant},
+};
+
+const AUTO_REFRESH_INTERVAL: Duration = Duration::from_secs(30);
+const RESUME_REFRESH_GAP: Duration = Duration::from_secs(90);
+
+type SnapshotLoader = Rc<dyn Fn() -> Result<RuntimeSnapshot>>;
 
 pub fn run() -> Result<()> {
     let app = adw::Application::builder()
@@ -16,18 +25,6 @@ pub fn run() -> Result<()> {
         .build();
 
     app.connect_activate(|app| {
-        let snapshot =
-            LegionControlClient::system().and_then(|client| client.refresh_runtime_snapshot());
-        let status = snapshot
-            .as_ref()
-            .map(|snapshot| snapshot.status.clone())
-            .map_err(clone_error);
-        let diagnostics = snapshot
-            .as_ref()
-            .map(|snapshot| snapshot.diagnostics.clone())
-            .map_err(clone_error);
-        let gpu_pending = runtime_snapshot_gpu_pending(&snapshot);
-        let fan_snapshot = runtime_snapshot_fan_snapshot(&snapshot);
         let window = adw::ApplicationWindow::builder()
             .application(app)
             .title("Legion Control")
@@ -37,12 +34,14 @@ pub fn run() -> Result<()> {
 
         let root = gtk4::Box::new(gtk4::Orientation::Vertical, 0);
         root.append(&adw::HeaderBar::new());
-        root.append(&dashboard_page(
-            status,
-            diagnostics,
-            gpu_pending,
-            fan_snapshot,
-        ));
+        let runtime = DashboardRuntime::new(
+            &root,
+            Rc::new(|| {
+                LegionControlClient::system().and_then(|client| client.refresh_runtime_snapshot())
+            }),
+        );
+        runtime.borrow_mut().refresh_now();
+        install_runtime_refresh(&window, Rc::clone(&runtime));
         window.set_content(Some(&root));
         window.present();
     });
@@ -97,6 +96,122 @@ pub fn dashboard_page(
     page.append(&switcher);
     page.append(&stack);
     page.upcast()
+}
+
+fn install_runtime_refresh(
+    window: &adw::ApplicationWindow,
+    runtime: Rc<RefCell<DashboardRuntime>>,
+) {
+    let runtime_for_active = Rc::clone(&runtime);
+    window.connect_is_active_notify(move |window| {
+        if window.is_active() {
+            runtime_for_active.borrow_mut().refresh_now();
+        }
+    });
+
+    let runtime_for_visible = Rc::clone(&runtime);
+    window.connect_visible_notify(move |window| {
+        if window.is_visible() {
+            runtime_for_visible.borrow_mut().refresh_now();
+        }
+    });
+
+    gtk4::glib::timeout_add_local(Duration::from_secs(5), move || {
+        runtime.borrow_mut().maybe_auto_refresh();
+        gtk4::glib::ControlFlow::Continue
+    });
+}
+
+pub fn should_auto_refresh(now: Instant, last_refresh: Instant, last_tick: Instant) -> bool {
+    now.duration_since(last_refresh) >= AUTO_REFRESH_INTERVAL
+        || now.duration_since(last_tick) >= RESUME_REFRESH_GAP
+}
+
+struct DashboardRuntime {
+    host: gtk4::Box,
+    banner: gtk4::Label,
+    loader: SnapshotLoader,
+    last_snapshot: Option<RuntimeSnapshot>,
+    last_refresh: Instant,
+    last_tick: Instant,
+}
+
+impl DashboardRuntime {
+    fn new(root: &gtk4::Box, loader: SnapshotLoader) -> Rc<RefCell<Self>> {
+        let banner = gtk4::Label::new(None);
+        banner.set_xalign(0.0);
+        banner.set_wrap(true);
+        banner.set_margin_top(12);
+        banner.set_margin_start(24);
+        banner.set_margin_end(24);
+        banner.set_visible(false);
+        root.append(&banner);
+
+        let host = gtk4::Box::new(gtk4::Orientation::Vertical, 0);
+        root.append(&host);
+
+        Rc::new(RefCell::new(Self {
+            host,
+            banner,
+            loader,
+            last_snapshot: None,
+            last_refresh: Instant::now(),
+            last_tick: Instant::now(),
+        }))
+    }
+
+    fn refresh_now(&mut self) {
+        match (self.loader)() {
+            Ok(snapshot) => {
+                self.last_snapshot = Some(snapshot.clone());
+                self.last_refresh = Instant::now();
+                self.last_tick = self.last_refresh;
+                self.banner.set_visible(false);
+                self.replace_page(snapshot_page(Ok(snapshot)));
+            }
+            Err(error) => {
+                self.last_tick = Instant::now();
+                let message = format!(
+                    "Runtime refresh degraded. Keeping the last known dashboard state until the daemon responds again: {error}"
+                );
+                if self.last_snapshot.is_none() {
+                    self.replace_page(snapshot_page(Err(anyhow!(error.to_string()))));
+                }
+                self.banner.set_label(&message);
+                self.banner.set_visible(self.last_snapshot.is_some());
+            }
+        }
+    }
+
+    fn maybe_auto_refresh(&mut self) {
+        let now = Instant::now();
+        if should_auto_refresh(now, self.last_refresh, self.last_tick) {
+            self.refresh_now();
+            return;
+        }
+        self.last_tick = now;
+    }
+
+    fn replace_page(&self, widget: gtk4::Widget) {
+        while let Some(child) = self.host.first_child() {
+            self.host.remove(&child);
+        }
+        self.host.append(&widget);
+    }
+}
+
+fn snapshot_page(snapshot: Result<RuntimeSnapshot>) -> gtk4::Widget {
+    let status = snapshot
+        .as_ref()
+        .map(|snapshot| snapshot.status.clone())
+        .map_err(clone_error);
+    let diagnostics = snapshot
+        .as_ref()
+        .map(|snapshot| snapshot.diagnostics.clone())
+        .map_err(clone_error);
+    let gpu_pending = runtime_snapshot_gpu_pending(&snapshot);
+    let fan_snapshot = runtime_snapshot_fan_snapshot(&snapshot);
+    dashboard_page(status, diagnostics, gpu_pending, fan_snapshot)
 }
 
 pub fn status_page(
@@ -438,9 +553,11 @@ fn append_appearance(page: &gtk4::Box, bundle: &DiagnosticsBundle) {
         page.append(&toggles);
         page.append(&build_ideapad_toggle_controls(None, None));
         page.append(&build_camera_power_controls(None, None));
+        page.append(&build_usb_charging_controls(None, None));
     } else {
         let mut fn_lock_row = None;
         let mut camera_power_row = None;
+        let mut usb_charging_row = None;
         for toggle in &bundle.raw_probe_report.ideapad_toggles {
             let row = info_row(&toggle.name, &render_ideapad_toggle_row(toggle));
             if toggle.name == "fn_lock" {
@@ -448,6 +565,9 @@ fn append_appearance(page: &gtk4::Box, bundle: &DiagnosticsBundle) {
             }
             if toggle.name == "camera_power" {
                 camera_power_row = Some(row.clone());
+            }
+            if toggle.name == "usb_charging" {
+                usb_charging_row = Some(row.clone());
             }
             toggles.add(&row);
         }
@@ -463,9 +583,14 @@ fn append_appearance(page: &gtk4::Box, bundle: &DiagnosticsBundle) {
             writable_camera_power_toggle(bundle.raw_probe_report.ideapad_toggles.as_slice()),
             camera_power_row,
         ));
+        page.append(&build_usb_charging_controls(
+            writable_usb_charging_toggle(bundle.raw_probe_report.ideapad_toggles.as_slice()),
+            usb_charging_row,
+        ));
     }
     page.append(&build_write_feedback_group("Fn-lock"));
     page.append(&build_write_feedback_group("Camera power"));
+    page.append(&build_write_feedback_group("USB charging"));
 }
 
 fn append_diagnostics(page: &gtk4::Box, bundle: &DiagnosticsBundle) {
@@ -908,6 +1033,128 @@ fn build_camera_power_controls(
     group
 }
 
+fn build_usb_charging_controls(
+    toggle: Option<&IdeapadToggleCapability>,
+    current_row: Option<adw::ActionRow>,
+) -> adw::PreferencesGroup {
+    let group = adw::PreferencesGroup::new();
+    group.set_title("USB charging quick apply");
+
+    let Some(toggle) = toggle else {
+        group.add(&info_row(
+            "USB charging",
+            "unavailable - quick apply disabled",
+        ));
+        return group;
+    };
+
+    let row = adw::ActionRow::builder()
+        .title("USB charging")
+        .subtitle(
+            "Changes require confirmation because enabling always-on USB charging can drain the laptop battery while it is shut down.",
+        )
+        .selectable(false)
+        .build();
+
+    let request_off = gtk4::Button::with_label("Request off");
+    let request_on = gtk4::Button::with_label("Request on");
+    request_off.set_sensitive(toggle.current_value.as_deref() != Some("0"));
+    request_on.set_sensitive(toggle.current_value.as_deref() != Some("1"));
+    row.add_suffix(&request_off);
+    row.add_suffix(&request_on);
+    group.add(&row);
+
+    let confirm_row = adw::ActionRow::builder()
+        .title("Confirmation required")
+        .subtitle("Choose Request on or Request off first. Enabling USB charging may increase battery drain while the laptop is powered off, and the write alone does not verify real-world charging behavior.")
+        .selectable(false)
+        .build();
+    let confirm = gtk4::Button::with_label("Confirm");
+    let cancel = gtk4::Button::with_label("Cancel");
+    confirm.set_sensitive(false);
+    cancel.set_sensitive(false);
+    confirm_row.add_suffix(&confirm);
+    confirm_row.add_suffix(&cancel);
+    group.add(&confirm_row);
+
+    let feedback_row = write_feedback_row(None);
+    group.add(&feedback_row);
+
+    let pending_enabled = Rc::new(RefCell::new(None::<bool>));
+
+    let confirm_row_for_off = confirm_row.clone();
+    let confirm_for_off = confirm.clone();
+    let cancel_for_off = cancel.clone();
+    let pending_for_off = Rc::clone(&pending_enabled);
+    request_off.connect_clicked(move |_| {
+        *pending_for_off.borrow_mut() = Some(false);
+        confirm_row_for_off.set_title("Confirm USB charging change");
+        confirm_row_for_off.set_subtitle(
+            "Turning USB charging off should stop always-on charging behavior. Confirm to continue or Cancel to leave the current state in place.",
+        );
+        confirm_for_off.set_label("Confirm off");
+        confirm_for_off.set_sensitive(true);
+        cancel_for_off.set_sensitive(true);
+    });
+
+    let confirm_row_for_on = confirm_row.clone();
+    let confirm_for_on = confirm.clone();
+    let cancel_for_on = cancel.clone();
+    let pending_for_on = Rc::clone(&pending_enabled);
+    request_on.connect_clicked(move |_| {
+        *pending_for_on.borrow_mut() = Some(true);
+        confirm_row_for_on.set_title("Confirm USB charging change");
+        confirm_row_for_on.set_subtitle(
+            "Turning USB charging on can drain the battery while the laptop is shut down. Confirm to continue or Cancel to leave the current state in place.",
+        );
+        confirm_for_on.set_label("Confirm on");
+        confirm_for_on.set_sensitive(true);
+        cancel_for_on.set_sensitive(true);
+    });
+
+    let confirm_row_for_cancel = confirm_row.clone();
+    let confirm_for_cancel = confirm.clone();
+    let cancel_for_cancel = cancel.clone();
+    let pending_for_cancel = Rc::clone(&pending_enabled);
+    cancel.connect_clicked(move |_| {
+        *pending_for_cancel.borrow_mut() = None;
+        confirm_row_for_cancel.set_title("Confirmation required");
+        confirm_row_for_cancel.set_subtitle("Choose Request on or Request off first. Enabling USB charging may increase battery drain while the laptop is powered off, and the write alone does not verify real-world charging behavior.");
+        confirm_for_cancel.set_label("Confirm");
+        confirm_for_cancel.set_sensitive(false);
+        cancel_for_cancel.set_sensitive(false);
+    });
+
+    let feedback_row_for_confirm = feedback_row.clone();
+    let confirm_row_for_confirm = confirm_row.clone();
+    let confirm_for_confirm = confirm.clone();
+    let cancel_for_confirm = cancel.clone();
+    let current_row_for_confirm = current_row.clone();
+    let toggle_id = toggle.name.clone();
+    let path = toggle.path.clone().unwrap_or_else(|| "unknown".to_owned());
+    let pending_for_confirm = Rc::clone(&pending_enabled);
+    confirm.connect_clicked(move |_| {
+        let Some(enabled) = *pending_for_confirm.borrow() else {
+            return;
+        };
+        handle_ideapad_toggle_button_click(
+            &feedback_row_for_confirm,
+            current_row_for_confirm.as_ref(),
+            &toggle_id,
+            &path,
+            enabled,
+        );
+        *pending_for_confirm.borrow_mut() = None;
+        confirm_row_for_confirm.set_title("Confirmation required");
+        confirm_row_for_confirm.set_subtitle("Choose Request on or Request off first. Enabling USB charging may increase battery drain while the laptop is powered off, and the write alone does not verify real-world charging behavior.");
+        confirm_for_confirm.set_label("Confirm");
+        confirm_for_confirm.set_sensitive(false);
+        cancel_for_confirm.set_sensitive(false);
+    });
+
+    group
+}
+
 #[allow(clippy::too_many_arguments)]
 fn build_write_controls<F, G>(
     title: &str,
@@ -1212,6 +1459,16 @@ fn writable_camera_power_toggle(
 ) -> Option<&IdeapadToggleCapability> {
     toggles.iter().find(|toggle| {
         toggle.name == "camera_power"
+            && matches!(toggle.current_value.as_deref(), Some("0" | "1"))
+            && toggle.path.as_deref().is_some_and(|path| !path.is_empty())
+    })
+}
+
+fn writable_usb_charging_toggle(
+    toggles: &[IdeapadToggleCapability],
+) -> Option<&IdeapadToggleCapability> {
+    toggles.iter().find(|toggle| {
+        toggle.name == "usb_charging"
             && matches!(toggle.current_value.as_deref(), Some("0" | "1"))
             && toggle.path.as_deref().is_some_and(|path| !path.is_empty())
     })

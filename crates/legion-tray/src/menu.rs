@@ -306,6 +306,10 @@ fn append_quick_actions(entries: &mut Vec<TrayMenuEntry>, report: &CapabilityReg
         sections.extend(section);
     }
 
+    if let Some(section) = usb_charging_guidance_section(report) {
+        sections.extend(section);
+    }
+
     if !sections.is_empty() {
         entries.push(TrayMenuEntry::Separator);
         entries.extend(sections);
@@ -459,6 +463,29 @@ fn camera_power_guidance_section(report: &CapabilityRegistry) -> Option<Vec<Tray
     ])
 }
 
+fn usb_charging_guidance_section(report: &CapabilityRegistry) -> Option<Vec<TrayMenuEntry>> {
+    let toggle = report.ideapad_toggles.iter().find(|toggle| {
+        toggle.name == "usb_charging"
+            && matches!(toggle.current_value.as_deref(), Some("0" | "1"))
+            && toggle.path.as_deref().is_some_and(|path| !path.is_empty())
+    })?;
+
+    Some(vec![
+        TrayMenuEntry::Item(info_item(format!(
+            "USB charging: {}",
+            if toggle.current_value.as_deref() == Some("1") {
+                "enabled - dashboard warning required"
+            } else {
+                "disabled - dashboard warning required"
+            }
+        ))),
+        TrayMenuEntry::Item(action_item(
+            "Open dashboard for USB charging controls",
+            TrayAction::OpenDashboard,
+        )),
+    ])
+}
+
 fn fan_rows(sensors: &[HwmonSensor]) -> Vec<String> {
     sensors
         .iter()
@@ -604,6 +631,12 @@ mod tests {
                     path: Some("/tmp/camera_power".to_owned()),
                     current_value: Some("1".to_owned()),
                 },
+                IdeapadToggleCapability {
+                    name: "usb_charging".to_owned(),
+                    status: CapabilityStatus::ProbeOnly,
+                    path: Some("/tmp/usb_charging".to_owned()),
+                    current_value: Some("0".to_owned()),
+                },
             ],
             ..Default::default()
         };
@@ -641,6 +674,7 @@ mod tests {
                 "LED: platform::ylogo on",
                 "Toggle: fn_lock off",
                 "Toggle: camera_power on",
+                "Toggle: usb_charging off",
                 "Fan: CPU Fan 2410 RPM",
                 "GPU pending: hybrid (previous nvidia, reboot required)",
                 "Saved fan curve: 1 values from legion_hwmon",
@@ -654,6 +688,7 @@ mod tests {
                 "Fn-lock actions",
                 "Set Fn-lock off",
                 "Camera power: dashboard confirmation required",
+                "USB charging: disabled - dashboard warning required",
             ]
         );
         assert_eq!(
@@ -666,6 +701,7 @@ mod tests {
                 "Set LED state: platform::ylogo off",
                 "Set Fn-lock on",
                 "Open dashboard for camera power controls",
+                "Open dashboard for USB charging controls",
                 "Open dashboard",
                 "Refresh status",
                 "Quit",
@@ -853,6 +889,12 @@ mod tests {
                     status: CapabilityStatus::ProbeOnly,
                     path: Some("/tmp/camera_power".to_owned()),
                     current_value: Some("1".to_owned()),
+                },
+                IdeapadToggleCapability {
+                    name: "usb_charging".to_owned(),
+                    status: CapabilityStatus::ProbeOnly,
+                    path: Some("/tmp/usb_charging".to_owned()),
+                    current_value: Some("0".to_owned()),
                 },
             ],
             ..Default::default()

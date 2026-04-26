@@ -7,7 +7,7 @@ Current pre-alpha code provides the safe read-only base:
 - Runtime probe for hardware summary, capabilities, telemetry, and raw probe report.
 - Root-capable daemon shape with read-only D-Bus APIs plus gated reversible execution for `SetPlatformProfile`, `SetBatteryChargeType`, `SetLedState`, and restricted `SetIdeapadToggle`.
 - UI status client and optional GTK4/libadwaita shell with Status, Profiles, Battery, Fans, Appearance, and Diagnostics tabs; the Profiles, Battery, and Appearance tabs now include gated quick-apply controls with inline execution feedback.
-- Tray/status helper with a state-driven menu derived from detected profile choices, battery charge choices, LED state, ideapad toggle state, packaged preset labels, pending runtime state, reversible quick actions for platform profile, battery charge type, ylogo LED, and `fn_lock`, plus dashboard-routed guidance rows for warning-gated `camera_power`.
+- Tray/status helper with a state-driven menu derived from detected profile choices, battery charge choices, LED state, ideapad toggle state, packaged preset labels, pending runtime state, reversible quick actions for platform profile, battery charge type, ylogo LED, and `fn_lock`, plus dashboard-routed guidance rows for warning-gated `camera_power` and `usb_charging`.
 - StatusNotifier tray backend with dashboard, refresh, auto-refresh/resume reloads, write action execution, and `--menu-check` diagnostics for the runtime-derived menu.
 - StatusNotifier dashboard launch forwards custom D-Bus addresses for private/session-bus workflows.
 - Tray tooltip reports platform profile, fan RPM, and available/missing capabilities.
@@ -23,7 +23,7 @@ Current pre-alpha code provides the safe read-only base:
 - Disabled draft write-method contracts for platform profile, battery charge type, GPU mode, and fan presets.
 - Pure validators for platform profile, battery charge type, EnvyControl GPU mode, and packaged fan preset choices.
 - Validator-backed dry-run planning for platform profile, battery charge type, GPU mode, and fan presets.
-- Gated platform-profile, battery charge type, ylogo LED, restricted `fn_lock`, and warning-gated `camera_power` write execution paths with rollback-on-readback-mismatch tests and matching UI CLI entry points. [implemented, still disabled by default unless daemon write flags are enabled]
+- Gated platform-profile, battery charge type, ylogo LED, restricted `fn_lock`, and warning-gated `camera_power` and `usb_charging` write execution paths with rollback-on-readback-mismatch tests and matching UI CLI entry points. [implemented, still disabled by default unless daemon write flags are enabled]
 - Daemon-side Rust adapters for dry-run planning, plus gated `SetPlatformProfile`, `SetBatteryChargeType`, `SetLedState`, and restricted `SetIdeapadToggle` execution while higher-risk D-Bus write methods remain absent.
 - Runtime-captured 82WM fixture coverage, including bracketed battery `charge_types` current-value parsing.
 - Current 82WM read-only validation evidence for DMI, platform profiles, charge choices, sensors, LEDs, firmware toggles, and EnvyControl.
@@ -47,7 +47,7 @@ Current pre-alpha code provides the safe read-only base:
 
 - Keep tray autostart disabled; GNOME AppIndicator extension path is still untested.
 - Collect more captured fixtures through the compatibility bundle workflow when additional supported Legion machines are available.
-- If no new hardware reports are available, continue with the next carefully bounded write-path slice after `camera_power`, while keeping tray/UI refresh and resume behavior aligned with the shared reload path; KDE-specific smoke/reporting is now in place, while GNOME validation remains blocked.
+- If no new hardware reports are available, continue with resume/recovery hardening around the current reversible write set, while keeping tray/UI refresh behavior aligned with the shared reload path; KDE-specific smoke/reporting is now in place, while GNOME validation remains blocked.
 - Keep progress docs current after each completed roadmap slice.
 - Keep GitHub CI as remote guard; run `./scripts/ci-local.sh` before pushing to reduce failed CI minutes.
 
@@ -154,7 +154,7 @@ Goal: make the confirmed controls more complete and user-friendly.
 
 Expose only if present:
 
-- always-on USB charging via VPC2004 `usb_charging`; [implemented as read-only GTK Appearance and `--overview` data when exposed]
+- always-on USB charging via VPC2004 `usb_charging`; [implemented as gated daemon/UI CLI/GTK write path with dashboard confirmation, disabled by default unless the daemon write flag is enabled; tray remains dashboard-routed only]
 - IO-port LED if a stable LED node exists.
 
 ### Diagnostics
@@ -182,7 +182,7 @@ Goal: add optional controls that are useful but not core to Legion thermal manag
 Expose only when probed and with warnings:
 
 - camera power via VPC2004 `camera_power`; [implemented with dashboard confirmation and no direct tray toggle]
-- touchpad hardware toggle via VPC2004 `touchpad`;
+- touchpad hardware toggle via VPC2004 `touchpad`; [intentionally blocked for now pending fixture capture, recovery validation, and user-lockout handling]
 - legacy conservation mode as compatibility diagnostic if `charge_types` is absent;
 - backlight readout or `brightnessctl` wrapper only if users ask for it.
 

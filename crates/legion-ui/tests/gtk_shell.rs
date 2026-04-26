@@ -1,7 +1,10 @@
 #![cfg(feature = "gtk-ui")]
 
 use adw::prelude::*;
-use std::sync::Once;
+use std::{
+    sync::Once,
+    time::{Duration, Instant},
+};
 
 use legion_common::{
     BatteryChargeTypeCapability, BatteryTelemetry, Capability, CapabilityRegistry,
@@ -13,6 +16,26 @@ use legion_common::{
 use legion_control_ui::{gtk_shell, DiagnosticsBundle, UiStatus};
 
 static GTK_INIT: Once = Once::new();
+
+#[test]
+fn runtime_refresh_policy_triggers_for_periodic_and_resume_gaps() {
+    let now = Instant::now();
+    assert!(!gtk_shell::should_auto_refresh(
+        now,
+        now - Duration::from_secs(10),
+        now - Duration::from_secs(10),
+    ));
+    assert!(gtk_shell::should_auto_refresh(
+        now,
+        now - Duration::from_secs(31),
+        now - Duration::from_secs(10),
+    ));
+    assert!(gtk_shell::should_auto_refresh(
+        now,
+        now - Duration::from_secs(5),
+        now - Duration::from_secs(91),
+    ));
+}
 
 #[gtk4::test]
 fn status_and_error_pages_build_under_headless_display() {
@@ -61,7 +84,7 @@ fn status_and_error_pages_build_under_headless_display() {
 
     assert_eq!(page.orientation(), gtk4::Orientation::Vertical);
     assert_eq!(page.spacing(), 12);
-    assert_eq!(page.observe_children().n_items(), 9);
+    assert_eq!(page.observe_children().n_items(), 11);
 
     let page = gtk_shell::diagnostics_page(Ok(sample_diagnostics()));
     let page = page
@@ -228,6 +251,10 @@ fn profiles_and_battery_pages_render_quick_apply_controls() {
     assert!(appearance_text.iter().any(|text| text == "Request on"));
     assert!(appearance_text.iter().any(|text| text == "Confirm"));
     assert!(appearance_text.iter().any(|text| text == "Cancel"));
+    assert!(appearance_text
+        .iter()
+        .any(|text| text == "USB charging quick apply"));
+    assert!(appearance_text.iter().any(|text| text == "USB charging"));
 }
 
 #[gtk4::test]
@@ -462,6 +489,15 @@ fn sample_diagnostics() -> DiagnosticsBundle {
                     .to_owned(),
             ),
             current_value: Some("1".to_owned()),
+        },
+        IdeapadToggleCapability {
+            name: "usb_charging".to_owned(),
+            status: CapabilityStatus::ProbeOnly,
+            path: Some(
+                "/tmp/fixture/sys/bus/platform/drivers/ideapad_acpi/VPC2004:00/usb_charging"
+                    .to_owned(),
+            ),
+            current_value: Some("0".to_owned()),
         },
     ];
 
