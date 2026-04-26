@@ -730,13 +730,17 @@ fn append_fans(
             ));
         }
     }
-    let last_known_row = info_row("Last known good", &render_fan_snapshot_row(fan_snapshot));
+    let last_known_row = info_row("Last known good", &render_fan_snapshot_row(&fan_snapshot));
     curves.add(&last_known_row);
     page.append(&curves);
+
+    let lkg_points_group =
+        append_saved_lkg_curve_detail(page, &clone_result(&fan_snapshot), last_known_row.clone());
 
     page.append(&build_fan_planning_controls(
         bundle.raw_probe_report.fan_curves.as_slice(),
         last_known_row,
+        lkg_points_group,
     ));
 
     if !bundle.raw_probe_report.fan_curves.is_empty() {
@@ -752,24 +756,24 @@ fn fan_curve_sysfs_basename(path: &str) -> String {
         .to_owned()
 }
 
-fn repopulate_live_points_group(group: &adw::PreferencesGroup, snapshot: &FanCurveSnapshot) {
-    while let Some(child) = group.first_child() {
-        group.remove(&child);
+fn clear_points_column(column: &gtk4::Box) {
+    while let Some(child) = column.first_child() {
+        column.remove(&child);
     }
+}
+
+fn append_fan_curve_point_rows_box(column: &gtk4::Box, snapshot: &FanCurveSnapshot) {
     if snapshot.points.is_empty() {
-        group.add(&info_row(
-            "Points",
-            "No pwm/temp sysfs nodes were returned for this curve.",
-        ));
+        column.append(&info_row("Points", "No pwm/temp values in this snapshot."));
         return;
     }
     const MAX_ROWS: usize = 32;
     for point in snapshot.points.iter().take(MAX_ROWS) {
         let title = fan_curve_sysfs_basename(&point.path);
-        group.add(&info_row(&title, &point.value));
+        column.append(&info_row(&title, &point.value));
     }
     if snapshot.points.len() > MAX_ROWS {
-        group.add(&info_row(
+        column.append(&info_row(
             "…",
             &format!(
                 "{} additional nodes omitted for display",
@@ -777,6 +781,86 @@ fn repopulate_live_points_group(group: &adw::PreferencesGroup, snapshot: &FanCur
             ),
         ));
     }
+}
+
+fn repopulate_live_points_column(column: &gtk4::Box, snapshot: &FanCurveSnapshot) {
+    clear_points_column(column);
+    append_fan_curve_point_rows_box(column, snapshot);
+}
+
+fn repopulate_saved_lkg_points_column(
+    column: &gtk4::Box,
+    snapshot: &Result<Option<FanCurveSnapshot>>,
+) {
+    clear_points_column(column);
+    match snapshot {
+        Err(error) => {
+            column.append(&info_row("State unavailable", &error.to_string()));
+        }
+        Ok(None) => {
+            column.append(&info_row(
+                "No snapshot",
+                "None captured yet. Use Capture snapshot in Guided fan planning, then refresh here.",
+            ));
+        }
+        Ok(Some(curve)) => {
+            append_fan_curve_point_rows_box(column, curve);
+        }
+    }
+}
+
+fn append_saved_lkg_curve_detail(
+    page: &gtk4::Box,
+    fan_snapshot: &Result<Option<FanCurveSnapshot>>,
+    last_known_row: adw::ActionRow,
+) -> gtk4::Box {
+    let section_title = gtk4::Label::new(Some("Saved last-known-good detail"));
+    section_title.add_css_class("title-3");
+    section_title.set_xalign(0.0);
+    page.append(&section_title);
+
+    let hint = gtk4::Label::new(Some(
+        "Point values from durable app state (GetLastKnownGoodFanCurve). Read-only; use Capture snapshot in Guided fan planning to update.",
+    ));
+    hint.set_wrap(true);
+    hint.set_xalign(0.0);
+    page.append(&hint);
+
+    let actions = gtk4::Box::new(gtk4::Orientation::Horizontal, 8);
+    let refresh_saved = gtk4::Button::with_label("Refresh saved snapshot");
+    actions.append(&refresh_saved);
+    page.append(&actions);
+
+    let points_heading = gtk4::Label::new(Some("Saved curve points (read-only)"));
+    points_heading.add_css_class("title-4");
+    points_heading.set_xalign(0.0);
+    points_heading.set_margin_top(8);
+    page.append(&points_heading);
+
+    let points_column = gtk4::Box::new(gtk4::Orientation::Vertical, 4);
+    points_column.set_margin_start(4);
+    repopulate_saved_lkg_points_column(&points_column, fan_snapshot);
+    page.append(&points_column);
+
+    let points_for_refresh = points_column.clone();
+    let last_known_for_refresh = last_known_row.clone();
+    refresh_saved.connect_clicked(move |_| {
+        match LegionControlClient::system().and_then(|client| client.last_known_good_fan_curve()) {
+            Ok(maybe) => {
+                repopulate_saved_lkg_points_column(&points_for_refresh, &Ok(maybe.clone()));
+                last_known_for_refresh.set_subtitle(&render_fan_snapshot_row(&Ok(maybe)));
+            }
+            Err(error) => {
+                repopulate_saved_lkg_points_column(
+                    &points_for_refresh,
+                    &Err(anyhow!(error.to_string())),
+                );
+                last_known_for_refresh.set_subtitle(&format!("state unavailable - {error}"));
+            }
+        }
+    });
+
+    points_column
 }
 
 fn format_fan_snapshot_multiline(snapshot: &FanCurveSnapshot) -> String {
@@ -809,13 +893,19 @@ fn append_fan_live_curve_readings(page: &gtk4::Box) {
     actions.append(&refresh);
     page.append(&actions);
 
-    let points_group = adw::PreferencesGroup::new();
-    points_group.set_title("Live sysfs points (read-only)");
-    points_group.add(&info_row(
+    let points_heading = gtk4::Label::new(Some("Live sysfs points (read-only)"));
+    points_heading.add_css_class("title-4");
+    points_heading.set_xalign(0.0);
+    points_heading.set_margin_top(8);
+    page.append(&points_heading);
+
+    let points_column = gtk4::Box::new(gtk4::Orientation::Vertical, 4);
+    points_column.set_margin_start(4);
+    points_column.append(&info_row(
         "No data yet",
         "Use Refresh live readings to load current pwm/temp values.",
     ));
-    page.append(&points_group);
+    page.append(&points_column);
 
     let text = gtk4::TextView::new();
     text.set_editable(false);
@@ -834,20 +924,18 @@ fn append_fan_live_curve_readings(page: &gtk4::Box) {
     page.append(&scroller);
 
     let text_for_refresh = text.clone();
-    let points_for_refresh = points_group.clone();
+    let points_for_refresh = points_column.clone();
     refresh.connect_clicked(move |_| {
         match LegionControlClient::system().and_then(|client| client.live_fan_curve_readings()) {
             Ok(snapshot) => {
-                repopulate_live_points_group(&points_for_refresh, &snapshot);
+                repopulate_live_points_column(&points_for_refresh, &snapshot);
                 text_for_refresh
                     .buffer()
                     .set_text(&format_fan_snapshot_multiline(&snapshot));
             }
             Err(error) => {
-                while let Some(child) = points_for_refresh.first_child() {
-                    points_for_refresh.remove(&child);
-                }
-                points_for_refresh.add(&info_row("Live readings failed", &error.to_string()));
+                clear_points_column(&points_for_refresh);
+                points_for_refresh.append(&info_row("Live readings failed", &error.to_string()));
                 text_for_refresh
                     .buffer()
                     .set_text(&format!("Live readings failed:\n{error}"));
@@ -1052,9 +1140,9 @@ fn format_fan_snapshot_display(snapshot: &FanCurveSnapshot) -> String {
     format!("{path} - {} captured values", snapshot.points.len())
 }
 
-fn render_fan_snapshot_row(snapshot: Result<Option<FanCurveSnapshot>>) -> String {
+fn render_fan_snapshot_row(snapshot: &Result<Option<FanCurveSnapshot>>) -> String {
     match snapshot {
-        Ok(Some(snapshot)) => format_fan_snapshot_display(&snapshot),
+        Ok(Some(snapshot)) => format_fan_snapshot_display(snapshot),
         Ok(None) => "none captured".to_owned(),
         Err(error) => format!("state unavailable - {error}"),
     }
@@ -1273,6 +1361,7 @@ fn build_gpu_mode_controls(
 fn build_fan_planning_controls(
     fan_curves: &[FanCurveCapability],
     last_known_row: adw::ActionRow,
+    lkg_points_column: gtk4::Box,
 ) -> adw::PreferencesGroup {
     let group = adw::PreferencesGroup::new();
     group.set_title("Guided fan planning");
@@ -1411,12 +1500,17 @@ fn build_fan_planning_controls(
     });
 
     let last_known_for_capture = last_known_row.clone();
+    let lkg_points_for_capture = lkg_points_column.clone();
     capture.connect_clicked(move |_| {
         match LegionControlClient::system()
             .and_then(|client| client.capture_last_known_good_fan_curve())
         {
             Ok(snapshot) => {
                 last_known_for_capture.set_subtitle(&format_fan_snapshot_display(&snapshot));
+                repopulate_saved_lkg_points_column(
+                    &lkg_points_for_capture,
+                    &Ok(Some(snapshot.clone())),
+                );
                 let _ = request_dashboard_refresh();
             }
             Err(error) => {
