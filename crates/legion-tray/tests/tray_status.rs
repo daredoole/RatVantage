@@ -92,23 +92,18 @@ value = "42000"
     assert!(!stdout.contains("label=Saved fan curve:"));
     assert!(!stdout.contains("label=Fan presets:"));
     assert!(!stdout.contains("label=Capabilities:"));
-    assert!(stdout.contains(
-        "enabled action=set_platform_profile:low-power label=Low Power"
-    ));
-    assert!(stdout.contains(
-        "enabled action=set_platform_profile:performance label=Performance"
-    ));
-    assert!(stdout.contains(
-        "enabled action=set_battery_charge_type:Conservation label=Conservation"
-    ));
+    assert!(stdout.contains("enabled action=set_platform_profile:low-power label=Low Power"));
+    assert!(stdout.contains("enabled action=set_platform_profile:performance label=Performance"));
+    assert!(
+        stdout.contains("enabled action=set_battery_charge_type:Conservation label=Conservation")
+    );
     assert!(stdout.contains("enabled action=set_battery_charge_type:Fast label=Fast"));
     assert!(stdout.contains("label=Logo light"));
     assert!(stdout.contains("enabled action=set_led_state:platform::ylogo:off label=Turn off"));
     assert!(stdout.contains("label=Fn-lock"));
     assert!(stdout.contains("enabled action=set_ideapad_toggle:fn_lock:on label=Turn on"));
     assert!(stdout.contains("label=Camera power: on - open Dashboard to change"));
-    assert!(stdout
-        .contains("enabled action=open_dashboard label=Camera settings"));
+    assert!(stdout.contains("enabled action=open_dashboard label=Camera settings"));
     assert!(stdout.contains("enabled action=open_dashboard label=Dashboard"));
     assert!(stdout.contains("enabled action=refresh_status label=Refresh"));
     assert!(stdout.contains("enabled action=quit label=Quit"));

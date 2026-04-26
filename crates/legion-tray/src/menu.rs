@@ -291,7 +291,10 @@ where
 
     let mut entries = vec![TrayMenuEntry::Item(info_item(header.to_owned()))];
     for choice in actionable {
-        entries.push(TrayMenuEntry::Item(action_item(label(choice), action(choice))));
+        entries.push(TrayMenuEntry::Item(action_item(
+            label(choice),
+            action(choice),
+        )));
     }
     Some(entries)
 }
@@ -436,10 +439,7 @@ fn camera_power_guidance_section(report: &CapabilityRegistry) -> Option<Vec<Tray
                 "off - open Dashboard to change"
             }
         ))),
-        TrayMenuEntry::Item(action_item(
-            "Camera settings",
-            TrayAction::OpenDashboard,
-        )),
+        TrayMenuEntry::Item(action_item("Camera settings", TrayAction::OpenDashboard)),
     ])
 }
 
@@ -724,10 +724,7 @@ mod tests {
         let menu =
             TrayMenu::from_status_and_report(&status, &CapabilityRegistry::default(), None, None);
 
-        assert_eq!(
-            disabled_labels(&menu),
-            ["82WM Legion Pro 5 16ARX8"]
-        );
+        assert_eq!(disabled_labels(&menu), ["82WM Legion Pro 5 16ARX8"]);
         assert_eq!(enabled_labels(&menu), ["Dashboard", "Refresh", "Quit"]);
         assert!(!menu_labels(&menu)
             .iter()

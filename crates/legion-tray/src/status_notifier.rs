@@ -645,7 +645,10 @@ mod tests {
         assert!(menu_has_disabled_item(&menu, "82WM Legion Pro 5 16ARX8"));
         assert!(menu_has_disabled_item(&menu, "Power mode: Balanced"));
         assert!(menu_has_disabled_item(&menu, "Charging mode: Standard"));
-        assert!(menu_has_disabled_item(&menu, "Battery: 79% / Charging / Good"));
+        assert!(menu_has_disabled_item(
+            &menu,
+            "Battery: 79% / Charging / Good"
+        ));
         assert!(menu_has_disabled_item(&menu, "Logo LED: on"));
         assert!(menu_has_disabled_item(&menu, "Fn-lock: off"));
         assert!(menu_has_disabled_item(&menu, "Camera power: on"));
@@ -655,11 +658,26 @@ mod tests {
             "GPU pending: hybrid (previous nvidia, reboot required)"
         ));
         assert!(menu_has_disabled_item(&menu, "Missing: gpu"));
-        assert!(!menu_has_disabled_item(&menu, "Available profiles: Low Power, Balanced, Performance"));
-        assert!(!menu_has_disabled_item(&menu, "Available charging modes: Standard, Conservation, Fast"));
-        assert!(!menu_has_disabled_item(&menu, "Saved fan curve: 1 values from legion_hwmon"));
-        assert!(!menu_has_disabled_item(&menu, "Fan presets: Quiet office, Balanced daily, Gaming, Max safe"));
-        assert!(!menu_has_disabled_item(&menu, "Capabilities: 1 available, 1 missing"));
+        assert!(!menu_has_disabled_item(
+            &menu,
+            "Available profiles: Low Power, Balanced, Performance"
+        ));
+        assert!(!menu_has_disabled_item(
+            &menu,
+            "Available charging modes: Standard, Conservation, Fast"
+        ));
+        assert!(!menu_has_disabled_item(
+            &menu,
+            "Saved fan curve: 1 values from legion_hwmon"
+        ));
+        assert!(!menu_has_disabled_item(
+            &menu,
+            "Fan presets: Quiet office, Balanced daily, Gaming, Max safe"
+        ));
+        assert!(!menu_has_disabled_item(
+            &menu,
+            "Capabilities: 1 available, 1 missing"
+        ));
         assert!(menu_has_disabled_item(&menu, "Power mode"));
         assert!(menu_has_disabled_item(&menu, "Battery charging"));
         assert!(menu_has_disabled_item(&menu, "Logo light"));
@@ -713,10 +731,7 @@ mod tests {
         tray.handle_action(TrayAction::SetPlatformProfile("performance".to_owned()));
 
         let menu = tray.menu();
-        assert!(menu_has_disabled_item(
-            &menu,
-            "Power mode: Performance"
-        ));
+        assert!(menu_has_disabled_item(&menu, "Power mode: Performance"));
         assert!(menu_has_enabled_item(&menu, "Balanced"));
         assert!(tray.last_error.is_none());
     }
@@ -752,10 +767,7 @@ mod tests {
         tray.handle_action(TrayAction::SetBatteryChargeType("Conservation".to_owned()));
 
         let menu = tray.menu();
-        assert!(menu_has_disabled_item(
-            &menu,
-            "Charging mode: Conservation"
-        ));
+        assert!(menu_has_disabled_item(&menu, "Charging mode: Conservation"));
         assert!(menu_has_enabled_item(&menu, "Standard"));
         assert!(tray.last_error.is_none());
     }
@@ -922,10 +934,7 @@ mod tests {
             &menu,
             "Tray status unavailable, retrying refresh."
         ));
-        assert!(menu_has_disabled_item(
-            &menu,
-            "Low Power"
-        ));
+        assert!(menu_has_disabled_item(&menu, "Low Power"));
 
         tray.refresh_status();
 
