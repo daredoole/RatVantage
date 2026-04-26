@@ -5,8 +5,10 @@ use crate::{
 use adw::prelude::*;
 use anyhow::{anyhow, Result};
 use legion_common::{
-    fan_curve_hwmon_point_pairs, validate_manual_fan_curve_pairs, BatteryChargeTypeCapability,
-    FanCurveCapability, FanCurveHwmonPointPair, FanCurveSnapshot, GpuCapability, GpuModePending,
+    decode_fan_scratchpad_toml_v1, encode_fan_scratchpad_toml_v1, fan_curve_hwmon_point_pairs,
+    fan_preset_points_as_sysfs_raw, parse_fan_preset_toml, validate_fan_preset_document,
+    validate_manual_fan_curve_pairs, BatteryChargeTypeCapability, FanCurveCapability,
+    FanCurveHwmonPointPair, FanCurveSnapshot, GpuCapability, GpuModePending,
     IdeapadToggleCapability, LedCapability, PlatformProfileCapability, WriteDryRunPlan,
     WriteExecutionResult, WriteExecutionStatus,
 };
@@ -1018,11 +1020,13 @@ fn append_manual_fan_curve_scratchpad(page: &gtk4::Box, curve: &FanCurveCapabili
     let clear_btn = gtk4::Button::with_label("Clear");
     let validate_btn = gtk4::Button::with_label("Validate pairs");
     let copy_json = gtk4::Button::with_label("Copy JSON");
+    let copy_toml = gtk4::Button::with_label("Copy scratchpad TOML");
     actions.append(&load_live);
     actions.append(&load_saved);
     actions.append(&clear_btn);
     actions.append(&validate_btn);
     actions.append(&copy_json);
+    actions.append(&copy_toml);
     page.append(&actions);
 
     let status = gtk4::Label::new(Some(
@@ -1042,6 +1046,42 @@ fn append_manual_fan_curve_scratchpad(page: &gtk4::Box, curve: &FanCurveCapabili
     let rows_column = gtk4::Box::new(gtk4::Orientation::Vertical, 6);
     rows_column.set_margin_start(4);
     page.append(&rows_column);
+
+    let toml_title = gtk4::Label::new(Some("TOML exchange"));
+    toml_title.add_css_class("title-4");
+    toml_title.set_xalign(0.0);
+    toml_title.set_margin_top(12);
+    page.append(&toml_title);
+
+    let toml_hint = gtk4::Label::new(Some(
+        "Paste a ratvantage_fan_scratchpad_v1 document or a packaged data/presets/*.toml fan preset. Import fills the rows above; it does not call the daemon.",
+    ));
+    toml_hint.set_wrap(true);
+    toml_hint.set_xalign(0.0);
+    page.append(&toml_hint);
+
+    let toml_editor = gtk4::TextView::new();
+    toml_editor.set_wrap_mode(gtk4::WrapMode::WordChar);
+    toml_editor.set_monospace(true);
+    toml_editor.set_top_margin(4);
+    toml_editor.set_bottom_margin(4);
+    toml_editor.set_left_margin(6);
+    toml_editor.set_right_margin(6);
+    toml_editor.buffer().set_text(
+        "# Paste TOML here, then click Import.\n# Use Copy scratchpad TOML to export the current rows.",
+    );
+
+    let toml_scroll = gtk4::ScrolledWindow::builder()
+        .min_content_height(120)
+        .vexpand(false)
+        .child(&toml_editor)
+        .build();
+    page.append(&toml_scroll);
+
+    let toml_actions = gtk4::Box::new(gtk4::Orientation::Horizontal, 8);
+    let import_toml = gtk4::Button::with_label("Import TOML from editor");
+    toml_actions.append(&import_toml);
+    page.append(&toml_actions);
 
     let entries: ManualFanScratchRows = Rc::new(RefCell::new(Vec::new()));
     repopulate_manual_fan_scratchpad_rows(&rows_column, &pairs_for_ui, None, &entries);
@@ -1177,6 +1217,163 @@ fn append_manual_fan_curve_scratchpad(page: &gtk4::Box, curve: &FanCurveCapabili
             display.clipboard().set_text(&text);
         }
         status_for_copy.set_text("Copied scratchpad JSON to the clipboard.");
+    });
+
+    let entries_for_toml_copy = entries.clone();
+    let status_for_toml_copy = status.clone();
+    copy_toml.connect_clicked(move |_| {
+        let mut rows = Vec::new();
+        for (pair, temp_entry, pwm_entry) in entries_for_toml_copy.borrow().iter() {
+            let temp_trim = temp_entry.text().trim().to_string();
+            let pwm_trim = pwm_entry.text().trim().to_string();
+            if temp_trim.is_empty() || pwm_trim.is_empty() {
+                status_for_toml_copy
+                    .set_text("Fill every temp and pwm cell with integers before copying TOML.");
+                return;
+            }
+            let temp_raw = match temp_trim.parse::<u32>() {
+                Ok(value) => value,
+                Err(_) => {
+                    status_for_toml_copy
+                        .set_text(&format!("Temp `{temp_trim}` is not a valid integer."));
+                    return;
+                }
+            };
+            let pwm_raw = match pwm_trim.parse::<u32>() {
+                Ok(value) => value,
+                Err(_) => {
+                    status_for_toml_copy
+                        .set_text(&format!("Pwm `{pwm_trim}` is not a valid integer."));
+                    return;
+                }
+            };
+            rows.push((pair.clone(), temp_raw, pwm_raw));
+        }
+
+        match encode_fan_scratchpad_toml_v1(&rows) {
+            Ok(rendered) => {
+                if let Some(display) = gtk4::gdk::Display::default() {
+                    display.clipboard().set_text(&rendered);
+                }
+                status_for_toml_copy.set_text("Copied scratchpad TOML to the clipboard.");
+            }
+            Err(error) => {
+                status_for_toml_copy.set_text(&format!("TOML encode failed: {error}"));
+            }
+        }
+    });
+
+    let pairs_for_toml_import = pairs_for_ui.clone();
+    let entries_for_toml_import = entries.clone();
+    let toml_buffer_for_import = toml_editor.buffer();
+    let status_for_toml_import = status.clone();
+    import_toml.connect_clicked(move |_| {
+        let text = toml_buffer_for_import
+            .text(
+                &toml_buffer_for_import.start_iter(),
+                &toml_buffer_for_import.end_iter(),
+                false,
+            )
+            .trim()
+            .to_string();
+        if text.is_empty() {
+            status_for_toml_import.set_text("Editor is empty; paste TOML first.");
+            return;
+        }
+
+        if let Ok(doc) = decode_fan_scratchpad_toml_v1(&text) {
+            if doc.schema_version != 1 {
+                status_for_toml_import.set_text("Scratchpad TOML schema_version must be 1.");
+                return;
+            }
+            if doc.pairs.is_empty() {
+                status_for_toml_import.set_text("Scratchpad document contains no pairs.");
+                return;
+            }
+            let mut file_pairs = doc.pairs.clone();
+            file_pairs.sort_by_key(|pair| pair.index);
+            if file_pairs.len() != pairs_for_toml_import.len() {
+                status_for_toml_import.set_text(&format!(
+                    "Scratchpad file has {} pair(s); this machine exposes {} — counts must match.",
+                    file_pairs.len(),
+                    pairs_for_toml_import.len()
+                ));
+                return;
+            }
+            for (index, hw_pair) in pairs_for_toml_import.iter().enumerate() {
+                let file_pair = &file_pairs[index];
+                if file_pair.index != hw_pair.index
+                    || file_pair.temp_path != hw_pair.temp_path
+                    || file_pair.pwm_path != hw_pair.pwm_path
+                {
+                    status_for_toml_import.set_text(
+                        "TOML paths or point indices do not match this machine's curve layout.",
+                    );
+                    return;
+                }
+            }
+            let borrowed = entries_for_toml_import.borrow_mut();
+            if borrowed.len() != file_pairs.len() {
+                status_for_toml_import.set_text("Internal scratchpad row count mismatch.");
+                return;
+            }
+            for (index, file_pair) in file_pairs.iter().enumerate() {
+                borrowed[index]
+                    .1
+                    .set_text(&file_pair.temp_raw.to_string());
+                borrowed[index]
+                    .2
+                    .set_text(&file_pair.pwm_raw.to_string());
+            }
+            drop(borrowed);
+            status_for_toml_import.set_text("Imported ratvantage_fan_scratchpad_v1 into the rows.");
+            return;
+        }
+
+        if let Ok(preset) = parse_fan_preset_toml(&text) {
+            if let Err(error) = validate_fan_preset_document(&preset) {
+                status_for_toml_import.set_text(&format!("Preset TOML failed validation: {error:?}"));
+                return;
+            }
+            let raw = match fan_preset_points_as_sysfs_raw(&preset) {
+                Ok(values) => values,
+                Err(error) => {
+                    status_for_toml_import.set_text(&format!("Preset mapping failed: {error:?}"));
+                    return;
+                }
+            };
+            if raw.len() != pairs_for_toml_import.len() {
+                status_for_toml_import.set_text(&format!(
+                    "Preset has {} points; this machine exposes {} paired hwmon nodes — counts must match.",
+                    raw.len(),
+                    pairs_for_toml_import.len()
+                ));
+                return;
+            }
+            let borrowed = entries_for_toml_import.borrow_mut();
+            if borrowed.len() != raw.len() {
+                status_for_toml_import.set_text("Internal scratchpad row count mismatch.");
+                return;
+            }
+            for (index, (temp_raw, pwm_raw)) in raw.iter().enumerate() {
+                borrowed[index]
+                    .1
+                    .set_text(&temp_raw.to_string());
+                borrowed[index]
+                    .2
+                    .set_text(&pwm_raw.to_string());
+            }
+            drop(borrowed);
+            status_for_toml_import.set_text(&format!(
+                "Imported packaged preset `{}` (deg C → millidegree pwm mapping).",
+                preset.id
+            ));
+            return;
+        }
+
+        status_for_toml_import.set_text(
+            "Could not parse as scratchpad v1 or as a fan preset TOML — check syntax and tables.",
+        );
     });
 }
 

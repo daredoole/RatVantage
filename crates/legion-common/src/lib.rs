@@ -1174,6 +1174,86 @@ pub fn validate_manual_fan_curve_pairs(pairs: &[(u32, u32)]) -> Result<(), Valid
     Ok(())
 }
 
+/// Lossless import/export for the GTK fan scratchpad (raw sysfs integers + paths).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct FanScratchpadTomlV1 {
+    pub schema_version: u8,
+    #[serde(default = "fan_scratchpad_toml_kind_default")]
+    pub kind: String,
+    #[serde(default)]
+    pub note: String,
+    pub pairs: Vec<FanScratchpadTomlPair>,
+}
+
+fn fan_scratchpad_toml_kind_default() -> String {
+    "ratvantage_fan_scratchpad_v1".to_owned()
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct FanScratchpadTomlPair {
+    pub index: u32,
+    pub temp_path: String,
+    pub pwm_path: String,
+    pub temp_raw: u32,
+    pub pwm_raw: u32,
+}
+
+/// Serializes the current scratchpad rows to TOML (`ratvantage_fan_scratchpad_v1`).
+pub fn encode_fan_scratchpad_toml_v1(
+    rows: &[(FanCurveHwmonPointPair, u32, u32)],
+) -> Result<String, toml::ser::Error> {
+    let doc = FanScratchpadTomlV1 {
+        schema_version: 1,
+        kind: fan_scratchpad_toml_kind_default(),
+        note: "temp_raw is usually millidegree Celsius from hwmon; pwm_raw is typically 0–255."
+            .to_owned(),
+        pairs: rows
+            .iter()
+            .map(|(pair, temp_raw, pwm_raw)| FanScratchpadTomlPair {
+                index: pair.index,
+                temp_path: pair.temp_path.clone(),
+                pwm_path: pair.pwm_path.clone(),
+                temp_raw: *temp_raw,
+                pwm_raw: *pwm_raw,
+            })
+            .collect(),
+    };
+    toml::to_string_pretty(&doc)
+}
+
+/// Parses a scratchpad TOML document.
+pub fn decode_fan_scratchpad_toml_v1(source: &str) -> Result<FanScratchpadTomlV1, toml::de::Error> {
+    toml::from_str(source)
+}
+
+/// Parses a packaged fan preset TOML file (`[[points]]`, metadata, etc.).
+pub fn parse_fan_preset_toml(source: &str) -> Result<FanPreset, toml::de::Error> {
+    toml::from_str(source)
+}
+
+/// Validates preset metadata and point rules (same checks used before dry-run planning).
+pub fn validate_fan_preset_document(preset: &FanPreset) -> Result<(), ValidationError> {
+    validate_fan_preset_schema(preset)
+}
+
+/// Maps preset degrees + pwm into typical hwmon millidegree + pwm raw integers for the scratchpad.
+pub fn fan_preset_points_as_sysfs_raw(
+    preset: &FanPreset,
+) -> Result<Vec<(u32, u32)>, ValidationError> {
+    validate_fan_preset_schema(preset)?;
+    Ok(preset
+        .points
+        .iter()
+        .map(|point| {
+            let temp_raw = (i32::from(point.temperature_c))
+                .saturating_mul(1000)
+                .clamp(0, i32::MAX) as u32;
+            let pwm_raw = u32::from(point.pwm.min(255));
+            (temp_raw, pwm_raw)
+        })
+        .collect())
+}
+
 fn blocked_fan_preset<T>(preset: &FanPreset, reason: &str) -> Result<T, ValidationError> {
     Err(ValidationError::BlockedChoice {
         capability_id: "fan_preset".to_owned(),
@@ -1974,6 +2054,33 @@ mod tests {
     fn validate_manual_fan_curve_pairs_accepts_monotonic_sysfs_integers() {
         let pairs: Vec<(u32, u32)> = (1..=10).map(|i| (35_000 + i * 1_000, 20 + i)).collect();
         assert_eq!(validate_manual_fan_curve_pairs(&pairs), Ok(()));
+    }
+
+    #[test]
+    fn fan_scratchpad_toml_v1_round_trips() {
+        let pair = FanCurveHwmonPointPair {
+            index: 1,
+            temp_path: "/sys/hwmon/pwm1_auto_point1_temp".to_owned(),
+            pwm_path: "/sys/hwmon/pwm1_auto_point1_pwm".to_owned(),
+        };
+        let encoded = encode_fan_scratchpad_toml_v1(&[(pair.clone(), 42_000, 30)]).unwrap();
+        let decoded = decode_fan_scratchpad_toml_v1(&encoded).unwrap();
+        assert_eq!(decoded.schema_version, 1);
+        assert_eq!(decoded.pairs.len(), 1);
+        assert_eq!(decoded.pairs[0].temp_raw, 42_000);
+        assert_eq!(decoded.pairs[0].pwm_raw, 30);
+        assert_eq!(decoded.pairs[0].temp_path, pair.temp_path);
+    }
+
+    #[test]
+    fn fan_preset_points_as_sysfs_raw_scales_degrees_to_millicelsius() {
+        let preset = fan_preset("balanced-daily");
+        let raw = fan_preset_points_as_sysfs_raw(&preset).unwrap();
+        assert_eq!(raw.len(), 10);
+        assert_eq!(raw[0].0, 35_000);
+        assert_eq!(raw[0].1, 10);
+        assert_eq!(raw[9].0, 80_000);
+        assert_eq!(raw[9].1, 190);
     }
 
     #[test]

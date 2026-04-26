@@ -41,7 +41,7 @@ Current pre-alpha code provides the safe read-only base:
 - UI dry-run plan previews for platform profile, battery charge type, LED state, ideapad toggle, GPU mode, fan preset, and fan restore/default writes, plus gated execution output for the currently enabled reversible methods.
 - UI status output includes per-capability status and risk labels.
 - Read-only GTK Profiles and Battery tabs show platform profile choices, battery charge choices, and battery telemetry from the diagnostics bundle.
-- The GTK Fans tab shows fan telemetry, curve paths, last-known-good snapshot status, packaged preset selection with daemon dry-run previews for fan preset and restore-to-auto plans, capture for the durable last-known-good snapshot, and read-only live sysfs curve readings (execution remains disabled in the dashboard).
+- The GTK Fans tab shows fan telemetry, curve paths, last-known-good snapshot status, packaged preset selection with daemon dry-run previews for fan preset and restore-to-auto plans, capture for the durable last-known-good snapshot, read-only live sysfs curve readings, per-point tables for both live and saved snapshots, a validated manual scratchpad with JSON/TOML exchange (packaged preset TOML import when counts match), and still no fan execution in the dashboard.
 - GTK runtime refresh loop now reprobes on focus/visibility, keeps the last good page during daemon outages, surfaces recovery/drift notices after reconnect, and serves as the shared post-write refresh path when the dashboard shell is active.
 - Read-only GTK Appearance tab shows LED brightness nodes and firmware toggle values from the diagnostics bundle.
 - Read-only GTK diagnostics tab for the same hardware/debug bundle, including Copy JSON.
@@ -146,7 +146,7 @@ Goal: make the confirmed controls more complete and user-friendly.
 - Read current curve when trustworthy.
 - Warn if readback is incomplete, zeroed, or inconsistent.
 - Validate full curve before applying.
-- Export/import fan presets as TOML.
+- Export/import fan presets as TOML. [GTK Fans scratchpad: lossless `ratvantage_fan_scratchpad_v1` clipboard TOML plus paste-import of packaged `data/presets/*.toml` when point counts match; still no apply]
 - Assign fan preset per platform profile.
 - Re-apply selected fan preset after resume if enabled.
 
