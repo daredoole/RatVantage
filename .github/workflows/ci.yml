@@ -23,7 +23,15 @@ jobs:
       - name: Install system test dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y dbus imagemagick libgtk-4-dev libadwaita-1-dev pkg-config xvfb
+          sudo apt-get install -y \
+            appstream \
+            dbus \
+            desktop-file-utils \
+            imagemagick \
+            libadwaita-1-dev \
+            libgtk-4-dev \
+            pkg-config \
+            xvfb
 
       - name: Check formatting
         run: cargo fmt --all --check
