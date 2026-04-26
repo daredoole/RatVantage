@@ -21,7 +21,7 @@
 - Validation for the latest slices passed with `cargo fmt --all`, `xvfb-run -a cargo test -p legion-control-ui --features gtk-ui --test gtk_shell`, and `./scripts/ci-local.sh`.
 - Current user-visible GTK surface now includes `Status`, `Profiles`, `Battery`, `GPU`, `Fans`, `Appearance`, and `Diagnostics`.
 - Direct GPU-mode execution is still disabled in the dashboard; the GTK GPU tab is planning-only and app-state-only, matching the daemon safety policy.
-- Next recommended roadmap slice: add a read-only or gated manual fan curve editor on the GTK Fans page only after the planning surface has soaked in fixture and live evidence; keep `ApplyFanPreset` / `RestoreAutoFan` execution disabled until the live write-validation checklist is satisfied.
+- Next recommended roadmap slice: extend the GTK Fans page with an interactive manual curve editor (validated, still dry-run or gated) once live readings and captures have soaked on fixtures and hardware; keep `ApplyFanPreset` / `RestoreAutoFan` execution disabled until the live write-validation checklist is satisfied.
 - If the KDE Wayland/NVIDIA black-window bug returns, treat it as a compositor/frontend issue and keep the private-session launcher plus `--gdk-backend x11` fallback available while continuing tray/CLI validation.
 
 ## Implemented
@@ -44,7 +44,7 @@
 - Platform profile and battery charge type models include both current-value paths and choice-list paths for diagnostics.
 - UI status output includes per-capability status and risk labels.
 - Optional GTK Profiles, Battery, and Appearance tabs render the diagnostics bundle data and expose gated quick-apply controls with inline write-result feedback where the write surface is currently allowed.
-- Optional GTK Fans tab renders fan telemetry, fan curve paths, last-known-good snapshot status, packaged preset selection with dry-run plan previews for fan preset and restore-to-auto flows, capture for the durable last-known-good curve, and read-only live sysfs curve readings (no `ApplyFanPreset` / `RestoreAutoFan` execution in the dashboard).
+- Optional GTK Fans tab renders fan telemetry, fan curve paths, last-known-good snapshot status, packaged preset selection with dry-run plan previews for fan preset and restore-to-auto flows, capture for the durable last-known-good curve, read-only live sysfs curve readings with a per-point `ActionRow` table after refresh, and a raw multiline dump (no `ApplyFanPreset` / `RestoreAutoFan` execution in the dashboard).
 - Optional GTK Appearance tab renders LED brightness and firmware toggle values and now exposes gated quick-apply controls for ylogo LED, restricted `fn_lock`, and dashboard-confirmed `camera_power` plus `usb_charging`.
 - Optional GTK diagnostics tab for the same read-only hardware/debug bundle, with compact counts and Copy JSON parity for durable app-state fields.
 - Packaged read-only fan preset TOML assets in `data/presets/`, validated by `scripts/validate-packaging.sh`, installed by the RPM spec, and validated at runtime for dry-run fan preset planning.
@@ -147,6 +147,27 @@ scripts/smoke-statusnotifier-tray.sh --hold-seconds 15
 scripts/smoke-statusnotifier-tray.sh --bus-address "$DBUS_SESSION_BUS_ADDRESS" --hold-seconds 15 --report-dir target/smoke/statusnotifier-<desktop>-<date>
 cargo run -p legion-probe -- --json --sysfs-root tests/fixtures/sysfs-82wm-runtime-capture
 ```
+
+### Execute-mode harness evidence (for broadening writes)
+
+**Plan-only** runs (`scripts/capture-write-validation-report.sh --output …` without `--execute`) never perform hardware writes; they are what CI and fixtures use.
+
+**Evidence** for enabling additional live write paths means capturing a **reviewed bundle** from a real Legion machine where the **installed root daemon** has the **specific** write flag(s) turned on for the control under test, then:
+
+1. Run once per control family, for example:
+
+   ```bash
+   scripts/capture-write-validation-report.sh \
+     --output target/validation/<machine>-<control>-live \
+     --execute \
+     --system-bus
+   ```
+
+2. Inspect `report.md`, CLI transcripts, and diagnostics inside that directory; keep the tree as the artifact you reference in PRs or release notes.
+
+3. Prefer **one** write family per capture (matching daemon flags), confirm read-back/rollback behavior, then disable flags again if you are done testing.
+
+If you cannot use the system bus, pass `--bus-address` to a session daemon that was started with the same write flags (advanced). Do not enable high-risk fan or GPU execution flags until narrower captures exist and maintainers agree.
 
 ## CI policy
 

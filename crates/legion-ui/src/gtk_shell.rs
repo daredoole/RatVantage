@@ -9,6 +9,7 @@ use legion_common::{
     GpuModePending, IdeapadToggleCapability, LedCapability, PlatformProfileCapability,
     WriteDryRunPlan, WriteExecutionResult, WriteExecutionStatus,
 };
+use std::path::Path;
 use std::thread_local;
 use std::{
     cell::RefCell,
@@ -743,6 +744,41 @@ fn append_fans(
     }
 }
 
+fn fan_curve_sysfs_basename(path: &str) -> String {
+    Path::new(path)
+        .file_name()
+        .and_then(|name| name.to_str())
+        .unwrap_or(path)
+        .to_owned()
+}
+
+fn repopulate_live_points_group(group: &adw::PreferencesGroup, snapshot: &FanCurveSnapshot) {
+    while let Some(child) = group.first_child() {
+        group.remove(&child);
+    }
+    if snapshot.points.is_empty() {
+        group.add(&info_row(
+            "Points",
+            "No pwm/temp sysfs nodes were returned for this curve.",
+        ));
+        return;
+    }
+    const MAX_ROWS: usize = 32;
+    for point in snapshot.points.iter().take(MAX_ROWS) {
+        let title = fan_curve_sysfs_basename(&point.path);
+        group.add(&info_row(&title, &point.value));
+    }
+    if snapshot.points.len() > MAX_ROWS {
+        group.add(&info_row(
+            "…",
+            &format!(
+                "{} additional nodes omitted for display",
+                snapshot.points.len() - MAX_ROWS
+            ),
+        ));
+    }
+}
+
 fn format_fan_snapshot_multiline(snapshot: &FanCurveSnapshot) -> String {
     let mut out = format!("curve_id={}\n", snapshot.curve_id);
     if let Some(root) = snapshot.path.as_deref() {
@@ -773,6 +809,14 @@ fn append_fan_live_curve_readings(page: &gtk4::Box) {
     actions.append(&refresh);
     page.append(&actions);
 
+    let points_group = adw::PreferencesGroup::new();
+    points_group.set_title("Live sysfs points (read-only)");
+    points_group.add(&info_row(
+        "No data yet",
+        "Use Refresh live readings to load current pwm/temp values.",
+    ));
+    page.append(&points_group);
+
     let text = gtk4::TextView::new();
     text.set_editable(false);
     text.set_cursor_visible(false);
@@ -790,14 +834,24 @@ fn append_fan_live_curve_readings(page: &gtk4::Box) {
     page.append(&scroller);
 
     let text_for_refresh = text.clone();
+    let points_for_refresh = points_group.clone();
     refresh.connect_clicked(move |_| {
         match LegionControlClient::system().and_then(|client| client.live_fan_curve_readings()) {
-            Ok(snapshot) => text_for_refresh
-                .buffer()
-                .set_text(&format_fan_snapshot_multiline(&snapshot)),
-            Err(error) => text_for_refresh
-                .buffer()
-                .set_text(&format!("Live readings failed:\n{error}")),
+            Ok(snapshot) => {
+                repopulate_live_points_group(&points_for_refresh, &snapshot);
+                text_for_refresh
+                    .buffer()
+                    .set_text(&format_fan_snapshot_multiline(&snapshot));
+            }
+            Err(error) => {
+                while let Some(child) = points_for_refresh.first_child() {
+                    points_for_refresh.remove(&child);
+                }
+                points_for_refresh.add(&info_row("Live readings failed", &error.to_string()));
+                text_for_refresh
+                    .buffer()
+                    .set_text(&format!("Live readings failed:\n{error}"));
+            }
         }
     });
 }
