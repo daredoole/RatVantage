@@ -39,6 +39,18 @@ pub fn run(
     initial_page: Option<String>,
     auto_quit_ms: Option<u64>,
 ) -> Result<()> {
+    if std::env::var_os("GSK_RENDERER").is_none()
+        && (std::env::var_os("WAYLAND_DISPLAY").is_some()
+            || std::env::var("XDG_SESSION_TYPE").ok().as_deref() == Some("wayland"))
+        && std::path::Path::new("/proc/driver/nvidia").exists()
+    {
+        eprintln!(
+            "legion-control-ui: Wayland+NVIDIA detected and GSK_RENDERER is unset. \
+             GTK 4.15+ defaults to Vulkan which causes a black window on NVIDIA. \
+             If the window is black, run: GSK_RENDERER=ngl legion-control-ui"
+        );
+    }
+
     let app = adw::Application::builder()
         .application_id("org.ratvantage.LegionControl")
         .build();
