@@ -33,6 +33,9 @@ struct Args {
 
     #[arg(long)]
     enable_ideapad_toggle_write: bool,
+
+    #[arg(long)]
+    enable_camera_power_write: bool,
 }
 
 fn main() -> Result<()> {
@@ -48,6 +51,7 @@ fn main() -> Result<()> {
             battery_charge_type_enabled: args.enable_battery_charge_type_write,
             led_state_enabled: args.enable_led_state_write,
             ideapad_toggle_enabled: args.enable_ideapad_toggle_write,
+            camera_power_enabled: args.enable_camera_power_write,
         },
         std::sync::Arc::new(PkcheckAuthorizer),
         std::sync::Arc::new(SysfsPlatformProfileWriter),
@@ -75,6 +79,9 @@ fn main() -> Result<()> {
                 methods.push("SetLedState");
             }
             if args.enable_ideapad_toggle_write {
+                methods.push("SetIdeapadToggle");
+            }
+            if args.enable_camera_power_write && !methods.contains(&"SetIdeapadToggle") {
                 methods.push("SetIdeapadToggle");
             }
             if methods.is_empty() {

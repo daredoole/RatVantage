@@ -276,29 +276,28 @@ pub const WRITE_METHOD_CONTRACTS: &[WriteMethodContract] = &[
         method: "SetIdeapadToggle",
         capability_id: "ideapad_toggles",
         polkit_action: "org.ratvantage.LegionControl1.set-ideapad-toggle",
-        request_type: r#"{"toggle_id":"fn_lock","enabled":"bool"}"#,
+        request_type: r#"{"toggle_id":"fn_lock|camera_power","enabled":"bool"}"#,
         risk: RiskLevel::ReversibleWrite,
         enabled: false,
         reboot_required: false,
         preconditions: &[
             "ideapad toggle capability is detected",
             "daemon has read current toggle state and sysfs path",
-            "paired platform::fnlock indicator LED is detected for corroboration",
         ],
         validators: &[
             "requested toggle exactly matches one detected ideapad toggle id",
-            "only fn_lock is enabled for reversible ideapad toggle writes right now",
-            "current fn_lock value and paired platform::fnlock LED must both be binary and aligned before write",
-            "post-write fn_lock read-back matches requested state",
-            "post-write platform::fnlock LED read-back matches requested state when present",
+            "only fn_lock and camera_power are enabled for reversible ideapad toggle writes right now",
+            "fn_lock requires paired platform::fnlock LED corroboration before and after write",
+            "camera_power requires binary current value and explicit UI warning/confirmation before frontend exposure",
+            "post-write toggle read-back matches requested state",
         ],
         rollback: &[
             "store previous toggle value before write",
-            "restore previous toggle value if toggle or LED read-back fails",
+            "restore previous toggle value if toggle or corroborating LED read-back fails",
         ],
         safety_notes: &[
             "write method remains disabled; dry-run planning only",
-            "first rollout is restricted to fn_lock with paired LED corroboration",
+            "current rollout is restricted to fn_lock and camera_power with per-toggle safety rules",
         ],
     },
     WriteMethodContract {
@@ -568,12 +567,13 @@ pub fn validate_ideapad_toggle_request(
         });
     };
 
-    if toggle.name != "fn_lock" {
+    if toggle.name != "fn_lock" && toggle.name != "camera_power" {
         return Err(ValidationError::BlockedChoice {
             capability_id: "ideapad_toggles".to_owned(),
             requested: toggle_id.to_owned(),
-            reason: "only fn_lock is enabled for reversible ideapad toggle writes right now"
-                .to_owned(),
+            reason:
+                "only fn_lock and camera_power are enabled for reversible ideapad toggle writes right now"
+                    .to_owned(),
         });
     }
 
@@ -604,6 +604,10 @@ pub fn validate_ideapad_toggle_request(
                 "only binary ideapad toggle states are supported; detected current_value={current}"
             ),
         });
+    }
+
+    if toggle.name == "camera_power" {
+        return Ok(());
     }
 
     let Some(indicator) = leds.iter().find(|led| led.name == "platform::fnlock") else {
@@ -1328,6 +1332,23 @@ mod tests {
     }
 
     #[test]
+    fn ideapad_toggle_validator_accepts_camera_power_without_indicator_led() {
+        assert_eq!(
+            validate_ideapad_toggle_request(
+                &[IdeapadToggleCapability {
+                    name: "camera_power".to_owned(),
+                    status: CapabilityStatus::ProbeOnly,
+                    path: Some("/tmp/camera_power".to_owned()),
+                    current_value: Some("1".to_owned()),
+                }],
+                &[],
+                "camera_power"
+            ),
+            Ok(())
+        );
+    }
+
+    #[test]
     fn ideapad_toggle_validator_rejects_missing_non_binary_and_blocked_toggles() {
         assert!(matches!(
             validate_ideapad_toggle_request(&[], &[], "fn_lock"),
@@ -1341,13 +1362,21 @@ mod tests {
                     path: Some("/tmp/camera_power".to_owned()),
                     current_value: Some("1".to_owned()),
                 }],
-                &[LedCapability {
-                    name: "platform::fnlock".to_owned(),
-                    path: "/tmp/platform::fnlock/brightness".to_owned(),
-                    brightness: Some(1),
-                    max_brightness: Some(1),
-                }],
+                &[],
                 "camera_power"
+            ),
+            Ok(())
+        ));
+        assert!(matches!(
+            validate_ideapad_toggle_request(
+                &[IdeapadToggleCapability {
+                    name: "touchpad".to_owned(),
+                    status: CapabilityStatus::ProbeOnly,
+                    path: Some("/tmp/touchpad".to_owned()),
+                    current_value: Some("1".to_owned()),
+                }],
+                &[],
+                "touchpad"
             ),
             Err(ValidationError::BlockedChoice { .. })
         ));
@@ -1609,6 +1638,34 @@ mod tests {
         assert_eq!(plan.previous_value, "0");
         assert_eq!(plan.requested_value, "1");
         assert_eq!(plan.rollback_value, "0");
+        assert!(plan.readback_required);
+    }
+
+    #[test]
+    fn camera_power_dry_run_plan_uses_validator_and_contract_metadata() {
+        let plan = plan_ideapad_toggle_write(
+            &[IdeapadToggleCapability {
+                name: "camera_power".to_owned(),
+                status: CapabilityStatus::ProbeOnly,
+                path: Some("/tmp/camera_power".to_owned()),
+                current_value: Some("1".to_owned()),
+            }],
+            &[],
+            "camera_power",
+            false,
+        )
+        .unwrap();
+
+        assert_eq!(plan.method, "SetIdeapadToggle");
+        assert_eq!(plan.capability_id, "ideapad_toggles");
+        assert_eq!(plan.path, "/tmp/camera_power");
+        assert_eq!(plan.previous_value, "1");
+        assert_eq!(plan.requested_value, "0");
+        assert_eq!(plan.rollback_value, "1");
+        assert!(plan
+            .safety_notes
+            .iter()
+            .any(|note| note.contains("fn_lock and camera_power")));
         assert!(plan.readback_required);
     }
 

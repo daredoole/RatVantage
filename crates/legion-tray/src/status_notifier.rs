@@ -356,6 +356,7 @@ mod tests {
         ));
         assert!(menu_has_disabled_item(&menu, "LED: platform::ylogo on"));
         assert!(menu_has_disabled_item(&menu, "Toggle: fn_lock off"));
+        assert!(menu_has_disabled_item(&menu, "Toggle: camera_power on"));
         assert!(menu_has_disabled_item(&menu, "Fan: CPU Fan 2410 RPM"));
         assert!(menu_has_disabled_item(
             &menu,
@@ -378,6 +379,10 @@ mod tests {
         assert!(menu_has_disabled_item(&menu, "Battery charge type actions"));
         assert!(menu_has_disabled_item(&menu, "LED actions"));
         assert!(menu_has_disabled_item(&menu, "Fn-lock actions"));
+        assert!(menu_has_disabled_item(
+            &menu,
+            "Camera power: dashboard confirmation required"
+        ));
         assert!(menu_has_enabled_item(
             &menu,
             "Set platform profile: low-power"
@@ -399,6 +404,10 @@ mod tests {
             "Set LED state: platform::ylogo off"
         ));
         assert!(menu_has_enabled_item(&menu, "Set Fn-lock on"));
+        assert!(menu_has_enabled_item(
+            &menu,
+            "Open dashboard for camera power controls"
+        ));
         assert!(menu_has_enabled_item(&menu, "Open dashboard"));
         assert!(menu_has_enabled_item(&menu, "Refresh status"));
         assert!(menu_has_enabled_item(&menu, "Quit"));
@@ -744,12 +753,20 @@ mod tests {
                     max_brightness: Some(1),
                 },
             ],
-            ideapad_toggles: vec![legion_common::IdeapadToggleCapability {
-                name: "fn_lock".to_owned(),
-                status: legion_common::CapabilityStatus::ProbeOnly,
-                path: Some("/tmp/fn_lock".to_owned()),
-                current_value: Some("0".to_owned()),
-            }],
+            ideapad_toggles: vec![
+                legion_common::IdeapadToggleCapability {
+                    name: "fn_lock".to_owned(),
+                    status: legion_common::CapabilityStatus::ProbeOnly,
+                    path: Some("/tmp/fn_lock".to_owned()),
+                    current_value: Some("0".to_owned()),
+                },
+                legion_common::IdeapadToggleCapability {
+                    name: "camera_power".to_owned(),
+                    status: legion_common::CapabilityStatus::ProbeOnly,
+                    path: Some("/tmp/camera_power".to_owned()),
+                    current_value: Some("1".to_owned()),
+                },
+            ],
             ..Default::default()
         };
         let gpu_pending = legion_common::GpuModePending {
@@ -858,12 +875,20 @@ mod tests {
                     max_brightness: Some(1),
                 },
             ],
-            ideapad_toggles: vec![legion_common::IdeapadToggleCapability {
-                name: "fn_lock".to_owned(),
-                status: legion_common::CapabilityStatus::ProbeOnly,
-                path: Some("/tmp/fn_lock".to_owned()),
-                current_value: Some(if fn_lock_on { "1" } else { "0" }.to_owned()),
-            }],
+            ideapad_toggles: vec![
+                legion_common::IdeapadToggleCapability {
+                    name: "fn_lock".to_owned(),
+                    status: legion_common::CapabilityStatus::ProbeOnly,
+                    path: Some("/tmp/fn_lock".to_owned()),
+                    current_value: Some(if fn_lock_on { "1" } else { "0" }.to_owned()),
+                },
+                legion_common::IdeapadToggleCapability {
+                    name: "camera_power".to_owned(),
+                    status: legion_common::CapabilityStatus::ProbeOnly,
+                    path: Some("/tmp/camera_power".to_owned()),
+                    current_value: Some("1".to_owned()),
+                },
+            ],
             ..Default::default()
         };
         LoadedTrayState {

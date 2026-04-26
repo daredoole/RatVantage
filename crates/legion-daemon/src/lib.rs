@@ -45,6 +45,7 @@ pub struct WriteAccessPolicy {
     pub battery_charge_type_enabled: bool,
     pub led_state_enabled: bool,
     pub ideapad_toggle_enabled: bool,
+    pub camera_power_enabled: bool,
 }
 
 impl WriteAccessPolicy {
@@ -59,7 +60,7 @@ impl WriteAccessPolicy {
         if self.led_state_enabled {
             methods.push(LED_STATE_WRITE_METHOD);
         }
-        if self.ideapad_toggle_enabled {
+        if self.ideapad_toggle_enabled || self.camera_power_enabled {
             methods.push(IDEAPAD_TOGGLE_WRITE_METHOD);
         }
         methods
@@ -505,10 +506,10 @@ impl LegionControl {
         let plan = self
             .plan_ideapad_toggle_write(toggle_id, enabled)
             .map_err(planning_to_fdo)?;
-        if !self.write_policy.ideapad_toggle_enabled {
+        if !self.ideapad_toggle_write_enabled(toggle_id) {
             return Ok(WriteExecutionResult::blocked_by_policy(
                 plan,
-                "ideapad toggle writes are disabled by daemon policy",
+                ideapad_toggle_policy_message(toggle_id),
             ));
         }
         if let Err(reason) = self.authorizer.authorize(&plan.polkit_action, sender) {
@@ -717,6 +718,14 @@ impl LegionControl {
         };
         Ok((toggle_value, indicator))
     }
+
+    fn ideapad_toggle_write_enabled(&self, toggle_id: &str) -> bool {
+        match toggle_id {
+            "fn_lock" => self.write_policy.ideapad_toggle_enabled,
+            "camera_power" => self.write_policy.camera_power_enabled,
+            _ => false,
+        }
+    }
 }
 
 #[allow(non_snake_case)]
@@ -896,6 +905,14 @@ fn pkcheck_args(action: &str, sender: &str) -> Vec<String> {
     ]
 }
 
+fn ideapad_toggle_policy_message(toggle_id: &str) -> String {
+    match toggle_id {
+        "camera_power" => "camera power writes are disabled by daemon policy".to_owned(),
+        "fn_lock" => "fn_lock writes are disabled by daemon policy".to_owned(),
+        _ => "ideapad toggle writes are disabled by daemon policy".to_owned(),
+    }
+}
+
 fn capture_fan_curve_snapshot(registry: &CapabilityRegistry) -> fdo::Result<FanCurveSnapshot> {
     let curve = registry
         .fan_curves
@@ -977,6 +994,7 @@ mod tests {
                 battery_charge_type_enabled: true,
                 led_state_enabled: true,
                 ideapad_toggle_enabled: true,
+                camera_power_enabled: true,
             }
             .enabled_methods(),
             [

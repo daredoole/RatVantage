@@ -61,7 +61,7 @@ fn status_and_error_pages_build_under_headless_display() {
 
     assert_eq!(page.orientation(), gtk4::Orientation::Vertical);
     assert_eq!(page.spacing(), 12);
-    assert_eq!(page.observe_children().n_items(), 7);
+    assert_eq!(page.observe_children().n_items(), 9);
 
     let page = gtk_shell::diagnostics_page(Ok(sample_diagnostics()));
     let page = page
@@ -217,6 +217,17 @@ fn profiles_and_battery_pages_render_quick_apply_controls() {
     assert!(appearance_text
         .iter()
         .any(|text| text == "Functional Fn-lock"));
+    assert!(appearance_text
+        .iter()
+        .any(|text| text == "Camera privacy quick apply"));
+    assert!(appearance_text.iter().any(|text| text == "Camera power"));
+    assert!(appearance_text
+        .iter()
+        .any(|text| text == "Confirmation required"));
+    assert!(appearance_text.iter().any(|text| text == "Request off"));
+    assert!(appearance_text.iter().any(|text| text == "Request on"));
+    assert!(appearance_text.iter().any(|text| text == "Confirm"));
+    assert!(appearance_text.iter().any(|text| text == "Cancel"));
 }
 
 #[gtk4::test]
@@ -227,6 +238,7 @@ fn profiles_and_battery_pages_disable_quick_apply_when_capability_is_unavailable
     diagnostics.raw_probe_report.platform_profile = None;
     diagnostics.raw_probe_report.battery_charge_type = None;
     diagnostics.raw_probe_report.leds.clear();
+    diagnostics.raw_probe_report.ideapad_toggles.clear();
 
     let profiles = gtk_shell::profiles_page(Ok(diagnostics.clone()))
         .downcast::<gtk4::Box>()
@@ -263,8 +275,12 @@ fn profiles_and_battery_pages_disable_quick_apply_when_capability_is_unavailable
         .any(|text| text == "Fn-lock quick apply"));
     assert!(appearance_text
         .iter()
+        .any(|text| text == "Camera privacy quick apply"));
+    assert!(appearance_text
+        .iter()
         .any(|text| text == "unavailable - quick apply disabled"));
     assert!(!appearance_text.iter().any(|text| text == "Turn on"));
+    assert!(!appearance_text.iter().any(|text| text == "Request off"));
 }
 
 #[test]
@@ -429,14 +445,25 @@ fn sample_diagnostics() -> DiagnosticsBundle {
             max_brightness: Some(1),
         },
     ];
-    report.ideapad_toggles = vec![IdeapadToggleCapability {
-        name: "fn_lock".to_owned(),
-        status: CapabilityStatus::ProbeOnly,
-        path: Some(
-            "/tmp/fixture/sys/bus/platform/drivers/ideapad_acpi/VPC2004:00/fn_lock".to_owned(),
-        ),
-        current_value: Some("0".to_owned()),
-    }];
+    report.ideapad_toggles = vec![
+        IdeapadToggleCapability {
+            name: "fn_lock".to_owned(),
+            status: CapabilityStatus::ProbeOnly,
+            path: Some(
+                "/tmp/fixture/sys/bus/platform/drivers/ideapad_acpi/VPC2004:00/fn_lock".to_owned(),
+            ),
+            current_value: Some("0".to_owned()),
+        },
+        IdeapadToggleCapability {
+            name: "camera_power".to_owned(),
+            status: CapabilityStatus::ProbeOnly,
+            path: Some(
+                "/tmp/fixture/sys/bus/platform/drivers/ideapad_acpi/VPC2004:00/camera_power"
+                    .to_owned(),
+            ),
+            current_value: Some("1".to_owned()),
+        },
+    ];
 
     DiagnosticsBundle::from_report_with_logs(
         report,

@@ -196,6 +196,13 @@ fn client_reads_daemon_contract_over_private_bus() {
     assert_eq!(toggle_plan.method, "SetIdeapadToggle");
     assert_eq!(toggle_plan.previous_value, "0");
     assert_eq!(toggle_plan.requested_value, "1");
+
+    let toggle_plan = client
+        .plan_ideapad_toggle_write("camera_power", false)
+        .unwrap();
+    assert_eq!(toggle_plan.method, "SetIdeapadToggle");
+    assert_eq!(toggle_plan.previous_value, "1");
+    assert_eq!(toggle_plan.requested_value, "0");
 }
 
 #[test]
@@ -553,6 +560,7 @@ fn set_platform_profile_cli_executes_gated_write_and_prints_result() {
                 battery_charge_type_enabled: false,
                 led_state_enabled: false,
                 ideapad_toggle_enabled: false,
+                camera_power_enabled: false,
             },
             Arc::new(AllowAllAuthorizer),
             Arc::new(RealFixturePlatformProfileWriter),
@@ -626,6 +634,7 @@ fn set_battery_charge_type_cli_executes_gated_write_and_prints_result() {
                 battery_charge_type_enabled: true,
                 led_state_enabled: false,
                 ideapad_toggle_enabled: false,
+                camera_power_enabled: false,
             },
             Arc::new(AllowAllAuthorizer),
             Arc::new(RealFixturePlatformProfileWriter),
@@ -699,6 +708,7 @@ fn set_led_state_cli_executes_gated_write_and_prints_result() {
                 battery_charge_type_enabled: false,
                 led_state_enabled: true,
                 ideapad_toggle_enabled: false,
+                camera_power_enabled: false,
             },
             Arc::new(AllowAllAuthorizer),
             Arc::new(RealFixturePlatformProfileWriter),
@@ -771,6 +781,7 @@ fn set_ideapad_toggle_cli_executes_gated_write_and_prints_result() {
                 battery_charge_type_enabled: false,
                 led_state_enabled: false,
                 ideapad_toggle_enabled: true,
+                camera_power_enabled: false,
             },
             Arc::new(AllowAllAuthorizer),
             Arc::new(RealFixturePlatformProfileWriter),
@@ -808,6 +819,81 @@ fn set_ideapad_toggle_cli_executes_gated_write_and_prints_result() {
             .unwrap()
             .trim(),
         "1"
+    );
+
+    let _ = fs::remove_file(state_path);
+    let _ = fs::remove_dir_all(fixture);
+}
+
+#[test]
+fn set_camera_power_cli_reports_policy_block_when_write_is_disabled() {
+    let (_bus, _service_connection, address) = fixture_service();
+    let output = Command::new(env!("CARGO_BIN_EXE_legion-control-ui"))
+        .args([
+            "--set-ideapad-toggle",
+            "camera_power=off",
+            "--bus-address",
+            &address,
+        ])
+        .output()
+        .unwrap();
+
+    assert!(output.status.success());
+    assert!(output.stderr.is_empty());
+    let json: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(json["status"], "blocked_by_policy");
+    assert_eq!(json["applied"], false);
+    assert_eq!(json["plan"]["method"], "SetIdeapadToggle");
+    assert_eq!(json["plan"]["requested_value"], "0");
+}
+
+#[test]
+fn set_camera_power_cli_executes_gated_write_and_prints_result() {
+    let fixture = copied_fixture_root("ui-camera-power-write");
+    let state_path = unique_state_path("ui-camera-power-write");
+    let (_bus, _service_connection, address) =
+        fixture_service_with_runtime(LegionControl::new_with_runtime(
+            ProbeOptions {
+                sysfs_root: fixture.clone(),
+            },
+            &state_path,
+            WriteAccessPolicy {
+                platform_profile_enabled: false,
+                battery_charge_type_enabled: false,
+                led_state_enabled: false,
+                ideapad_toggle_enabled: false,
+                camera_power_enabled: true,
+            },
+            Arc::new(AllowAllAuthorizer),
+            Arc::new(RealFixturePlatformProfileWriter),
+            Arc::new(RealFixtureBatteryChargeTypeWriter),
+            Arc::new(RealFixtureLedStateWriter),
+            Arc::new(RealFixtureIdeapadToggleWriter),
+        ));
+    let output = Command::new(env!("CARGO_BIN_EXE_legion-control-ui"))
+        .args([
+            "--set-ideapad-toggle",
+            "camera_power=off",
+            "--bus-address",
+            &address,
+        ])
+        .output()
+        .unwrap();
+
+    assert!(output.status.success());
+    assert!(output.stderr.is_empty());
+    let json: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(json["status"], "applied");
+    assert_eq!(json["applied"], true);
+    assert_eq!(json["readback_value"], "0");
+    assert_eq!(json["plan"]["method"], "SetIdeapadToggle");
+    assert_eq!(
+        fs::read_to_string(
+            fixture.join("sys/bus/platform/drivers/ideapad_acpi/VPC2004:00/camera_power")
+        )
+        .unwrap()
+        .trim(),
+        "0"
     );
 
     let _ = fs::remove_file(state_path);

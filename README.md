@@ -14,7 +14,7 @@ Pre-alpha implementation scaffold exists:
 - Probe fixture coverage for confirmed and runtime-captured 82WM-style sysfs paths.
 - Private D-Bus contract tests for read-only daemon methods.
 - UI `--status`, `--overview`, and `--diagnostics` commands plus optional GTK4/libadwaita shell with Status, Profiles, Battery, Fans, Appearance, and Diagnostics tabs behind `gtk-ui`; the Profiles, Battery, and Appearance tabs now expose gated quick-apply controls with inline execution feedback for the currently supported reversible writes.
-- Tray/status helper with a state-driven menu derived from detected profile choices, battery charge choices, LED state, ideapad toggle state, packaged fan presets, pending runtime state, and gated quick actions for reversible profile, charge-type, ylogo LED, and `fn_lock` writes.
+- Tray/status helper with a state-driven menu derived from detected profile choices, battery charge choices, LED state, ideapad toggle state, packaged fan presets, pending runtime state, gated quick actions for reversible profile, charge-type, ylogo LED, and `fn_lock` writes, plus dashboard-routed guidance for warning-gated `camera_power`.
 - Tray dashboard launch forwards custom D-Bus addresses for private/session-bus smoke workflows.
 - Tray status separates available and missing capabilities in tooltips.
 - KDE StatusNotifier smoke can emit a reusable report bundle with environment, watcher, and tray summary data.
@@ -33,7 +33,7 @@ Pre-alpha implementation scaffold exists:
 - Disabled write-method contract drafts for platform profile, battery charge type, GPU mode, fan presets, and fan restore/default.
 - Pure validators for platform profile, battery charge type, EnvyControl GPU mode, and packaged fan preset choices.
 - Validator-backed dry-run planning for platform profile, battery charge type, GPU mode, fan presets, and fan restore/default.
-- Gated platform-profile, battery charge type, ylogo LED, and restricted `fn_lock` ideapad-toggle execution paths with rollback-on-readback-mismatch coverage; the daemon now uses real `pkcheck` caller authorization and still blocks execution by default unless the matching write flags are enabled.
+- Gated platform-profile, battery charge type, ylogo LED, and ideapad-toggle execution paths for restricted `fn_lock` plus warning-gated `camera_power`, all with rollback-on-readback-mismatch coverage; the daemon now uses real `pkcheck` caller authorization and still blocks execution by default unless the matching write flags are enabled.
 - Read-only D-Bus dry-run planning for GPU mode, fan presets, and fan restore/default.
 - GPU dry-run plans include reboot-required metadata and rollback guidance; execution remains disabled.
 - App-state-only GPU pending-reboot tracking in `/var/lib/legion-control/state.toml`; no hardware writes are performed.
@@ -42,7 +42,7 @@ Pre-alpha implementation scaffold exists:
 - Read-only diagnostics/export surfaces now include the same durable app-state fields, including `gpu_mode_pending` and `last_known_good_fan_curve`.
 - Local CI script and GitHub Actions CI.
 
-Only reversible platform-profile, battery charge-type, ylogo LED, and restricted `fn_lock` execution paths exist so far, and all remain disabled by default unless the daemon is started with their explicit enable flags. The `fn_lock` rollout is intentionally narrower than the generic ideapad toggle surface: it requires the paired `platform::fnlock` LED for corroborating read-back before the UI or tray exposes quick actions. Higher-risk write support must still wait for validators, rollback behavior, and manual target-machine validation.
+Only reversible platform-profile, battery charge-type, ylogo LED, and two ideapad-toggle executions exist so far: restricted `fn_lock` and warning-gated `camera_power`. All remain disabled by default unless the daemon is started with their explicit enable flags. `fn_lock` requires the paired `platform::fnlock` LED for corroborating read-back before the UI or tray exposes quick actions, while `camera_power` is intentionally dashboard-confirmed and not exposed as a one-click tray write. Higher-risk write support must still wait for validators, rollback behavior, and manual target-machine validation.
 
 For continuation work, start from [docs/session-handoff.md](docs/session-handoff.md). It records the latest commits, next roadmap slice, safety constraints, validation commands, and the expected orchestrator/agent workflow for new Codex sessions.
 
@@ -150,7 +150,7 @@ Completed scaffold:
 - Packaged fan preset TOML assets with runtime dry-run validation.
 - Disabled write-method contract drafts.
 - Pure platform profile, battery charge type, and EnvyControl GPU mode validators.
-- Pure dry-run planning for GPU mode and fan preset writes, plus validated platform-profile, battery charge type, and ylogo LED execution paths with rollback tests.
+- Pure dry-run planning for GPU mode and fan preset writes, plus validated platform-profile, battery charge type, ylogo LED, `fn_lock`, and `camera_power` execution paths with rollback tests.
 - Daemon planning methods over D-Bus plus gated `SetPlatformProfile` and `SetBatteryChargeType` execution; higher-risk write methods are still absent.
 - UI CLI previews for platform profile, battery charge type, GPU mode, and fan preset dry-run plans, plus `--set-platform-profile` and `--set-battery-charge-type` execution output.
 - Read-only diagnostics JSON bundle with hardware summary, compact counts, kernel version, detected sysfs paths, recent daemon log excerpts, and raw probe report.

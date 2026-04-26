@@ -302,6 +302,10 @@ fn append_quick_actions(entries: &mut Vec<TrayMenuEntry>, report: &CapabilityReg
         sections.extend(section);
     }
 
+    if let Some(section) = camera_power_guidance_section(report) {
+        sections.extend(section);
+    }
+
     if !sections.is_empty() {
         entries.push(TrayMenuEntry::Separator);
         entries.extend(sections);
@@ -430,6 +434,29 @@ fn ideapad_toggle_quick_action_section(report: &CapabilityRegistry) -> Option<Ve
         }
     }
     Some(entries)
+}
+
+fn camera_power_guidance_section(report: &CapabilityRegistry) -> Option<Vec<TrayMenuEntry>> {
+    let toggle = report.ideapad_toggles.iter().find(|toggle| {
+        toggle.name == "camera_power"
+            && matches!(toggle.current_value.as_deref(), Some("0" | "1"))
+            && toggle.path.as_deref().is_some_and(|path| !path.is_empty())
+    })?;
+
+    Some(vec![
+        TrayMenuEntry::Item(info_item(format!(
+            "Camera power: {}",
+            if toggle.current_value.as_deref() == Some("1") {
+                "dashboard confirmation required"
+            } else {
+                "currently off - dashboard confirmation required"
+            }
+        ))),
+        TrayMenuEntry::Item(action_item(
+            "Open dashboard for camera power controls",
+            TrayAction::OpenDashboard,
+        )),
+    ])
 }
 
 fn fan_rows(sensors: &[HwmonSensor]) -> Vec<String> {
@@ -564,12 +591,20 @@ mod tests {
                     max_brightness: Some(1),
                 },
             ],
-            ideapad_toggles: vec![IdeapadToggleCapability {
-                name: "fn_lock".to_owned(),
-                status: CapabilityStatus::ProbeOnly,
-                path: Some("/tmp/fn_lock".to_owned()),
-                current_value: Some("0".to_owned()),
-            }],
+            ideapad_toggles: vec![
+                IdeapadToggleCapability {
+                    name: "fn_lock".to_owned(),
+                    status: CapabilityStatus::ProbeOnly,
+                    path: Some("/tmp/fn_lock".to_owned()),
+                    current_value: Some("0".to_owned()),
+                },
+                IdeapadToggleCapability {
+                    name: "camera_power".to_owned(),
+                    status: CapabilityStatus::ProbeOnly,
+                    path: Some("/tmp/camera_power".to_owned()),
+                    current_value: Some("1".to_owned()),
+                },
+            ],
             ..Default::default()
         };
         let gpu_pending = GpuModePending {
@@ -605,6 +640,7 @@ mod tests {
                 "LED: platform::fnlock off",
                 "LED: platform::ylogo on",
                 "Toggle: fn_lock off",
+                "Toggle: camera_power on",
                 "Fan: CPU Fan 2410 RPM",
                 "GPU pending: hybrid (previous nvidia, reboot required)",
                 "Saved fan curve: 1 values from legion_hwmon",
@@ -617,6 +653,7 @@ mod tests {
                 "Set LED state: platform::ylogo on",
                 "Fn-lock actions",
                 "Set Fn-lock off",
+                "Camera power: dashboard confirmation required",
             ]
         );
         assert_eq!(
@@ -628,6 +665,7 @@ mod tests {
                 "Set battery charge type: Fast",
                 "Set LED state: platform::ylogo off",
                 "Set Fn-lock on",
+                "Open dashboard for camera power controls",
                 "Open dashboard",
                 "Refresh status",
                 "Quit",
@@ -803,12 +841,20 @@ mod tests {
                     max_brightness: Some(1),
                 },
             ],
-            ideapad_toggles: vec![IdeapadToggleCapability {
-                name: "fn_lock".to_owned(),
-                status: CapabilityStatus::ProbeOnly,
-                path: Some("/tmp/fn_lock".to_owned()),
-                current_value: Some("0".to_owned()),
-            }],
+            ideapad_toggles: vec![
+                IdeapadToggleCapability {
+                    name: "fn_lock".to_owned(),
+                    status: CapabilityStatus::ProbeOnly,
+                    path: Some("/tmp/fn_lock".to_owned()),
+                    current_value: Some("0".to_owned()),
+                },
+                IdeapadToggleCapability {
+                    name: "camera_power".to_owned(),
+                    status: CapabilityStatus::ProbeOnly,
+                    path: Some("/tmp/camera_power".to_owned()),
+                    current_value: Some("1".to_owned()),
+                },
+            ],
             ..Default::default()
         };
 

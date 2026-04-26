@@ -105,6 +105,14 @@ fn read_only_methods_return_expected_json_contracts() {
     assert_eq!(toggle_plan.requested_value, "1");
     assert_eq!(toggle_plan.previous_value, "0");
 
+    let payload: String = proxy
+        .call("PlanIdeapadToggleWrite", &("camera_power", false))
+        .unwrap();
+    let toggle_plan: WriteDryRunPlan = serde_json::from_str(&payload).unwrap();
+    assert_eq!(toggle_plan.method, "SetIdeapadToggle");
+    assert_eq!(toggle_plan.requested_value, "0");
+    assert_eq!(toggle_plan.previous_value, "1");
+
     let payload: String = proxy.call("SetPlatformProfile", &("performance",)).unwrap();
     let execution: WriteExecutionResult = serde_json::from_str(&payload).unwrap();
     assert_eq!(execution.status, WriteExecutionStatus::BlockedByPolicy);
@@ -219,13 +227,19 @@ fn daemon_builds_dry_run_plans_without_other_dbus_write_methods() {
     assert_eq!(toggle_plan.rollback_value, "0");
     assert!(toggle_plan.readback_required);
 
+    let camera_plan = service
+        .plan_ideapad_toggle_write("camera_power", false)
+        .unwrap();
+    assert_eq!(camera_plan.previous_value, "1");
+    assert_eq!(camera_plan.requested_value, "0");
+
     assert!(service.plan_platform_profile_write("custom").is_err());
     assert!(service.plan_battery_charge_type_write("Invalid").is_err());
     assert!(service
         .plan_led_state_write("platform::fnlock", true)
         .is_err());
     assert!(service
-        .plan_ideapad_toggle_write("camera_power", false)
+        .plan_ideapad_toggle_write("touchpad", false)
         .is_err());
     assert!(service.plan_gpu_mode_write("hybrid").is_err());
     assert!(service.plan_fan_preset_write("balanced-daily").is_err());
@@ -250,6 +264,7 @@ fn platform_profile_write_applies_when_policy_and_authorizer_allow_it() {
             battery_charge_type_enabled: false,
             led_state_enabled: false,
             ideapad_toggle_enabled: false,
+            camera_power_enabled: false,
         },
         Arc::new(AllowAllAuthorizer),
         Arc::new(RealFixturePlatformProfileWriter),
@@ -289,6 +304,7 @@ fn platform_profile_write_rejects_invalid_choice_before_write() {
             battery_charge_type_enabled: false,
             led_state_enabled: false,
             ideapad_toggle_enabled: false,
+            camera_power_enabled: false,
         },
         Arc::new(AllowAllAuthorizer),
         Arc::new(RealFixturePlatformProfileWriter),
@@ -323,6 +339,7 @@ fn platform_profile_write_reports_write_failure_without_changing_value() {
             battery_charge_type_enabled: false,
             led_state_enabled: false,
             ideapad_toggle_enabled: false,
+            camera_power_enabled: false,
         },
         Arc::new(AllowAllAuthorizer),
         Arc::new(FailingPlatformProfileWriter),
@@ -362,6 +379,7 @@ fn platform_profile_write_rolls_back_after_readback_mismatch() {
             battery_charge_type_enabled: false,
             led_state_enabled: false,
             ideapad_toggle_enabled: false,
+            camera_power_enabled: false,
         },
         Arc::new(AllowAllAuthorizer),
         Arc::new(MismatchingPlatformProfileWriter),
@@ -404,6 +422,7 @@ fn battery_charge_type_write_applies_when_policy_and_authorizer_allow_it() {
             battery_charge_type_enabled: true,
             led_state_enabled: false,
             ideapad_toggle_enabled: false,
+            camera_power_enabled: false,
         },
         Arc::new(AllowAllAuthorizer),
         Arc::new(RealFixturePlatformProfileWriter),
@@ -443,6 +462,7 @@ fn battery_charge_type_write_rolls_back_after_readback_mismatch() {
             battery_charge_type_enabled: true,
             led_state_enabled: false,
             ideapad_toggle_enabled: false,
+            camera_power_enabled: false,
         },
         Arc::new(AllowAllAuthorizer),
         Arc::new(RealFixturePlatformProfileWriter),
@@ -485,6 +505,7 @@ fn led_state_write_applies_when_policy_and_authorizer_allow_it() {
             battery_charge_type_enabled: false,
             led_state_enabled: true,
             ideapad_toggle_enabled: false,
+            camera_power_enabled: false,
         },
         Arc::new(AllowAllAuthorizer),
         Arc::new(RealFixturePlatformProfileWriter),
@@ -524,6 +545,7 @@ fn led_state_write_rolls_back_after_readback_mismatch() {
             battery_charge_type_enabled: false,
             led_state_enabled: true,
             ideapad_toggle_enabled: false,
+            camera_power_enabled: false,
         },
         Arc::new(AllowAllAuthorizer),
         Arc::new(RealFixturePlatformProfileWriter),
@@ -564,6 +586,7 @@ fn ideapad_toggle_write_applies_when_policy_and_authorizer_allow_it() {
             battery_charge_type_enabled: false,
             led_state_enabled: false,
             ideapad_toggle_enabled: true,
+            camera_power_enabled: false,
         },
         Arc::new(AllowAllAuthorizer),
         Arc::new(RealFixturePlatformProfileWriter),
@@ -611,6 +634,7 @@ fn ideapad_toggle_write_rolls_back_after_readback_mismatch() {
             battery_charge_type_enabled: false,
             led_state_enabled: false,
             ideapad_toggle_enabled: true,
+            camera_power_enabled: false,
         },
         Arc::new(AllowAllAuthorizer),
         Arc::new(RealFixturePlatformProfileWriter),
@@ -639,6 +663,91 @@ fn ideapad_toggle_write_rolls_back_after_readback_mismatch() {
             .unwrap()
             .trim(),
         "0"
+    );
+
+    let _ = fs::remove_file(state_path);
+    let _ = fs::remove_dir_all(fixture);
+}
+
+#[test]
+fn camera_power_write_applies_when_policy_and_authorizer_allow_it() {
+    let fixture = copied_fixture_root("camera-power-write-success");
+    let state_path = unique_state_path("camera-power-write-success");
+    let service = LegionControl::new_with_runtime(
+        ProbeOptions {
+            sysfs_root: fixture.clone(),
+        },
+        &state_path,
+        WriteAccessPolicy {
+            platform_profile_enabled: false,
+            battery_charge_type_enabled: false,
+            led_state_enabled: false,
+            ideapad_toggle_enabled: false,
+            camera_power_enabled: true,
+        },
+        Arc::new(AllowAllAuthorizer),
+        Arc::new(RealFixturePlatformProfileWriter),
+        Arc::new(RealFixtureBatteryChargeTypeWriter),
+        Arc::new(RealFixtureLedStateWriter),
+        Arc::new(RealFixtureIdeapadToggleWriter),
+    );
+
+    let result = service
+        .set_ideapad_toggle("camera_power", false, ":1.99")
+        .unwrap();
+    assert_eq!(result.status, WriteExecutionStatus::Applied);
+    assert!(result.applied);
+    assert_eq!(result.readback_value.as_deref(), Some("0"));
+    assert_eq!(
+        fs::read_to_string(
+            fixture.join("sys/bus/platform/drivers/ideapad_acpi/VPC2004:00/camera_power")
+        )
+        .unwrap()
+        .trim(),
+        "0"
+    );
+
+    let _ = fs::remove_file(state_path);
+    let _ = fs::remove_dir_all(fixture);
+}
+
+#[test]
+fn camera_power_write_rolls_back_after_readback_mismatch() {
+    let fixture = copied_fixture_root("camera-power-write-rollback");
+    let state_path = unique_state_path("camera-power-write-rollback");
+    let service = LegionControl::new_with_runtime(
+        ProbeOptions {
+            sysfs_root: fixture.clone(),
+        },
+        &state_path,
+        WriteAccessPolicy {
+            platform_profile_enabled: false,
+            battery_charge_type_enabled: false,
+            led_state_enabled: false,
+            ideapad_toggle_enabled: false,
+            camera_power_enabled: true,
+        },
+        Arc::new(AllowAllAuthorizer),
+        Arc::new(RealFixturePlatformProfileWriter),
+        Arc::new(RealFixtureBatteryChargeTypeWriter),
+        Arc::new(RealFixtureLedStateWriter),
+        Arc::new(MismatchingCameraPowerWriter),
+    );
+
+    let result = service
+        .set_ideapad_toggle("camera_power", false, ":1.99")
+        .unwrap();
+    assert_eq!(result.status, WriteExecutionStatus::Failed);
+    assert!(!result.applied);
+    assert!(result.message.contains("restored previous value `1`"));
+    assert_eq!(result.readback_value.as_deref(), Some("1"));
+    assert_eq!(
+        fs::read_to_string(
+            fixture.join("sys/bus/platform/drivers/ideapad_acpi/VPC2004:00/camera_power")
+        )
+        .unwrap()
+        .trim(),
+        "1"
     );
 
     let _ = fs::remove_file(state_path);
@@ -905,5 +1014,13 @@ impl IdeapadToggleWriter for MismatchingIdeapadToggleWriter {
             fs::write(indicator, "0").map_err(|error| error.to_string())?;
         }
         Ok(())
+    }
+}
+
+struct MismatchingCameraPowerWriter;
+
+impl IdeapadToggleWriter for MismatchingCameraPowerWriter {
+    fn write_ideapad_toggle(&self, path: &str, _enabled: bool) -> std::result::Result<(), String> {
+        fs::write(path, "1").map_err(|error| error.to_string())
     }
 }

@@ -8,6 +8,7 @@ use legion_common::{
     BatteryChargeTypeCapability, FanCurveSnapshot, GpuModePending, IdeapadToggleCapability,
     LedCapability, PlatformProfileCapability, WriteExecutionResult, WriteExecutionStatus,
 };
+use std::{cell::RefCell, rc::Rc};
 
 pub fn run() -> Result<()> {
     let app = adw::Application::builder()
@@ -436,12 +437,17 @@ fn append_appearance(page: &gtk4::Box, bundle: &DiagnosticsBundle) {
         toggles.add(&info_row("Firmware toggles", "unavailable"));
         page.append(&toggles);
         page.append(&build_ideapad_toggle_controls(None, None));
+        page.append(&build_camera_power_controls(None, None));
     } else {
         let mut fn_lock_row = None;
+        let mut camera_power_row = None;
         for toggle in &bundle.raw_probe_report.ideapad_toggles {
             let row = info_row(&toggle.name, &render_ideapad_toggle_row(toggle));
             if toggle.name == "fn_lock" {
                 fn_lock_row = Some(row.clone());
+            }
+            if toggle.name == "camera_power" {
+                camera_power_row = Some(row.clone());
             }
             toggles.add(&row);
         }
@@ -453,8 +459,13 @@ fn append_appearance(page: &gtk4::Box, bundle: &DiagnosticsBundle) {
             ),
             fn_lock_row,
         ));
+        page.append(&build_camera_power_controls(
+            writable_camera_power_toggle(bundle.raw_probe_report.ideapad_toggles.as_slice()),
+            camera_power_row,
+        ));
     }
     page.append(&build_write_feedback_group("Fn-lock"));
+    page.append(&build_write_feedback_group("Camera power"));
 }
 
 fn append_diagnostics(page: &gtk4::Box, bundle: &DiagnosticsBundle) {
@@ -777,6 +788,126 @@ fn build_ideapad_toggle_controls(
     group
 }
 
+fn build_camera_power_controls(
+    toggle: Option<&IdeapadToggleCapability>,
+    current_row: Option<adw::ActionRow>,
+) -> adw::PreferencesGroup {
+    let group = adw::PreferencesGroup::new();
+    group.set_title("Camera privacy quick apply");
+
+    let Some(toggle) = toggle else {
+        group.add(&info_row(
+            "Camera power",
+            "unavailable - quick apply disabled",
+        ));
+        return group;
+    };
+
+    let row = adw::ActionRow::builder()
+        .title("Camera power")
+        .subtitle("Changes require confirmation because active camera apps can lose the device.")
+        .selectable(false)
+        .build();
+
+    let request_off = gtk4::Button::with_label("Request off");
+    let request_on = gtk4::Button::with_label("Request on");
+    request_off.set_sensitive(toggle.current_value.as_deref() != Some("0"));
+    request_on.set_sensitive(toggle.current_value.as_deref() != Some("1"));
+    row.add_suffix(&request_off);
+    row.add_suffix(&request_on);
+    group.add(&row);
+
+    let confirm_row = adw::ActionRow::builder()
+        .title("Confirmation required")
+        .subtitle("Choose Request on or Request off first. If apps lose the camera, re-enable it here and restart them.")
+        .selectable(false)
+        .build();
+    let confirm = gtk4::Button::with_label("Confirm");
+    let cancel = gtk4::Button::with_label("Cancel");
+    confirm.set_sensitive(false);
+    cancel.set_sensitive(false);
+    confirm_row.add_suffix(&confirm);
+    confirm_row.add_suffix(&cancel);
+    group.add(&confirm_row);
+
+    let feedback_row = write_feedback_row(None);
+    group.add(&feedback_row);
+
+    let pending_enabled = Rc::new(RefCell::new(None::<bool>));
+
+    let confirm_row_for_off = confirm_row.clone();
+    let confirm_for_off = confirm.clone();
+    let cancel_for_off = cancel.clone();
+    let pending_for_off = Rc::clone(&pending_enabled);
+    request_off.connect_clicked(move |_| {
+        *pending_for_off.borrow_mut() = Some(false);
+        confirm_row_for_off.set_title("Confirm camera power change");
+        confirm_row_for_off.set_subtitle(
+            "Turning camera power off can interrupt active camera apps. Confirm to continue or Cancel to leave the device alone.",
+        );
+        confirm_for_off.set_label("Confirm off");
+        confirm_for_off.set_sensitive(true);
+        cancel_for_off.set_sensitive(true);
+    });
+
+    let confirm_row_for_on = confirm_row.clone();
+    let confirm_for_on = confirm.clone();
+    let cancel_for_on = cancel.clone();
+    let pending_for_on = Rc::clone(&pending_enabled);
+    request_on.connect_clicked(move |_| {
+        *pending_for_on.borrow_mut() = Some(true);
+        confirm_row_for_on.set_title("Confirm camera power change");
+        confirm_row_for_on.set_subtitle(
+            "Turning camera power on should restore the device, but camera apps may still need to be restarted. Confirm to continue or Cancel to leave the device alone.",
+        );
+        confirm_for_on.set_label("Confirm on");
+        confirm_for_on.set_sensitive(true);
+        cancel_for_on.set_sensitive(true);
+    });
+
+    let confirm_row_for_cancel = confirm_row.clone();
+    let confirm_for_cancel = confirm.clone();
+    let cancel_for_cancel = cancel.clone();
+    let pending_for_cancel = Rc::clone(&pending_enabled);
+    cancel.connect_clicked(move |_| {
+        *pending_for_cancel.borrow_mut() = None;
+        confirm_row_for_cancel.set_title("Confirmation required");
+        confirm_row_for_cancel.set_subtitle("Choose Request on or Request off first. If apps lose the camera, re-enable it here and restart them.");
+        confirm_for_cancel.set_label("Confirm");
+        confirm_for_cancel.set_sensitive(false);
+        cancel_for_cancel.set_sensitive(false);
+    });
+
+    let feedback_row_for_confirm = feedback_row.clone();
+    let confirm_row_for_confirm = confirm_row.clone();
+    let confirm_for_confirm = confirm.clone();
+    let cancel_for_confirm = cancel.clone();
+    let current_row_for_confirm = current_row.clone();
+    let toggle_id = toggle.name.clone();
+    let path = toggle.path.clone().unwrap_or_else(|| "unknown".to_owned());
+    let pending_for_confirm = Rc::clone(&pending_enabled);
+    confirm.connect_clicked(move |_| {
+        let Some(enabled) = *pending_for_confirm.borrow() else {
+            return;
+        };
+        handle_ideapad_toggle_button_click(
+            &feedback_row_for_confirm,
+            current_row_for_confirm.as_ref(),
+            &toggle_id,
+            &path,
+            enabled,
+        );
+        *pending_for_confirm.borrow_mut() = None;
+        confirm_row_for_confirm.set_title("Confirmation required");
+        confirm_row_for_confirm.set_subtitle("Choose Request on or Request off first. If apps lose the camera, re-enable it here and restart them.");
+        confirm_for_confirm.set_label("Confirm");
+        confirm_for_confirm.set_sensitive(false);
+        cancel_for_confirm.set_sensitive(false);
+    });
+
+    group
+}
+
 #[allow(clippy::too_many_arguments)]
 fn build_write_controls<F, G>(
     title: &str,
@@ -1073,6 +1204,16 @@ fn writable_fn_lock_toggle<'a>(
                         .brightness
                         .map(|brightness| if brightness == 0 { "0" } else { "1" })
         })
+    })
+}
+
+fn writable_camera_power_toggle(
+    toggles: &[IdeapadToggleCapability],
+) -> Option<&IdeapadToggleCapability> {
+    toggles.iter().find(|toggle| {
+        toggle.name == "camera_power"
+            && matches!(toggle.current_value.as_deref(), Some("0" | "1"))
+            && toggle.path.as_deref().is_some_and(|path| !path.is_empty())
     })
 }
 
