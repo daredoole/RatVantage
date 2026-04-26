@@ -30,6 +30,14 @@ const FAN_CURVE_CHART_MARGIN: f64 = 36.0;
 const SCRATCHPAD_CHART_DRAG_PICK_PX: f64 = 22.0;
 const SCRATCHPAD_DRAG_TEMP_PER_PX: f64 = 25.0;
 const SCRATCHPAD_DRAG_PWM_PER_PX: f64 = -0.45;
+/// Fine keyboard nudge for raw sysfs temperature (same order of magnitude as typical millidegree steps).
+const SCRATCHPAD_KEY_TEMP_FINE: i32 = 500;
+const SCRATCHPAD_KEY_TEMP_COARSE: i32 = 5000;
+const SCRATCHPAD_KEY_PWM_FINE: i32 = 1;
+const SCRATCHPAD_KEY_PWM_COARSE: i32 = 8;
+
+type ScratchpadChartSelection = Rc<RefCell<Option<usize>>>;
+type ManualFanScratchRows = Rc<RefCell<Vec<(FanCurveHwmonPointPair, gtk4::Entry, gtk4::Entry)>>>;
 
 type SnapshotLoader = Rc<dyn Fn() -> Result<RuntimeSnapshot>>;
 
@@ -1170,6 +1178,7 @@ fn draw_temp_pwm_polyline_chart(
     width: i32,
     height: i32,
     pairs: &[(u32, u32)],
+    highlight_index: Option<usize>,
 ) {
     let w = width.max(1) as f64;
     let h = height.max(1) as f64;
@@ -1205,12 +1214,19 @@ fn draw_temp_pwm_polyline_chart(
     }
     let _ = cr.stroke().ok();
 
-    cr.set_source_rgb(0.05, 0.22, 0.58);
-    for (temp, pwm) in pairs {
+    for (i, (temp, pwm)) in pairs.iter().enumerate() {
         let pwm_clamped = (*pwm).min(255) as f64;
         let x = lay.margin + ((*temp as f64) - lay.t_min) / lay.t_span * lay.plot_w;
         let y = lay.margin + lay.plot_h - pwm_clamped / 255.0 * lay.plot_h;
-        cr.arc(x, y, 4.0, 0.0, std::f64::consts::TAU);
+        let highlight = highlight_index == Some(i);
+        if highlight {
+            cr.set_source_rgb(0.95, 0.55, 0.12);
+            cr.arc(x, y, 9.0, 0.0, std::f64::consts::TAU);
+            let _ = cr.fill().ok();
+        }
+        cr.set_source_rgb(0.05, 0.22, 0.58);
+        let r = if highlight { 5.0 } else { 4.0 };
+        cr.arc(x, y, r, 0.0, std::f64::consts::TAU);
         let _ = cr.fill().ok();
     }
 }
@@ -1221,7 +1237,7 @@ fn draw_fan_curve_temp_pwm_chart(
     height: i32,
     pairs: &[(u32, u32)],
 ) {
-    draw_temp_pwm_polyline_chart(cr, width, height, pairs);
+    draw_temp_pwm_polyline_chart(cr, width, height, pairs, None);
 }
 
 fn scratchpad_pairs_parsed(entries: &ManualFanScratchRows) -> Option<Vec<(u32, u32)>> {
@@ -1238,6 +1254,109 @@ fn scratchpad_pairs_parsed(entries: &ManualFanScratchRows) -> Option<Vec<(u32, u
     Some(out)
 }
 
+fn scratchpad_first_parse_blocker(entries: &ManualFanScratchRows) -> String {
+    let rows = entries.borrow();
+    if rows.is_empty() {
+        return "No editable rows yet — use Load from live/saved or wait for the table to appear."
+            .to_string();
+    }
+    for (i, (_, temp_entry, pwm_entry)) in rows.iter().enumerate() {
+        let ti = temp_entry.text();
+        let pi = pwm_entry.text();
+        let t_trim = ti.trim();
+        let p_trim = pi.trim();
+        let n = i + 1;
+        if t_trim.is_empty() || p_trim.is_empty() {
+            return format!(
+                "Point {n}: fill both temp and pwm cells with integers (empty cells hide the curve)."
+            );
+        }
+        if t_trim.parse::<u32>().is_err() {
+            return format!("Point {n}: temp `{t_trim}` is not a valid unsigned integer.");
+        }
+        if p_trim.parse::<u32>().is_err() {
+            return format!("Point {n}: pwm `{p_trim}` is not a valid unsigned integer.");
+        }
+    }
+    "Some values could not be read — check each row for stray characters.".to_string()
+}
+
+fn scratchpad_placeholder_text_lines(message: &str, max_chars: usize) -> Vec<String> {
+    let t = message.trim();
+    if t.is_empty() {
+        return vec!["(no message)".to_string()];
+    }
+    let chars: Vec<char> = t.chars().collect();
+    let mut lines = Vec::new();
+    let mut i = 0usize;
+    while i < chars.len() {
+        let end = (i + max_chars).min(chars.len());
+        lines.push(chars[i..end].iter().collect::<String>());
+        i = end;
+    }
+    lines
+}
+
+fn draw_scratchpad_chart_placeholder(
+    cr: &gtk4::cairo::Context,
+    width: i32,
+    height: i32,
+    message: &str,
+) {
+    use gtk4::cairo::{FontSlant, FontWeight};
+
+    let w = width.max(1) as f64;
+    let h = height.max(1) as f64;
+    cr.set_source_rgb(0.94, 0.94, 0.95);
+    cr.rectangle(0.0, 0.0, w, h);
+    let _ = cr.fill();
+
+    cr.save().ok();
+    cr.select_font_face("Sans", FontSlant::Normal, FontWeight::Normal);
+    cr.set_font_size(11.5);
+    cr.set_source_rgb(0.32, 0.34, 0.38);
+    let mut y = 22.0_f64;
+    for line in scratchpad_placeholder_text_lines(message, 52) {
+        if y > h - 8.0 {
+            cr.move_to(12.0, y);
+            let _ = cr.show_text("...");
+            break;
+        }
+        cr.move_to(12.0, y);
+        let _ = cr.show_text(line.as_str());
+        y += 16.0;
+    }
+    cr.restore().ok();
+}
+
+fn apply_scratchpad_nudge(
+    entries: &ManualFanScratchRows,
+    idx: usize,
+    delta_temp: i32,
+    delta_pwm: i32,
+) -> bool {
+    let borrowed = entries.borrow();
+    let Some((_, temp_entry, pwm_entry)) = borrowed.get(idx) else {
+        return false;
+    };
+    let Ok(t0) = temp_entry.text().trim().parse::<u32>() else {
+        return false;
+    };
+    let Ok(p0) = pwm_entry.text().trim().parse::<u32>() else {
+        return false;
+    };
+    drop(borrowed);
+    let t1 = (t0 as i64 + i64::from(delta_temp)).clamp(1, 900_000) as u32;
+    let p1 = (p0 as i64 + i64::from(delta_pwm)).clamp(0, 255) as u32;
+    let borrowed = entries.borrow();
+    let Some((_, temp_entry, pwm_entry)) = borrowed.get(idx) else {
+        return false;
+    };
+    temp_entry.set_text(&t1.to_string());
+    pwm_entry.set_text(&p1.to_string());
+    true
+}
+
 fn connect_scratchpad_chart_entry_signals(
     entries: &ManualFanScratchRows,
     chart: &gtk4::DrawingArea,
@@ -1250,12 +1369,41 @@ fn connect_scratchpad_chart_entry_signals(
     }
 }
 
-fn attach_scratchpad_chart_drag(chart: &gtk4::DrawingArea, entries: &ManualFanScratchRows) {
+fn attach_scratchpad_chart_interactions(
+    chart: &gtk4::DrawingArea,
+    entries: &ManualFanScratchRows,
+    selection: &ScratchpadChartSelection,
+) {
+    chart.set_focusable(true);
+    chart.set_tooltip_text(Some(
+        "Click a point to select it. Arrow keys adjust temp (←/→) and PWM (↑/↓); hold Shift for larger steps. Scratchpad only.",
+    ));
+
+    let click = gtk4::GestureClick::new();
+    let entries_pick = entries.clone();
+    let chart_pick = chart.clone();
+    let selection_pick = selection.clone();
+    click.connect_pressed(move |_gesture, _n_press, x, y| {
+        let Some(pairs) = scratchpad_pairs_parsed(&entries_pick) else {
+            return;
+        };
+        let w = chart_pick.width().max(1);
+        let h = chart_pick.height().max(1);
+        let Some(idx) = nearest_temp_pwm_point_index(x, y, &pairs, w, h) else {
+            return;
+        };
+        *selection_pick.borrow_mut() = Some(idx);
+        chart_pick.grab_focus();
+        chart_pick.queue_draw();
+    });
+    chart.add_controller(click);
+
     let drag_state: Rc<RefCell<Option<(usize, u32, u32)>>> = Rc::new(RefCell::new(None));
     let gesture = gtk4::GestureDrag::new();
     let entries_begin = entries.clone();
     let chart_begin = chart.clone();
     let drag_begin_state = drag_state.clone();
+    let selection_drag = selection.clone();
     gesture.connect_drag_begin(move |_gesture, start_x, start_y| {
         *drag_begin_state.borrow_mut() = None;
         let Some(pairs) = scratchpad_pairs_parsed(&entries_begin) else {
@@ -1267,7 +1415,9 @@ fn attach_scratchpad_chart_drag(chart: &gtk4::DrawingArea, entries: &ManualFanSc
             return;
         };
         if let Some(&(t, p)) = pairs.get(idx) {
+            *selection_drag.borrow_mut() = Some(idx);
             *drag_begin_state.borrow_mut() = Some((idx, t, p.min(255)));
+            chart_begin.grab_focus();
         }
     });
 
@@ -1298,6 +1448,66 @@ fn attach_scratchpad_chart_drag(chart: &gtk4::DrawingArea, entries: &ManualFanSc
     });
 
     chart.add_controller(gesture);
+
+    let key = gtk4::EventControllerKey::new();
+    let entries_key = entries.clone();
+    let chart_key = chart.clone();
+    let selection_key = selection.clone();
+    key.connect_key_pressed(move |_ctrl, key, _code, state| {
+        use gtk4::gdk::{Key, ModifierType};
+        use gtk4::glib::Propagation;
+
+        let Some(idx) = *selection_key.borrow() else {
+            return Propagation::Proceed;
+        };
+        if entries_key.borrow().len() <= idx {
+            *selection_key.borrow_mut() = None;
+            return Propagation::Proceed;
+        }
+        let shift = state.contains(ModifierType::SHIFT_MASK);
+        let (dt, dp) = match key {
+            Key::Right => (
+                if shift {
+                    SCRATCHPAD_KEY_TEMP_COARSE
+                } else {
+                    SCRATCHPAD_KEY_TEMP_FINE
+                },
+                0,
+            ),
+            Key::Left => (
+                if shift {
+                    -SCRATCHPAD_KEY_TEMP_COARSE
+                } else {
+                    -SCRATCHPAD_KEY_TEMP_FINE
+                },
+                0,
+            ),
+            Key::Up => (
+                0,
+                if shift {
+                    SCRATCHPAD_KEY_PWM_COARSE
+                } else {
+                    SCRATCHPAD_KEY_PWM_FINE
+                },
+            ),
+            Key::Down => (
+                0,
+                if shift {
+                    -SCRATCHPAD_KEY_PWM_COARSE
+                } else {
+                    -SCRATCHPAD_KEY_PWM_FINE
+                },
+            ),
+            _ => return Propagation::Proceed,
+        };
+        if apply_scratchpad_nudge(&entries_key, idx, dt, dp) {
+            chart_key.queue_draw();
+            Propagation::Stop
+        } else {
+            Propagation::Proceed
+        }
+    });
+    chart.add_controller(key);
 }
 
 fn append_fan_curve_readonly_preview(
@@ -1517,17 +1727,19 @@ fn append_fan_preset_per_profile_section(page: &gtk4::Box, bundle: &DiagnosticsB
     page.append(&map_status);
 }
 
-type ManualFanScratchRows = Rc<RefCell<Vec<(FanCurveHwmonPointPair, gtk4::Entry, gtk4::Entry)>>>;
-
 fn repopulate_manual_fan_scratchpad_rows(
     column: &gtk4::Box,
     pairs: &[FanCurveHwmonPointPair],
     snapshot: Option<&FanCurveSnapshot>,
     entries: &ManualFanScratchRows,
     scratchpad_chart: Option<&gtk4::DrawingArea>,
+    chart_selection_clear: Option<&ScratchpadChartSelection>,
 ) {
     clear_points_column(column);
     entries.borrow_mut().clear();
+    if let Some(sel) = chart_selection_clear {
+        *sel.borrow_mut() = None;
+    }
     let lookup: HashMap<String, String> = snapshot
         .map(|snap| {
             snap.points
@@ -1618,7 +1830,7 @@ fn append_manual_fan_curve_scratchpad(page: &gtk4::Box, curve: &FanCurveCapabili
     page.append(&rows_heading);
 
     let chart_interaction_hint = gtk4::Label::new(Some(
-        "Drag a point on the chart to adjust temp and PWM in the rows (scratchpad only; not applied to hardware). The chart axes label raw sysfs temperature (min–max of your points) horizontally and PWM 0–255 vertically.",
+        "Click or drag a point on the chart to edit temp/PWM in the rows, or select a point and use arrow keys (Shift = larger temp/PWM steps). Scratchpad only; not applied to hardware. Axes: raw sysfs temperature (min–max of your points) horizontally, PWM 0–255 vertically.",
     ));
     chart_interaction_hint.add_css_class("dim-label");
     chart_interaction_hint.set_wrap(true);
@@ -1626,7 +1838,9 @@ fn append_manual_fan_curve_scratchpad(page: &gtk4::Box, curve: &FanCurveCapabili
     page.append(&chart_interaction_hint);
 
     let entries: ManualFanScratchRows = Rc::new(RefCell::new(Vec::new()));
+    let scratchpad_selection: ScratchpadChartSelection = Rc::new(RefCell::new(None));
     let entries_for_scratchpad_chart = entries.clone();
+    let selection_for_scratchpad_chart = scratchpad_selection.clone();
     let scratchpad_chart = gtk4::DrawingArea::builder()
         .content_width(400)
         .content_height(220)
@@ -1635,17 +1849,15 @@ fn append_manual_fan_curve_scratchpad(page: &gtk4::Box, curve: &FanCurveCapabili
         .hexpand(true)
         .build();
     scratchpad_chart.set_draw_func(move |_area, cr, w, h| {
+        let highlight = *selection_for_scratchpad_chart.borrow();
         if let Some(pairs) = scratchpad_pairs_parsed(&entries_for_scratchpad_chart) {
-            draw_temp_pwm_polyline_chart(cr, w, h, &pairs);
+            draw_temp_pwm_polyline_chart(cr, w, h, &pairs, highlight);
         } else {
-            let wf = w.max(1) as f64;
-            let hf = h.max(1) as f64;
-            cr.set_source_rgb(0.96, 0.96, 0.97);
-            cr.rectangle(0.0, 0.0, wf, hf);
-            let _ = cr.fill().ok();
+            let msg = scratchpad_first_parse_blocker(&entries_for_scratchpad_chart);
+            draw_scratchpad_chart_placeholder(cr, w, h, &msg);
         }
     });
-    attach_scratchpad_chart_drag(&scratchpad_chart, &entries);
+    attach_scratchpad_chart_interactions(&scratchpad_chart, &entries, &scratchpad_selection);
     page.append(&scratchpad_chart);
 
     let rows_column = gtk4::Box::new(gtk4::Orientation::Vertical, 6);
@@ -1694,12 +1906,14 @@ fn append_manual_fan_curve_scratchpad(page: &gtk4::Box, curve: &FanCurveCapabili
         None,
         &entries,
         Some(&scratchpad_chart),
+        Some(&scratchpad_selection),
     );
 
     let pairs_for_reload = pairs_for_ui.clone();
     let rows_for_reload = rows_column.clone();
     let entries_for_reload = entries.clone();
     let chart_for_live = scratchpad_chart.clone();
+    let sel_for_live = scratchpad_selection.clone();
     let status_for_live = status.clone();
     load_live.connect_clicked(move |_| {
         match LegionControlClient::system().and_then(|client| client.live_fan_curve_readings()) {
@@ -1710,6 +1924,7 @@ fn append_manual_fan_curve_scratchpad(page: &gtk4::Box, curve: &FanCurveCapabili
                     Some(&snapshot),
                     &entries_for_reload,
                     Some(&chart_for_live),
+                    Some(&sel_for_live),
                 );
                 status_for_live.set_text("Loaded values from live sysfs readings.");
             }
@@ -1723,6 +1938,7 @@ fn append_manual_fan_curve_scratchpad(page: &gtk4::Box, curve: &FanCurveCapabili
     let rows_for_saved = rows_column.clone();
     let entries_for_saved = entries.clone();
     let chart_for_saved = scratchpad_chart.clone();
+    let sel_for_saved = scratchpad_selection.clone();
     let status_for_saved = status.clone();
     load_saved.connect_clicked(move |_| {
         match LegionControlClient::system().and_then(|client| client.last_known_good_fan_curve()) {
@@ -1733,6 +1949,7 @@ fn append_manual_fan_curve_scratchpad(page: &gtk4::Box, curve: &FanCurveCapabili
                     Some(&snapshot),
                     &entries_for_saved,
                     Some(&chart_for_saved),
+                    Some(&sel_for_saved),
                 );
                 status_for_saved.set_text("Loaded values from saved last-known-good snapshot.");
             }
@@ -1749,6 +1966,7 @@ fn append_manual_fan_curve_scratchpad(page: &gtk4::Box, curve: &FanCurveCapabili
     let rows_for_clear = rows_column.clone();
     let entries_for_clear = entries.clone();
     let chart_for_clear = scratchpad_chart.clone();
+    let sel_for_clear = scratchpad_selection.clone();
     let status_for_clear = status.clone();
     clear_btn.connect_clicked(move |_| {
         repopulate_manual_fan_scratchpad_rows(
@@ -1757,6 +1975,7 @@ fn append_manual_fan_curve_scratchpad(page: &gtk4::Box, curve: &FanCurveCapabili
             None,
             &entries_for_clear,
             Some(&chart_for_clear),
+            Some(&sel_for_clear),
         );
         status_for_clear.set_text("Cleared scratchpad entries.");
     });

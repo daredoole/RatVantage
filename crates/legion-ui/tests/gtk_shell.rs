@@ -307,8 +307,9 @@ fn dashboard_pages_render_quick_apply_and_gpu_controls() {
         .iter()
         .any(|text| text == "Manual curve scratchpad"));
     assert!(fans_text.iter().any(|text| {
-        text.contains("Drag a point on the chart")
-            && text.contains("scratchpad only")
+        text.contains("Click or drag")
+            && text.contains("arrow keys")
+            && text.contains("Shift")
             && text.contains("PWM 0–255 vertically")
     }));
     assert!(fans_text.iter().any(|text| text == "Load from live"));
