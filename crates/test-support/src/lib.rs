@@ -1,6 +1,7 @@
 use std::io::{BufRead, BufReader};
 use std::path::PathBuf;
 use std::process::{Child, Command, Stdio};
+use std::time::{SystemTime, UNIX_EPOCH};
 
 use serde::de::DeserializeOwned;
 use zbus::blocking::Proxy;
@@ -41,6 +42,27 @@ pub fn fixture_root() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .join("../..")
         .join("tests/fixtures/sysfs-82wm-confirmed")
+}
+
+pub fn copied_fixture_root(label: &str) -> PathBuf {
+    let suffix = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .expect("system time must be after unix epoch")
+        .as_nanos();
+    let destination = PathBuf::from("/tmp").join(format!(
+        "ratvantage-{label}-{}-{suffix}",
+        std::process::id()
+    ));
+    let status = Command::new("cp")
+        .args([
+            "-a",
+            fixture_root().to_str().unwrap(),
+            destination.to_str().unwrap(),
+        ])
+        .status()
+        .expect("cp must be available for fixture-copy tests");
+    assert!(status.success(), "cp -a fixture copy must succeed");
+    destination
 }
 
 pub fn call_json<T>(proxy: &Proxy<'_>, method: &str) -> T

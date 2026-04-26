@@ -13,4 +13,13 @@
       <allow_active>yes</allow_active>
     </defaults>
   </action>
+  <action id="org.ratvantage.LegionControl1.set-platform-profile">
+    <description>Set Legion platform profile</description>
+    <message>Authentication is required to change the Legion platform profile.</message>
+    <defaults>
+      <allow_any>no</allow_any>
+      <allow_inactive>no</allow_inactive>
+      <allow_active>auth_admin_keep</allow_active>
+    </defaults>
+  </action>
 </policyconfig>

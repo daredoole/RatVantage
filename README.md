@@ -32,7 +32,8 @@ Pre-alpha implementation scaffold exists:
 - Disabled write-method contract drafts for platform profile, battery charge type, GPU mode, fan presets, and fan restore/default.
 - Pure validators for platform profile, battery charge type, EnvyControl GPU mode, and packaged fan preset choices.
 - Validator-backed dry-run planning for platform profile, battery charge type, GPU mode, fan presets, and fan restore/default.
-- Read-only D-Bus dry-run planning for platform profile, battery charge type, GPU mode, fan presets, and fan restore/default.
+- Gated platform-profile write execution scaffolding with rollback-on-readback-mismatch coverage; the daemon still blocks execution by default until a real polkit authorizer is wired.
+- Read-only D-Bus dry-run planning for battery charge type, GPU mode, fan presets, and fan restore/default.
 - GPU dry-run plans include reboot-required metadata and rollback guidance; execution remains disabled.
 - App-state-only GPU pending-reboot tracking in `/var/lib/legion-control/state.toml`; no hardware writes are performed.
 - App-state-only last-known-good fan curve capture in the same TOML state file; no fan writes are performed.
@@ -93,6 +94,7 @@ cargo run -p legion-control-ui -- --status --bus-address <dbus-address>
 cargo run -p legion-control-ui -- --overview --bus-address <dbus-address>
 cargo run -p legion-control-ui -- --diagnostics --bus-address <dbus-address>
 cargo run -p legion-control-ui -- --plan-platform-profile performance --bus-address <dbus-address>
+cargo run -p legion-control-ui -- --set-platform-profile performance --bus-address <dbus-address>
 cargo run -p legion-control-ui -- --plan-battery-charge-type Conservation --bus-address <dbus-address>
 cargo run -p legion-control-ui -- --plan-gpu-mode hybrid --bus-address <dbus-address>
 cargo run -p legion-control-ui -- --plan-fan-preset balanced-daily --bus-address <dbus-address>
@@ -145,9 +147,9 @@ Completed scaffold:
 - Packaged fan preset TOML assets with runtime dry-run validation.
 - Disabled write-method contract drafts.
 - Pure platform profile, battery charge type, and EnvyControl GPU mode validators.
-- Pure dry-run planning for future platform profile, battery charge type, GPU mode, and fan preset writes.
-- Read-only daemon planning methods over D-Bus; no write methods are exposed.
-- UI CLI previews for platform profile, battery charge type, GPU mode, and fan preset dry-run plans.
+- Pure dry-run planning for battery charge type, GPU mode, and fan preset writes, plus a validated platform-profile execution path with rollback tests.
+- Daemon planning methods over D-Bus plus gated `SetPlatformProfile` execution; other write methods are still absent.
+- UI CLI previews for platform profile, battery charge type, GPU mode, and fan preset dry-run plans, plus `--set-platform-profile` execution output.
 - Read-only diagnostics JSON bundle with hardware summary, compact counts, kernel version, detected sysfs paths, recent daemon log excerpts, and raw probe report.
 - Diagnostics/export parity for durable app state, so CLI `--diagnostics` output and GTK Diagnostics Copy JSON both include `gpu_mode_pending` and `last_known_good_fan_curve`.
 - Read-only overview output includes durable GPU pending-reboot and saved fan curve state, plus LED brightness and firmware toggle values when exposed.

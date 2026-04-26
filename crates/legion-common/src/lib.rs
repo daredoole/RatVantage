@@ -484,6 +484,74 @@ pub enum WritePlanStep {
     RequireReboot,
 }
 
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum WriteExecutionStatus {
+    BlockedByPolicy,
+    BlockedByAuthorization,
+    Failed,
+    Applied,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct WriteExecutionResult {
+    pub status: WriteExecutionStatus,
+    pub applied: bool,
+    pub message: String,
+    pub readback_value: Option<String>,
+    pub plan: WriteDryRunPlan,
+}
+
+impl WriteExecutionResult {
+    pub fn blocked_by_policy(plan: WriteDryRunPlan, message: impl Into<String>) -> Self {
+        Self {
+            status: WriteExecutionStatus::BlockedByPolicy,
+            applied: false,
+            message: message.into(),
+            readback_value: None,
+            plan,
+        }
+    }
+
+    pub fn blocked_by_authorization(plan: WriteDryRunPlan, message: impl Into<String>) -> Self {
+        Self {
+            status: WriteExecutionStatus::BlockedByAuthorization,
+            applied: false,
+            message: message.into(),
+            readback_value: None,
+            plan,
+        }
+    }
+
+    pub fn failed(
+        plan: WriteDryRunPlan,
+        message: impl Into<String>,
+        readback_value: Option<String>,
+    ) -> Self {
+        Self {
+            status: WriteExecutionStatus::Failed,
+            applied: false,
+            message: message.into(),
+            readback_value,
+            plan,
+        }
+    }
+
+    pub fn applied(
+        plan: WriteDryRunPlan,
+        message: impl Into<String>,
+        readback_value: Option<String>,
+    ) -> Self {
+        Self {
+            status: WriteExecutionStatus::Applied,
+            applied: true,
+            message: message.into(),
+            readback_value,
+            plan,
+        }
+    }
+}
+
 pub fn plan_platform_profile_write(
     capability: Option<&PlatformProfileCapability>,
     requested: &str,

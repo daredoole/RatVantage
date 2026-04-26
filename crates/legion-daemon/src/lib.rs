@@ -1,7 +1,7 @@
 use std::{
     fs,
     path::{Path, PathBuf},
-    sync::Mutex,
+    sync::{Arc, Mutex},
 };
 
 use anyhow::Result;
@@ -11,7 +11,7 @@ use legion_common::{
     plan_platform_profile_write as plan_platform_profile,
     plan_restore_auto_fan_write as plan_restore_auto_fan, validate_gpu_mode_choice,
     CapabilityRegistry, DaemonState, FanCurveSnapshot, FanPreset, GpuModePending, ValidationError,
-    WriteDryRunPlan,
+    WriteDryRunPlan, WriteExecutionResult,
 };
 use legion_probe::{probe, ProbeOptions};
 use serde::Serialize;
@@ -20,6 +20,7 @@ use zbus::{blocking::Connection, blocking::ConnectionBuilder, fdo, interface};
 pub const DBUS_INTERFACE: &str = "org.ratvantage.LegionControl1";
 pub const DBUS_PATH: &str = "/org/ratvantage/LegionControl1";
 pub const READ_ONLY_METHODS: &str = "GetHardwareSummary,GetCapabilities,RefreshCapabilities,GetTelemetry,GetRawProbeReport,GetGpuModePending,GetLastKnownGoodFanCurve,PlanPlatformProfileWrite,PlanBatteryChargeTypeWrite,PlanGpuModeWrite,PlanFanPresetWrite,PlanRestoreAutoFanWrite,SetGpuModePending,ClearGpuModePending,CaptureLastKnownGoodFanCurve";
+pub const GATED_WRITE_METHODS: &str = "SetPlatformProfile";
 pub const DEFAULT_STATE_PATH: &str = "/var/lib/legion-control/state.toml";
 
 const PACKAGED_FAN_PRESETS: &[&str] = &[
@@ -29,11 +30,67 @@ const PACKAGED_FAN_PRESETS: &[&str] = &[
     include_str!("../../../data/presets/max-safe.toml"),
 ];
 
+const PLATFORM_PROFILE_WRITE_METHOD: &str = "SetPlatformProfile";
+const PLATFORM_PROFILE_AUTH_UNAVAILABLE: &str =
+    "platform profile writes require a future polkit authorizer; execution stays blocked";
+
+#[derive(Debug, Clone, Default)]
+pub struct WriteAccessPolicy {
+    pub platform_profile_enabled: bool,
+}
+
+impl WriteAccessPolicy {
+    pub fn enabled_methods(&self) -> Vec<&'static str> {
+        let mut methods = Vec::new();
+        if self.platform_profile_enabled {
+            methods.push(PLATFORM_PROFILE_WRITE_METHOD);
+        }
+        methods
+    }
+}
+
+pub trait WriteAuthorizer: Send + Sync {
+    fn authorize(&self, action: &str) -> std::result::Result<(), String>;
+}
+
+#[derive(Debug, Default)]
+pub struct PolkitAuthorizerUnavailable;
+
+impl WriteAuthorizer for PolkitAuthorizerUnavailable {
+    fn authorize(&self, _action: &str) -> std::result::Result<(), String> {
+        Err(PLATFORM_PROFILE_AUTH_UNAVAILABLE.to_owned())
+    }
+}
+
+pub trait PlatformProfileWriter: Send + Sync {
+    fn write_platform_profile(
+        &self,
+        path: &str,
+        requested: &str,
+    ) -> std::result::Result<(), String>;
+}
+
+#[derive(Debug, Default)]
+pub struct SysfsPlatformProfileWriter;
+
+impl PlatformProfileWriter for SysfsPlatformProfileWriter {
+    fn write_platform_profile(
+        &self,
+        path: &str,
+        requested: &str,
+    ) -> std::result::Result<(), String> {
+        fs::write(path, requested).map_err(|error| error.to_string())
+    }
+}
+
 pub struct LegionControl {
     options: ProbeOptions,
     registry: Mutex<CapabilityRegistry>,
     state_path: PathBuf,
     state: Mutex<DaemonState>,
+    write_policy: WriteAccessPolicy,
+    authorizer: Arc<dyn WriteAuthorizer>,
+    platform_profile_writer: Arc<dyn PlatformProfileWriter>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -49,6 +106,22 @@ impl LegionControl {
     }
 
     pub fn new_with_state_path(options: ProbeOptions, state_path: impl Into<PathBuf>) -> Self {
+        Self::new_with_runtime(
+            options,
+            state_path,
+            WriteAccessPolicy::default(),
+            Arc::new(PolkitAuthorizerUnavailable),
+            Arc::new(SysfsPlatformProfileWriter),
+        )
+    }
+
+    pub fn new_with_runtime(
+        options: ProbeOptions,
+        state_path: impl Into<PathBuf>,
+        write_policy: WriteAccessPolicy,
+        authorizer: Arc<dyn WriteAuthorizer>,
+        platform_profile_writer: Arc<dyn PlatformProfileWriter>,
+    ) -> Self {
         let state_path = state_path.into();
         let registry = probe(&options);
         let state = load_state(&state_path).unwrap_or_default();
@@ -58,6 +131,9 @@ impl LegionControl {
             registry: Mutex::new(registry),
             state_path,
             state: Mutex::new(state),
+            write_policy,
+            authorizer,
+            platform_profile_writer,
         }
     }
 
@@ -101,6 +177,66 @@ impl LegionControl {
     pub fn plan_restore_auto_fan_write(&self) -> Result<WriteDryRunPlan, PlanningError> {
         let registry = self.planning_snapshot()?;
         plan_restore_auto_fan(&registry.fan_curves).map_err(PlanningError::Validation)
+    }
+
+    pub fn set_platform_profile(&self, requested: &str) -> fdo::Result<WriteExecutionResult> {
+        let plan = self
+            .plan_platform_profile_write(requested)
+            .map_err(planning_to_fdo)?;
+        if !self.write_policy.platform_profile_enabled {
+            return Ok(WriteExecutionResult::blocked_by_policy(
+                plan,
+                "platform profile writes are disabled by daemon policy",
+            ));
+        }
+        if let Err(reason) = self.authorizer.authorize(&plan.polkit_action) {
+            return Ok(WriteExecutionResult::blocked_by_authorization(plan, reason));
+        }
+
+        let path = plan.path.clone();
+        let previous_value = plan.previous_value.clone();
+        if let Err(error) = self
+            .platform_profile_writer
+            .write_platform_profile(&path, requested)
+        {
+            return Ok(WriteExecutionResult::failed(
+                plan,
+                format!("failed to write platform profile: {error}"),
+                None,
+            ));
+        }
+
+        let readback = self.refresh_platform_profile()?;
+        if readback == requested {
+            return Ok(WriteExecutionResult::applied(
+                plan,
+                "platform profile write applied and read back successfully",
+                Some(readback),
+            ));
+        }
+
+        match self
+            .platform_profile_writer
+            .write_platform_profile(&path, &previous_value)
+        {
+            Ok(()) => {
+                let rollback_readback = self.refresh_platform_profile()?;
+                Ok(WriteExecutionResult::failed(
+                    plan,
+                    format!(
+                        "platform profile read-back mismatch after write; restored previous value `{previous_value}`"
+                    ),
+                    Some(rollback_readback),
+                ))
+            }
+            Err(rollback_error) => Ok(WriteExecutionResult::failed(
+                plan,
+                format!(
+                    "platform profile read-back mismatch after write and rollback failed: expected `{requested}` got `{readback}`; rollback error: {rollback_error}"
+                ),
+                Some(readback),
+            )),
+        }
     }
 
     pub fn gpu_mode_pending(&self) -> fdo::Result<Option<GpuModePending>> {
@@ -177,6 +313,18 @@ impl LegionControl {
             .map(|registry| registry.clone())
             .map_err(|_| PlanningError::RegistryUnavailable)
     }
+
+    fn refresh_platform_profile(&self) -> fdo::Result<String> {
+        let refreshed = self.refresh()?;
+        refreshed
+            .platform_profile
+            .and_then(|profile| profile.current)
+            .ok_or_else(|| {
+                fdo::Error::Failed(
+                    "platform_profile current value missing after write/read-back".to_owned(),
+                )
+            })
+    }
 }
 
 #[allow(non_snake_case)]
@@ -228,6 +376,10 @@ impl LegionControl {
 
     fn PlanRestoreAutoFanWrite(&self) -> fdo::Result<String> {
         to_plan_json(self.plan_restore_auto_fan_write())
+    }
+
+    fn SetPlatformProfile(&self, requested: &str) -> fdo::Result<String> {
+        to_json(&self.set_platform_profile(requested)?)
     }
 
     fn SetGpuModePending(&self, requested: &str) -> fdo::Result<String> {

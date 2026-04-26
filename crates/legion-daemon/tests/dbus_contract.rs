@@ -1,12 +1,17 @@
-use std::fs;
+use std::{fs, sync::Arc};
 
 use legion_common::{
     Capability, CapabilityRegistry, GpuModePending, HardwareSummary, TelemetrySnapshot,
-    WriteDryRunPlan,
+    WriteDryRunPlan, WriteExecutionResult, WriteExecutionStatus,
 };
-use legion_control_daemon::{LegionControl, DBUS_INTERFACE, DBUS_PATH};
+use legion_control_daemon::{
+    LegionControl, PlatformProfileWriter, WriteAccessPolicy, WriteAuthorizer, DBUS_INTERFACE,
+    DBUS_PATH,
+};
 use legion_probe::ProbeOptions;
-use ratvantage_test_support::{call_json, fixture_root, introspected_methods, PrivateBus};
+use ratvantage_test_support::{
+    call_json, copied_fixture_root, fixture_root, introspected_methods, PrivateBus,
+};
 use zbus::blocking::{ConnectionBuilder, Proxy};
 
 #[test]
@@ -83,10 +88,17 @@ fn read_only_methods_return_expected_json_contracts() {
     assert_eq!(battery_plan.method, "SetBatteryChargeType");
     assert_eq!(battery_plan.requested_value, "Conservation");
     assert_eq!(battery_plan.previous_value, "Standard");
+
+    let payload: String = proxy.call("SetPlatformProfile", &("performance",)).unwrap();
+    let execution: WriteExecutionResult = serde_json::from_str(&payload).unwrap();
+    assert_eq!(execution.status, WriteExecutionStatus::BlockedByPolicy);
+    assert!(!execution.applied);
+    assert_eq!(execution.plan.method, "SetPlatformProfile");
+    assert_eq!(execution.plan.requested_value, "performance");
 }
 
 #[test]
-fn introspection_exposes_only_read_only_legion_methods() {
+fn introspection_exposes_gated_platform_profile_write_only() {
     let (_bus, _service_connection, proxy) = test_proxy();
     let xml = proxy.introspect().unwrap();
     let mut methods = introspected_methods(&xml, DBUS_INTERFACE);
@@ -109,21 +121,18 @@ fn introspection_exposes_only_read_only_legion_methods() {
             "PlanPlatformProfileWrite",
             "PlanRestoreAutoFanWrite",
             "RefreshCapabilities",
-            "SetGpuModePending"
+            "SetGpuModePending",
+            "SetPlatformProfile",
         ]
     );
     assert!(!methods.iter().any(|method| matches!(
         method.as_str(),
-        "SetPlatformProfile"
-            | "SetBatteryChargeType"
-            | "SetGpuMode"
-            | "ApplyFanPreset"
-            | "RestoreAutoFan"
+        "SetBatteryChargeType" | "SetGpuMode" | "ApplyFanPreset" | "RestoreAutoFan"
     )));
 }
 
 #[test]
-fn daemon_builds_dry_run_plans_without_dbus_write_methods() {
+fn daemon_builds_dry_run_plans_without_other_dbus_write_methods() {
     let service = LegionControl::new(ProbeOptions {
         sysfs_root: fixture_root(),
     });
@@ -155,6 +164,130 @@ fn daemon_builds_dry_run_plans_without_dbus_write_methods() {
     assert_eq!(restore_plan.method, "RestoreAutoFan");
     assert_eq!(restore_plan.capability_id, "fan_curves");
     assert_eq!(restore_plan.requested_value, "auto/default fan control");
+}
+
+#[test]
+fn platform_profile_write_applies_when_policy_and_authorizer_allow_it() {
+    let fixture = copied_fixture_root("platform-profile-write-success");
+    let state_path = unique_state_path("platform-profile-write-success");
+    let service = LegionControl::new_with_runtime(
+        ProbeOptions {
+            sysfs_root: fixture.clone(),
+        },
+        &state_path,
+        WriteAccessPolicy {
+            platform_profile_enabled: true,
+        },
+        Arc::new(AllowAllAuthorizer),
+        Arc::new(RealFixturePlatformProfileWriter),
+    );
+
+    let result = service.set_platform_profile("performance").unwrap();
+    assert_eq!(result.status, WriteExecutionStatus::Applied);
+    assert!(result.applied);
+    assert_eq!(result.readback_value.as_deref(), Some("performance"));
+    assert_eq!(
+        fs::read_to_string(fixture.join("sys/firmware/acpi/platform_profile"))
+            .unwrap()
+            .trim(),
+        "performance"
+    );
+
+    let _ = fs::remove_file(state_path);
+    let _ = fs::remove_dir_all(fixture);
+}
+
+#[test]
+fn platform_profile_write_rejects_invalid_choice_before_write() {
+    let fixture = copied_fixture_root("platform-profile-write-invalid");
+    let state_path = unique_state_path("platform-profile-write-invalid");
+    let service = LegionControl::new_with_runtime(
+        ProbeOptions {
+            sysfs_root: fixture.clone(),
+        },
+        &state_path,
+        WriteAccessPolicy {
+            platform_profile_enabled: true,
+        },
+        Arc::new(AllowAllAuthorizer),
+        Arc::new(RealFixturePlatformProfileWriter),
+    );
+
+    assert!(service.set_platform_profile("custom").is_err());
+    assert_eq!(
+        fs::read_to_string(fixture.join("sys/firmware/acpi/platform_profile"))
+            .unwrap()
+            .trim(),
+        "balanced"
+    );
+
+    let _ = fs::remove_file(state_path);
+    let _ = fs::remove_dir_all(fixture);
+}
+
+#[test]
+fn platform_profile_write_reports_write_failure_without_changing_value() {
+    let fixture = copied_fixture_root("platform-profile-write-failure");
+    let state_path = unique_state_path("platform-profile-write-failure");
+    let service = LegionControl::new_with_runtime(
+        ProbeOptions {
+            sysfs_root: fixture.clone(),
+        },
+        &state_path,
+        WriteAccessPolicy {
+            platform_profile_enabled: true,
+        },
+        Arc::new(AllowAllAuthorizer),
+        Arc::new(FailingPlatformProfileWriter),
+    );
+
+    let result = service.set_platform_profile("performance").unwrap();
+    assert_eq!(result.status, WriteExecutionStatus::Failed);
+    assert!(!result.applied);
+    assert!(result.message.contains("failed to write platform profile"));
+    assert_eq!(
+        fs::read_to_string(fixture.join("sys/firmware/acpi/platform_profile"))
+            .unwrap()
+            .trim(),
+        "balanced"
+    );
+
+    let _ = fs::remove_file(state_path);
+    let _ = fs::remove_dir_all(fixture);
+}
+
+#[test]
+fn platform_profile_write_rolls_back_after_readback_mismatch() {
+    let fixture = copied_fixture_root("platform-profile-write-rollback");
+    let state_path = unique_state_path("platform-profile-write-rollback");
+    let service = LegionControl::new_with_runtime(
+        ProbeOptions {
+            sysfs_root: fixture.clone(),
+        },
+        &state_path,
+        WriteAccessPolicy {
+            platform_profile_enabled: true,
+        },
+        Arc::new(AllowAllAuthorizer),
+        Arc::new(MismatchingPlatformProfileWriter),
+    );
+
+    let result = service.set_platform_profile("performance").unwrap();
+    assert_eq!(result.status, WriteExecutionStatus::Failed);
+    assert!(!result.applied);
+    assert!(result
+        .message
+        .contains("restored previous value `balanced`"));
+    assert_eq!(result.readback_value.as_deref(), Some("balanced"));
+    assert_eq!(
+        fs::read_to_string(fixture.join("sys/firmware/acpi/platform_profile"))
+            .unwrap()
+            .trim(),
+        "balanced"
+    );
+
+    let _ = fs::remove_file(state_path);
+    let _ = fs::remove_dir_all(fixture);
 }
 
 #[test]
@@ -251,10 +384,15 @@ reboot_required = true
 }
 
 fn test_proxy() -> (PrivateBus, zbus::blocking::Connection, Proxy<'static>) {
-    let bus = PrivateBus::start();
-    let service = LegionControl::new(ProbeOptions {
+    test_proxy_with_service(LegionControl::new(ProbeOptions {
         sysfs_root: fixture_root(),
-    });
+    }))
+}
+
+fn test_proxy_with_service(
+    service: LegionControl,
+) -> (PrivateBus, zbus::blocking::Connection, Proxy<'static>) {
+    let bus = PrivateBus::start();
     let service_connection = ConnectionBuilder::address(bus.address())
         .unwrap()
         .name(DBUS_INTERFACE)
@@ -286,4 +424,53 @@ fn unique_state_path(label: &str) -> std::path::PathBuf {
         std::process::id(),
         std::thread::current().name().unwrap_or("test")
     ))
+}
+
+struct AllowAllAuthorizer;
+
+impl WriteAuthorizer for AllowAllAuthorizer {
+    fn authorize(&self, _action: &str) -> std::result::Result<(), String> {
+        Ok(())
+    }
+}
+
+struct RealFixturePlatformProfileWriter;
+
+impl PlatformProfileWriter for RealFixturePlatformProfileWriter {
+    fn write_platform_profile(
+        &self,
+        path: &str,
+        requested: &str,
+    ) -> std::result::Result<(), String> {
+        fs::write(path, requested).map_err(|error| error.to_string())
+    }
+}
+
+struct FailingPlatformProfileWriter;
+
+impl PlatformProfileWriter for FailingPlatformProfileWriter {
+    fn write_platform_profile(
+        &self,
+        _path: &str,
+        _requested: &str,
+    ) -> std::result::Result<(), String> {
+        Err("injected write failure".to_owned())
+    }
+}
+
+struct MismatchingPlatformProfileWriter;
+
+impl PlatformProfileWriter for MismatchingPlatformProfileWriter {
+    fn write_platform_profile(
+        &self,
+        path: &str,
+        requested: &str,
+    ) -> std::result::Result<(), String> {
+        let value = if requested == "performance" {
+            "balanced"
+        } else {
+            requested
+        };
+        fs::write(path, value).map_err(|error| error.to_string())
+    }
 }

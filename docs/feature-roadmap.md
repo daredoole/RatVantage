@@ -5,7 +5,7 @@
 Current pre-alpha code provides the safe read-only base:
 
 - Runtime probe for hardware summary, capabilities, telemetry, and raw probe report.
-- Root-capable daemon shape with read-only D-Bus API only.
+- Root-capable daemon shape with read-only D-Bus APIs plus one gated `SetPlatformProfile` execution path.
 - UI status client and optional GTK4/libadwaita shell with read-only Status, Profiles, Battery, Fans, Appearance, and Diagnostics tabs.
 - Read-only tray/status helper with a state-driven menu derived from detected profile choices, battery charge choices, packaged preset labels, and pending runtime state.
 - Read-only StatusNotifier tray backend with dashboard, refresh, quit, and `--menu-check` diagnostics for the runtime-derived menu.
@@ -23,7 +23,8 @@ Current pre-alpha code provides the safe read-only base:
 - Disabled draft write-method contracts for platform profile, battery charge type, GPU mode, and fan presets.
 - Pure validators for platform profile, battery charge type, EnvyControl GPU mode, and packaged fan preset choices.
 - Validator-backed dry-run planning for platform profile, battery charge type, GPU mode, and fan presets.
-- Daemon-side Rust adapters for dry-run planning, without D-Bus write methods.
+- Gated platform-profile write execution path with rollback-on-readback-mismatch tests and a matching UI CLI entry point. [implemented, still blocked by default until real polkit authorization exists]
+- Daemon-side Rust adapters for dry-run planning, plus gated `SetPlatformProfile` execution while other D-Bus write methods remain absent.
 - Runtime-captured 82WM fixture coverage, including bracketed battery `charge_types` current-value parsing.
 - Current 82WM read-only validation evidence for DMI, platform profiles, charge choices, sensors, LEDs, firmware toggles, and EnvyControl.
 - Read-only battery telemetry for capacity, status, and health where `BAT0` exposes it.
@@ -34,7 +35,7 @@ Current pre-alpha code provides the safe read-only base:
 - Read-only UI `--diagnostics` JSON bundle with hardware summary, compact counts, kernel version, detected sysfs paths, recent daemon log excerpts, and raw probe report.
 - Diagnostics/export parity for durable app state, so CLI `--diagnostics` output and GTK Diagnostics Copy JSON include `gpu_mode_pending` and `last_known_good_fan_curve`.
 - Diagnostics include `platform_profile_choices` and `charge_types` source paths.
-- Read-only UI dry-run plan previews for platform profile, battery charge type, GPU mode, fan preset, and fan restore/default writes, including GPU rollback guidance.
+- UI dry-run plan previews for platform profile, battery charge type, GPU mode, fan preset, and fan restore/default writes, plus gated `--set-platform-profile` execution output.
 - UI status output includes per-capability status and risk labels.
 - Read-only GTK Profiles, Battery, and Fans tabs show platform profile choices, battery charge choices, fan telemetry, fan curve paths, packaged preset IDs, sysfs source paths, and battery telemetry from the diagnostics bundle.
 - Read-only GTK Appearance tab shows LED brightness nodes and firmware toggle values from the diagnostics bundle.
@@ -79,6 +80,7 @@ Goal: safe, useful daily controls using only confirmed interfaces and conservati
 
 - Show exact values from `/sys/firmware/acpi/platform_profile_choices`. [implemented as read-only GTK page]
 - Surface detected profile choices in the tray menu without enabling writes. [implemented]
+- Allow gated platform-profile execution with read-back and rollback. [implemented in daemon/UI CLI, blocked by default pending live polkit]
 - Allow setting only listed profiles.
 - Do not expose `custom` or `max-power` unless listed.
 - Re-read fan curve and telemetry after profile changes.

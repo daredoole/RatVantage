@@ -543,6 +543,13 @@ impl LegionControlClient {
         self.call_json_arg("PlanPlatformProfileWrite", requested)
     }
 
+    pub fn set_platform_profile(
+        &self,
+        requested: &str,
+    ) -> Result<legion_common::WriteExecutionResult> {
+        self.call_json_arg("SetPlatformProfile", requested)
+    }
+
     pub fn plan_battery_charge_type_write(&self, requested: &str) -> Result<WriteDryRunPlan> {
         self.call_json_arg("PlanBatteryChargeTypeWrite", requested)
     }

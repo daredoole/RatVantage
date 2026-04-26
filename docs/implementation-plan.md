@@ -6,7 +6,7 @@ The repository now has a working pre-alpha scaffold:
 
 - Rust workspace with `legion-common`, `legion-probe`, `legion-daemon`, `legion-ui`, and `ratvantage-test-support`.
 - Read-only probe that builds hardware summary, capability, telemetry, and raw report JSON.
-- Daemon exposing read-only hardware/capability/telemetry/raw-report methods, dry-run planning methods for platform profile, battery charge type, GPU mode, fan presets, and fan restore/default, plus app-state-only GPU pending-reboot tracking and fan curve snapshots.
+- Daemon exposing read-only hardware/capability/telemetry/raw-report methods, dry-run planning methods for battery charge type, GPU mode, fan presets, and fan restore/default, a gated platform-profile execution path with rollback coverage, plus app-state-only GPU pending-reboot tracking and fan curve snapshots.
 - Private D-Bus contract tests that verify method introspection and JSON contracts.
 - UI status, overview, diagnostics, app-state, tray, and dry-run planning clients with deterministic output, including reboot-required GPU mode planning with rollback guidance, pending-reboot display, fan curve snapshot capture, overview/tray/GTK state visibility, diagnostics/export parity for durable app-state fields `gpu_mode_pending` and `last_known_good_fan_curve`, fan preset and fan restore/default validation, and read-only appearance/peripheral values, plus optional GTK4/libadwaita shell with read-only Status, Profiles, Battery, Fans, Appearance, and Diagnostics tabs behind `gtk-ui`.
 - Packaged read-only fan preset TOML assets with CI schema validation and runtime dry-run planning.
@@ -15,7 +15,7 @@ The repository now has a working pre-alpha scaffold:
 - Read-only tray desktop diagnostics via `legion-control-tray --desktop-check`, plus runtime-derived tray menu diagnostics via `legion-control-tray --menu-check`, with unit and CLI coverage.
 - Local CI script, Fedora dependency installer, GitHub Actions CI, and pinned stable Rust toolchain.
 
-Next implementation work should collect more captured fixtures through the compatibility bundle workflow when additional supported Legion machines are available, continue with read-only UI/tray polish if no new hardware reports are available, and leave autostart disabled until GNOME-with-extension smoke exists. Hardware writes remain design-only until validators, polkit policy, rollback, write-specific manual validation, and recovery instructions are complete.
+Next implementation work should collect more captured fixtures through the compatibility bundle workflow when additional supported Legion machines are available, continue with read-only UI/tray polish if no new hardware reports are available, and leave autostart disabled until GNOME-with-extension smoke exists. Platform-profile execution now exists behind daemon policy and an authorization placeholder, but broader hardware writes still remain gated until live polkit, write-specific manual validation, and recovery instructions are complete.
 
 ## Repo structure
 
@@ -398,7 +398,7 @@ Future candidate methods:
 
 GetPlatformProfiles() -> as
 GetPlatformProfile() -> s
-SetPlatformProfile(s profile) -> ()
+SetPlatformProfile(s profile) -> s
 
 GetBatteryChargeTypes() -> as
 GetBatteryChargeType() -> s

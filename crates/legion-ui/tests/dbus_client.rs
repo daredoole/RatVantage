@@ -1,13 +1,16 @@
-use std::process::Command;
+use std::{fs, process::Command, sync::Arc};
 
 use legion_common::{Capability, CapabilityStatus, HardwareSummary, RiskLevel};
-use legion_control_daemon::{LegionControl, DBUS_INTERFACE, DBUS_PATH};
+use legion_control_daemon::{
+    LegionControl, PlatformProfileWriter, WriteAccessPolicy, WriteAuthorizer, DBUS_INTERFACE,
+    DBUS_PATH,
+};
 use legion_control_ui::{
     render_diagnostics_json, render_overview_lines, DiagnosticsBundle, LegionControlClient,
     UiStatus,
 };
 use legion_probe::ProbeOptions;
-use ratvantage_test_support::{fixture_root, PrivateBus};
+use ratvantage_test_support::{copied_fixture_root, fixture_root, PrivateBus};
 use zbus::blocking::ConnectionBuilder;
 
 #[test]
@@ -445,6 +448,73 @@ fn plan_cli_prints_read_only_write_preview_json() {
 }
 
 #[test]
+fn set_platform_profile_cli_reports_policy_block_when_write_is_disabled() {
+    let (_bus, _service_connection, address) = fixture_service();
+    let output = Command::new(env!("CARGO_BIN_EXE_legion-control-ui"))
+        .args([
+            "--set-platform-profile",
+            "performance",
+            "--bus-address",
+            &address,
+        ])
+        .output()
+        .unwrap();
+
+    assert!(output.status.success());
+    assert!(output.stderr.is_empty());
+    let json: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(json["status"], "blocked_by_policy");
+    assert_eq!(json["applied"], false);
+    assert_eq!(json["plan"]["method"], "SetPlatformProfile");
+    assert_eq!(json["plan"]["requested_value"], "performance");
+}
+
+#[test]
+fn set_platform_profile_cli_executes_gated_write_and_prints_result() {
+    let fixture = copied_fixture_root("ui-platform-profile-write");
+    let state_path = unique_state_path("ui-platform-profile-write");
+    let (_bus, _service_connection, address) =
+        fixture_service_with_runtime(LegionControl::new_with_runtime(
+            ProbeOptions {
+                sysfs_root: fixture.clone(),
+            },
+            &state_path,
+            WriteAccessPolicy {
+                platform_profile_enabled: true,
+            },
+            Arc::new(AllowAllAuthorizer),
+            Arc::new(RealFixturePlatformProfileWriter),
+        ));
+    let output = Command::new(env!("CARGO_BIN_EXE_legion-control-ui"))
+        .args([
+            "--set-platform-profile",
+            "performance",
+            "--bus-address",
+            &address,
+        ])
+        .output()
+        .unwrap();
+
+    assert!(output.status.success());
+    assert!(output.stderr.is_empty());
+    let json: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(json["status"], "applied");
+    assert_eq!(json["applied"], true);
+    assert_eq!(json["readback_value"], "performance");
+    assert_eq!(json["plan"]["method"], "SetPlatformProfile");
+    assert_eq!(json["plan"]["requested_value"], "performance");
+    assert_eq!(
+        fs::read_to_string(fixture.join("sys/firmware/acpi/platform_profile"))
+            .unwrap()
+            .trim(),
+        "performance"
+    );
+
+    let _ = fs::remove_file(state_path);
+    let _ = fs::remove_dir_all(fixture);
+}
+
+#[test]
 fn fan_preset_plan_cli_prints_read_only_write_preview_json() {
     let (_bus, _service_connection, address) = runtime_fixture_service();
     let client = LegionControlClient::address(&address).unwrap();
@@ -636,10 +706,15 @@ fn capability(id: &str, label: &str, status: CapabilityStatus, risk: RiskLevel) 
 }
 
 fn fixture_service() -> (PrivateBus, zbus::blocking::Connection, String) {
-    let bus = PrivateBus::start();
-    let service = LegionControl::new(ProbeOptions {
+    fixture_service_with_runtime(LegionControl::new(ProbeOptions {
         sysfs_root: fixture_root(),
-    });
+    }))
+}
+
+fn fixture_service_with_runtime(
+    service: LegionControl,
+) -> (PrivateBus, zbus::blocking::Connection, String) {
+    let bus = PrivateBus::start();
     let service_connection = ConnectionBuilder::address(bus.address())
         .unwrap()
         .name(DBUS_INTERFACE)
@@ -729,4 +804,24 @@ fn unique_state_path(label: &str) -> std::path::PathBuf {
         std::process::id(),
         std::thread::current().name().unwrap_or("test")
     ))
+}
+
+struct AllowAllAuthorizer;
+
+impl WriteAuthorizer for AllowAllAuthorizer {
+    fn authorize(&self, _action: &str) -> std::result::Result<(), String> {
+        Ok(())
+    }
+}
+
+struct RealFixturePlatformProfileWriter;
+
+impl PlatformProfileWriter for RealFixturePlatformProfileWriter {
+    fn write_platform_profile(
+        &self,
+        path: &str,
+        requested: &str,
+    ) -> std::result::Result<(), String> {
+        fs::write(path, requested).map_err(|error| error.to_string())
+    }
 }

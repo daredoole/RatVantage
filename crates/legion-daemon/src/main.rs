@@ -1,8 +1,8 @@
 use anyhow::Result;
 use clap::Parser;
 use legion_control_daemon::{
-    session_connection, system_connection, LegionControl, DBUS_INTERFACE, DBUS_PATH,
-    DEFAULT_STATE_PATH, READ_ONLY_METHODS,
+    session_connection, system_connection, LegionControl, WriteAccessPolicy, DBUS_INTERFACE,
+    DBUS_PATH, DEFAULT_STATE_PATH, GATED_WRITE_METHODS, READ_ONLY_METHODS,
 };
 use legion_probe::{probe, ProbeOptions};
 
@@ -19,6 +19,9 @@ struct Args {
 
     #[arg(long, default_value = DEFAULT_STATE_PATH)]
     state_path: std::path::PathBuf,
+
+    #[arg(long)]
+    enable_platform_profile_write: bool,
 }
 
 fn main() -> Result<()> {
@@ -26,7 +29,15 @@ fn main() -> Result<()> {
     let options = ProbeOptions {
         sysfs_root: args.sysfs_root,
     };
-    let service = LegionControl::new_with_state_path(options.clone(), args.state_path);
+    let service = LegionControl::new_with_runtime(
+        options.clone(),
+        args.state_path,
+        WriteAccessPolicy {
+            platform_profile_enabled: args.enable_platform_profile_write,
+        },
+        std::sync::Arc::new(legion_control_daemon::PolkitAuthorizerUnavailable),
+        std::sync::Arc::new(legion_control_daemon::SysfsPlatformProfileWriter),
+    );
 
     if args.dry_run {
         let registry = probe(&options);
@@ -34,6 +45,15 @@ fn main() -> Result<()> {
         println!("interface={DBUS_INTERFACE}");
         println!("path={DBUS_PATH}");
         println!("read_only_methods={READ_ONLY_METHODS}");
+        println!("gated_write_methods={GATED_WRITE_METHODS}");
+        println!(
+            "enabled_write_methods={}",
+            if args.enable_platform_profile_write {
+                "SetPlatformProfile"
+            } else {
+                "none"
+            }
+        );
         println!("capability_count={}", registry.capabilities.len());
         return Ok(());
     }

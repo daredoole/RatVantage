@@ -134,7 +134,7 @@ Future candidate methods:
 ```text
 GetPlatformProfiles() -> as
 GetPlatformProfile() -> s
-SetPlatformProfile(s profile) -> ()
+SetPlatformProfile(s profile) -> s               # JSON execution result
 
 GetBatteryChargeTypes() -> as
 GetBatteryChargeType() -> s
