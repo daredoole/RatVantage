@@ -119,8 +119,16 @@ impl StatusNotifierTray {
                 self.last_error = None;
                 self.last_write_status = None;
                 self.state_stale = false;
+                let mut notification_errors = Vec::new();
                 for notification in state_notifications {
-                    let _ = (self.notification_sender)(&notification);
+                    if let Err(error) = (self.notification_sender)(&notification) {
+                        let message = format!("failed to send desktop notification: {error}");
+                        eprintln!("{message}");
+                        notification_errors.push(message);
+                    }
+                }
+                if !notification_errors.is_empty() {
+                    self.last_error = Some(notification_errors.join("; "));
                 }
             }
             Err(error) => {
@@ -994,6 +1002,41 @@ mod tests {
                 title: "Battery charge type changed".to_owned(),
                 body: "82WM Legion Pro 5 16ARX8 switched from Standard to Long Life.".to_owned(),
             }]
+        );
+    }
+
+    #[test]
+    fn refresh_status_records_notification_delivery_failure() {
+        let shutdown_requested = Arc::new(AtomicBool::new(false));
+        let state = Arc::new(std::sync::Mutex::new(tray_state_fixture(
+            "balanced", "Standard", true, false,
+        )));
+        let menu = state.lock().unwrap().menu.clone();
+        let snapshot = state.lock().unwrap().snapshot.clone();
+        let tray = StatusNotifierTray::new_with_runtime(
+            summary(),
+            menu,
+            None,
+            shutdown_requested,
+            Arc::new({
+                let state = Arc::clone(&state);
+                move |_| {
+                    let mut guard = state.lock().unwrap();
+                    *guard = tray_state_fixture("performance", "Standard", true, false);
+                    Ok(guard.clone())
+                }
+            }),
+            Arc::new(|_, _| anyhow::bail!("unexpected action")),
+            Arc::new(|_| anyhow::bail!("notifications unavailable")),
+        )
+        .with_snapshot(snapshot);
+        let mut tray = tray;
+
+        tray.refresh_status();
+
+        assert_eq!(
+            tray.last_error.as_deref(),
+            Some("failed to send desktop notification: notifications unavailable")
         );
     }
 
