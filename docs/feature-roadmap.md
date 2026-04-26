@@ -40,7 +40,8 @@ Current pre-alpha code provides the safe read-only base:
 - Diagnostics include `platform_profile_choices` and `charge_types` source paths.
 - UI dry-run plan previews for platform profile, battery charge type, LED state, ideapad toggle, GPU mode, fan preset, and fan restore/default writes, plus gated execution output for the currently enabled reversible methods.
 - UI status output includes per-capability status and risk labels.
-- Read-only GTK Profiles, Battery, and Fans tabs show platform profile choices, battery charge choices, fan telemetry, fan curve paths, packaged preset IDs, sysfs source paths, and battery telemetry from the diagnostics bundle.
+- Read-only GTK Profiles and Battery tabs show platform profile choices, battery charge choices, and battery telemetry from the diagnostics bundle.
+- The GTK Fans tab shows fan telemetry, curve paths, last-known-good snapshot status, packaged preset selection with daemon dry-run previews for fan preset and restore-to-auto plans, and capture for the durable last-known-good snapshot (execution remains disabled in the dashboard).
 - GTK runtime refresh loop now reprobes on focus/visibility, keeps the last good page during daemon outages, surfaces recovery/drift notices after reconnect, and serves as the shared post-write refresh path when the dashboard shell is active.
 - Read-only GTK Appearance tab shows LED brightness nodes and firmware toggle values from the diagnostics bundle.
 - Read-only GTK diagnostics tab for the same hardware/debug bundle, including Copy JSON.
@@ -53,7 +54,7 @@ Current pre-alpha code provides the safe read-only base:
 - Collect more captured fixtures through the compatibility bundle workflow when additional supported Legion machines are available.
 - If no new hardware reports are available, use the live write-validation harness to capture execute-mode evidence on supported Legion hardware one control at a time; tray/UI refresh behavior is now aligned on the shared reload path, KDE-specific smoke/reporting is in place, and GNOME validation remains blocked.
 - If the KDE Wayland/NVIDIA GTK blackout returns, retry the shell with the scroll-bounded startup path and automatic `GSK_RENDERER=gl` fallback before treating it as compositor-specific; if it still reproduces, use the private-session launcher with `--gdk-backend x11` while keeping tray/CLI validation moving.
-- Continue the GTK Fans page toward the v0.2 fan editor by surfacing packaged preset selection, `ApplyFanPreset`/`RestoreAutoFan` dry-run previews, and the saved last-known-good snapshot before adding a manual curve editor.
+- Continue the GTK Fans page toward the v0.2 fan editor with a manual curve editor after the planning surface is validated on fixtures and hardware; keep `ApplyFanPreset` / `RestoreAutoFan` execution gated until the live write-validation checklist is satisfied.
 - Use the GTK smoke/report workflow for deterministic screenshot evidence even while the live KDE Wayland/NVIDIA session remains compositor-sensitive.
 - Keep progress docs current after each completed roadmap slice.
 - Keep GitHub CI as remote guard; run `./scripts/ci-local.sh` before pushing to reduce failed CI minutes.

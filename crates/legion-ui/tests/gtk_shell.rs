@@ -229,6 +229,10 @@ fn dashboard_page_name_normalization_accepts_known_pages_only() {
     );
     assert_eq!(gtk_shell::normalize_dashboard_page_name(Some("gpu")), "gpu");
     assert_eq!(
+        gtk_shell::normalize_dashboard_page_name(Some("fans")),
+        "fans"
+    );
+    assert_eq!(
         gtk_shell::normalize_dashboard_page_name(Some("not-a-page")),
         "status"
     );
@@ -272,6 +276,18 @@ fn dashboard_pages_render_quick_apply_and_gpu_controls() {
     assert!(battery_text
         .iter()
         .any(|text| text == "No write attempted yet."));
+
+    let fans = gtk_shell::fans_page(Ok(sample_diagnostics()), Ok(Some(sample_fan_snapshot())))
+        .downcast::<gtk4::Box>()
+        .expect("fans page should be a vertical box");
+    let fans_text = collect_widget_text(&fans.clone().upcast());
+    assert!(fans_text.iter().any(|text| text == "Guided fan planning"));
+    assert!(fans_text.iter().any(|text| text == "Packaged preset"));
+    assert!(fans_text.iter().any(|text| text == "Preview plan"));
+    assert!(fans_text.iter().any(|text| text == "Preview restore plan"));
+    assert!(fans_text.iter().any(|text| text == "Capture snapshot"));
+    assert!(fans_text.iter().any(|text| text == "Preset plan preview"));
+    assert!(fans_text.iter().any(|text| text == "Restore plan preview"));
 
     let gpu_text = collect_widget_text(&gpu.clone().upcast());
     assert!(gpu_text.iter().any(|text| text == "GPU Mode"));
@@ -326,6 +342,7 @@ fn dashboard_pages_disable_quick_apply_when_capabilities_are_unavailable() {
     diagnostics.raw_probe_report.platform_profile = None;
     diagnostics.raw_probe_report.battery_charge_type = None;
     diagnostics.raw_probe_report.gpu = None;
+    diagnostics.raw_probe_report.fan_curves.clear();
     diagnostics.raw_probe_report.leds.clear();
     diagnostics.raw_probe_report.ideapad_toggles.clear();
 
@@ -365,6 +382,16 @@ fn dashboard_pages_disable_quick_apply_when_capabilities_are_unavailable() {
         .iter()
         .any(|text| text == "unavailable - envycontrol was not detected"));
     assert!(!gpu_text.iter().any(|text| text == "Preview plan"));
+
+    let fans = gtk_shell::fans_page(Ok(diagnostics.clone()), Ok(None))
+        .downcast::<gtk4::Box>()
+        .expect("fans page should be a vertical box");
+    let fans_text = collect_widget_text(&fans.clone().upcast());
+    assert!(fans_text.iter().any(|text| text == "Fan preset planning"));
+    assert!(fans_text
+        .iter()
+        .any(|text| { text.contains("no fan curve capability was detected") }));
+    assert!(!fans_text.iter().any(|text| text == "Preview restore plan"));
 
     let appearance = gtk_shell::appearance_page(Ok(diagnostics))
         .downcast::<gtk4::Box>()

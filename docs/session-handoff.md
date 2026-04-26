@@ -15,10 +15,12 @@
 
 - Completed slice: the GTK shell now has a dedicated GPU tab that shows the current EnvyControl mode, previews dry-run GPU switch plans with rollback guidance, and records or clears the pending-reboot app state without enabling direct GPU-mode execution.
 - Completed slice: the GPU tab is wired into `--gtk-page gpu`, headless GTK coverage, the screenshot-smoke workflow, and the progress docs so the implemented shell matches the documented page layout.
-- Validation for the slice passed with `cargo fmt --all`, `xvfb-run -a cargo test -p legion-control-ui --features gtk-ui -- --nocapture`, and `./scripts/ci-local.sh`.
+- Completed slice: the GTK Fans tab now exposes packaged preset selection with daemon-backed dry-run previews for `ApplyFanPreset` and `RestoreAutoFan`, plus a capture control for the durable last-known-good fan curve snapshot (still planning-only; fan preset execution remains disabled in the dashboard).
+- Completed slice: default GTK smoke capture includes the `gpu` page alongside `fans`; `scripts/run-local-session-app.sh` documents `--gtk-page gpu`.
+- Validation for the latest slices passed with `cargo fmt --all`, `xvfb-run -a cargo test -p legion-control-ui --features gtk-ui --test gtk_shell`, and `./scripts/ci-local.sh`.
 - Current user-visible GTK surface now includes `Status`, `Profiles`, `Battery`, `GPU`, `Fans`, `Appearance`, and `Diagnostics`.
 - Direct GPU-mode execution is still disabled in the dashboard; the GTK GPU tab is planning-only and app-state-only, matching the daemon safety policy.
-- Next recommended roadmap slice: move the GTK Fans page beyond read-only telemetry by surfacing packaged preset selection, dry-run preview for `ApplyFanPreset` and `RestoreAutoFan`, and the saved last-known-good fan-curve snapshot before attempting a full manual curve editor.
+- Next recommended roadmap slice: add a read-only or gated manual fan curve editor on the GTK Fans page only after the planning surface has soaked in fixture and live evidence; keep `ApplyFanPreset` / `RestoreAutoFan` execution disabled until the live write-validation checklist is satisfied.
 - If the KDE Wayland/NVIDIA black-window bug returns, treat it as a compositor/frontend issue and keep the private-session launcher plus `--gdk-backend x11` fallback available while continuing tray/CLI validation.
 
 ## Implemented
@@ -40,7 +42,7 @@
 - Platform profile and battery charge type models include both current-value paths and choice-list paths for diagnostics.
 - UI status output includes per-capability status and risk labels.
 - Optional GTK Profiles, Battery, and Appearance tabs render the diagnostics bundle data and expose gated quick-apply controls with inline write-result feedback where the write surface is currently allowed.
-- Optional GTK read-only Fans tab renders fan telemetry, fan curve paths, and packaged preset IDs without write controls.
+- Optional GTK Fans tab renders fan telemetry, fan curve paths, last-known-good snapshot status, packaged preset selection with dry-run plan previews for fan preset and restore-to-auto flows, and capture for the durable last-known-good curve (no `ApplyFanPreset` / `RestoreAutoFan` execution in the dashboard).
 - Optional GTK Appearance tab renders LED brightness and firmware toggle values and now exposes gated quick-apply controls for ylogo LED, restricted `fn_lock`, and dashboard-confirmed `camera_power` plus `usb_charging`.
 - Optional GTK diagnostics tab for the same read-only hardware/debug bundle, with compact counts and Copy JSON parity for durable app-state fields.
 - Packaged read-only fan preset TOML assets in `data/presets/`, validated by `scripts/validate-packaging.sh`, installed by the RPM spec, and validated at runtime for dry-run fan preset planning.
@@ -152,7 +154,7 @@ Do not turn GitHub CI off completely yet. Use local CI before pushing, then keep
 1. Run the live write-validation harness in execute mode on supported Legion hardware, one control at a time, before broadening the live write surface again.
 2. If the KDE Wayland/NVIDIA GTK black-window issue recurs, treat it as a frontend/compositor bug: keep tray/CLI validation available through the private-session launcher while isolating the renderer path separately.
 3. Keep tray autostart disabled until GNOME-with-extension smoke exists; KDE smoke is no longer the blocker.
-4. If no new hardware reports are available, continue with the GTK Fans page slice: surface packaged preset selection, dry-run preview for `ApplyFanPreset` and `RestoreAutoFan`, and the saved last-known-good fan-curve snapshot before attempting the full manual editor.
+4. If no new hardware reports are available, iterate on the GTK Fans manual curve editor only after the planning controls have fixture/live evidence; keep fan preset execution disabled until the live write-validation checklist is satisfied.
 5. Keep progress docs current after each completed roadmap slice.
 6. Keep all higher-risk hardware mutation disabled until the safety checklist below is satisfied.
 

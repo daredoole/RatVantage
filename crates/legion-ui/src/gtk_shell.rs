@@ -5,9 +5,9 @@ use crate::{
 use adw::prelude::*;
 use anyhow::{anyhow, Result};
 use legion_common::{
-    BatteryChargeTypeCapability, FanCurveSnapshot, GpuCapability, GpuModePending,
-    IdeapadToggleCapability, LedCapability, PlatformProfileCapability, WriteDryRunPlan,
-    WriteExecutionResult, WriteExecutionStatus,
+    BatteryChargeTypeCapability, FanCurveCapability, FanCurveSnapshot, GpuCapability,
+    GpuModePending, IdeapadToggleCapability, LedCapability, PlatformProfileCapability,
+    WriteDryRunPlan, WriteExecutionResult, WriteExecutionStatus,
 };
 use std::thread_local;
 use std::{
@@ -21,6 +21,7 @@ const AUTO_REFRESH_INTERVAL: Duration = Duration::from_secs(30);
 const RESUME_REFRESH_GAP: Duration = Duration::from_secs(90);
 const DEFAULT_DASHBOARD_PAGE: &str = "status";
 const GPU_MODE_CHOICES: &[&str] = &["integrated", "hybrid", "nvidia"];
+const FAN_PRESET_IDS: &[&str] = &["quiet-office", "balanced-daily", "gaming", "max-safe"];
 
 type SnapshotLoader = Rc<dyn Fn() -> Result<RuntimeSnapshot>>;
 
@@ -728,23 +729,14 @@ fn append_fans(
             ));
         }
     }
-    curves.add(&info_row(
-        "Last known good",
-        &render_fan_snapshot_row(fan_snapshot),
-    ));
+    let last_known_row = info_row("Last known good", &render_fan_snapshot_row(fan_snapshot));
+    curves.add(&last_known_row);
     page.append(&curves);
 
-    let presets = adw::PreferencesGroup::new();
-    presets.set_title("Packaged Presets");
-    for preset in [
-        ("quiet-office", "Quiet office"),
-        ("balanced-daily", "Balanced daily"),
-        ("gaming", "Gaming"),
-        ("max-safe", "Max safe"),
-    ] {
-        presets.add(&info_row(preset.1, preset.0));
-    }
-    page.append(&presets);
+    page.append(&build_fan_planning_controls(
+        bundle.raw_probe_report.fan_curves.as_slice(),
+        last_known_row,
+    ));
 }
 
 fn append_appearance(page: &gtk4::Box, bundle: &DiagnosticsBundle) {
@@ -938,12 +930,14 @@ fn render_gpu_pending_row(pending: Result<Option<GpuModePending>>) -> String {
     }
 }
 
+fn format_fan_snapshot_display(snapshot: &FanCurveSnapshot) -> String {
+    let path = snapshot.path.as_deref().unwrap_or("unknown");
+    format!("{path} - {} captured values", snapshot.points.len())
+}
+
 fn render_fan_snapshot_row(snapshot: Result<Option<FanCurveSnapshot>>) -> String {
     match snapshot {
-        Ok(Some(snapshot)) => {
-            let path = snapshot.path.as_deref().unwrap_or("unknown");
-            format!("{path} - {} captured values", snapshot.points.len())
-        }
+        Ok(Some(snapshot)) => format_fan_snapshot_display(&snapshot),
         Ok(None) => "none captured".to_owned(),
         Err(error) => format!("state unavailable - {error}"),
     }
@@ -976,7 +970,7 @@ fn selected_dropdown_value(chooser: &gtk4::DropDown) -> Option<String> {
         .map(|selected| selected.string().to_string())
 }
 
-fn render_gpu_plan_summary(plan: &WriteDryRunPlan) -> String {
+fn render_dry_run_plan_summary(plan: &WriteDryRunPlan) -> String {
     format!(
         "{} -> {} via {} - reboot required {} - read-back required {}",
         plan.previous_value,
@@ -987,7 +981,7 @@ fn render_gpu_plan_summary(plan: &WriteDryRunPlan) -> String {
     )
 }
 
-fn render_gpu_recovery_summary(plan: &WriteDryRunPlan) -> String {
+fn render_dry_run_recovery_summary(plan: &WriteDryRunPlan) -> String {
     if plan.rollback_instructions.is_empty() {
         "No rollback instructions were provided by the daemon.".to_owned()
     } else {
@@ -1082,8 +1076,8 @@ fn build_gpu_mode_controls(
         {
             Ok(plan) => {
                 plan_row_for_preview.set_title("Plan preview ready");
-                plan_row_for_preview.set_subtitle(&render_gpu_plan_summary(&plan));
-                recovery_row_for_preview.set_subtitle(&render_gpu_recovery_summary(&plan));
+                plan_row_for_preview.set_subtitle(&render_dry_run_plan_summary(&plan));
+                recovery_row_for_preview.set_subtitle(&render_dry_run_recovery_summary(&plan));
             }
             Err(error) => {
                 plan_row_for_preview.set_title("Plan preview failed");
@@ -1152,6 +1146,164 @@ fn build_gpu_mode_controls(
             Err(error) => {
                 plan_row_for_clear.set_title("Pending reboot not cleared");
                 plan_row_for_clear.set_subtitle(&format!("App-state update failed: {error}"));
+            }
+        }
+    });
+
+    group
+}
+
+fn build_fan_planning_controls(
+    fan_curves: &[FanCurveCapability],
+    last_known_row: adw::ActionRow,
+) -> adw::PreferencesGroup {
+    let group = adw::PreferencesGroup::new();
+    group.set_title("Guided fan planning");
+
+    if fan_curves.is_empty() {
+        group.add(&info_row(
+            "Fan preset planning",
+            "unavailable - no fan curve capability was detected",
+        ));
+        return group;
+    }
+
+    let model = gtk4::StringList::new(FAN_PRESET_IDS);
+    let chooser = gtk4::DropDown::builder().model(&model).build();
+    chooser.set_hexpand(true);
+    chooser.set_selected(1.min(FAN_PRESET_IDS.len().saturating_sub(1)) as u32);
+    chooser.set_sensitive(!FAN_PRESET_IDS.is_empty());
+
+    let preview_preset = gtk4::Button::with_label("Preview plan");
+    let preview_restore = gtk4::Button::with_label("Preview restore plan");
+    let capture = gtk4::Button::with_label("Capture snapshot");
+
+    let chooser_row = adw::ActionRow::builder()
+        .title("Packaged preset")
+        .subtitle(
+            "Dry-run preview only. ApplyFanPreset execution stays disabled until live validation evidence exists.",
+        )
+        .selectable(false)
+        .build();
+    chooser_row.add_suffix(&chooser);
+    chooser_row.add_suffix(&preview_preset);
+    group.add(&chooser_row);
+
+    let preset_plan_row = adw::ActionRow::builder()
+        .title("Preset plan preview")
+        .subtitle("No dry-run plan requested yet.")
+        .selectable(false)
+        .build();
+    group.add(&preset_plan_row);
+
+    let preset_recovery_row = adw::ActionRow::builder()
+        .title("Preset recovery guidance")
+        .subtitle(
+            "Preview a packaged preset plan to see rollback notes. Fan preset writes remain dry-run only in the dashboard.",
+        )
+        .selectable(false)
+        .build();
+    group.add(&preset_recovery_row);
+
+    let restore_row = adw::ActionRow::builder()
+        .title("Restore automatic fan control")
+        .subtitle(
+            "Preview returning the EC to automatic fan curves. RestoreAutoFan execution stays disabled in the dashboard.",
+        )
+        .selectable(false)
+        .build();
+    restore_row.add_suffix(&preview_restore);
+    group.add(&restore_row);
+
+    let restore_plan_row = adw::ActionRow::builder()
+        .title("Restore plan preview")
+        .subtitle("No restore dry-run requested yet.")
+        .selectable(false)
+        .build();
+    group.add(&restore_plan_row);
+
+    let restore_recovery_row = adw::ActionRow::builder()
+        .title("Restore recovery guidance")
+        .subtitle("Preview a restore plan to see rollback notes.")
+        .selectable(false)
+        .build();
+    group.add(&restore_recovery_row);
+
+    let capture_row = adw::ActionRow::builder()
+        .title("Last-known-good snapshot")
+        .subtitle(
+            "Capture the current hwmon curve values into app state for rollback reference. Updates the Fan curves summary row.",
+        )
+        .selectable(false)
+        .build();
+    capture_row.add_suffix(&capture);
+    group.add(&capture_row);
+
+    let chooser_for_preset = chooser.clone();
+    let preset_plan_for_preset = preset_plan_row.clone();
+    let preset_recovery_for_preset = preset_recovery_row.clone();
+    preview_preset.connect_clicked(move |_| {
+        let Some(requested) = selected_dropdown_value(&chooser_for_preset) else {
+            preset_plan_for_preset.set_title("Preset plan preview failed");
+            preset_plan_for_preset.set_subtitle("No packaged preset was selected.");
+            preset_recovery_for_preset.set_subtitle(
+                "Pick one of the packaged preset IDs before requesting a dry-run plan.",
+            );
+            return;
+        };
+
+        match LegionControlClient::system()
+            .and_then(|client| client.plan_fan_preset_write(&requested))
+        {
+            Ok(plan) => {
+                preset_plan_for_preset.set_title("Preset plan preview ready");
+                preset_plan_for_preset.set_subtitle(&render_dry_run_plan_summary(&plan));
+                preset_recovery_for_preset.set_subtitle(&render_dry_run_recovery_summary(&plan));
+            }
+            Err(error) => {
+                preset_plan_for_preset.set_title("Preset plan preview failed");
+                preset_plan_for_preset.set_subtitle(&format!(
+                    "Dry-run planning could not be completed: {error}"
+                ));
+                preset_recovery_for_preset.set_subtitle(
+                    "The daemon rejected this request or the fan curve capability was not available.",
+                );
+            }
+        }
+    });
+
+    let restore_plan_for_restore = restore_plan_row.clone();
+    let restore_recovery_for_restore = restore_recovery_row.clone();
+    preview_restore.connect_clicked(move |_| {
+        match LegionControlClient::system().and_then(|client| client.plan_restore_auto_fan_write())
+        {
+            Ok(plan) => {
+                restore_plan_for_restore.set_title("Restore plan preview ready");
+                restore_plan_for_restore.set_subtitle(&render_dry_run_plan_summary(&plan));
+                restore_recovery_for_restore.set_subtitle(&render_dry_run_recovery_summary(&plan));
+            }
+            Err(error) => {
+                restore_plan_for_restore.set_title("Restore plan preview failed");
+                restore_plan_for_restore
+                    .set_subtitle(&format!("Dry-run planning could not be completed: {error}"));
+                restore_recovery_for_restore.set_subtitle(
+                    "The daemon rejected this request or no automatic fan curve was detected.",
+                );
+            }
+        }
+    });
+
+    let last_known_for_capture = last_known_row.clone();
+    capture.connect_clicked(move |_| {
+        match LegionControlClient::system()
+            .and_then(|client| client.capture_last_known_good_fan_curve())
+        {
+            Ok(snapshot) => {
+                last_known_for_capture.set_subtitle(&format_fan_snapshot_display(&snapshot));
+                let _ = request_dashboard_refresh();
+            }
+            Err(error) => {
+                last_known_for_capture.set_subtitle(&format!("Capture failed: {error}"));
             }
         }
     });

@@ -20,6 +20,7 @@ This captures the default page set:
 - `status`
 - `profiles`
 - `battery`
+- `gpu`
 - `fans`
 - `appearance`
 - `diagnostics`

@@ -11,7 +11,7 @@ page screenshots plus supporting text diagnostics.
 Options:
   --output <dir>          Required output directory.
   --sysfs-root <root>     Sysfs root for the private daemon. Default: /
-  --pages <csv>           Pages to capture. Default: status,profiles,battery,fans,appearance,diagnostics
+  --pages <csv>           Pages to capture. Default: status,profiles,battery,gpu,fans,appearance,diagnostics
   --gsk-renderer <name>   GTK renderer override. Default: cairo
   --capture-delay-ms <n>  Delay before screenshot capture. Default: 1500
   --auto-quit-ms <n>      Auto-close the GTK window after N ms. Default: 3500
@@ -22,7 +22,7 @@ EOF
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 output_dir=""
 sysfs_root="/"
-pages_csv="status,profiles,battery,fans,appearance,diagnostics"
+pages_csv="status,profiles,battery,gpu,fans,appearance,diagnostics"
 gsk_renderer="cairo"
 capture_delay_ms=1500
 auto_quit_ms=3500
@@ -133,7 +133,7 @@ wait_for_file_line() {
 IFS=',' read -r -a pages <<<"$pages_csv"
 for page in "${pages[@]}"; do
   case "$page" in
-    status|profiles|battery|fans|appearance|diagnostics) ;;
+    status|profiles|battery|gpu|fans|appearance|diagnostics) ;;
     *)
       echo "unsupported GTK page: $page" >&2
       exit 2
