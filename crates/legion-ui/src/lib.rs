@@ -204,12 +204,13 @@ pub fn risk_level_label(risk: RiskLevel) -> &'static str {
 }
 
 pub fn render_overview_lines(report: &CapabilityRegistry) -> Vec<String> {
-    render_overview_lines_with_pending(report, None)
+    render_overview_lines_with_pending(report, None, None)
 }
 
 pub fn render_overview_lines_with_pending(
     report: &CapabilityRegistry,
     pending: Option<&GpuModePending>,
+    fan_snapshot: Option<&FanCurveSnapshot>,
 ) -> Vec<String> {
     let mut lines = vec![
         "Legion Control overview".to_owned(),
@@ -246,6 +247,10 @@ pub fn render_overview_lines_with_pending(
                 .unwrap_or("unknown")
         ),
         format!("gpu_pending_reboot={}", render_gpu_pending(pending)),
+        format!(
+            "last_known_good_fan_curve={}",
+            render_fan_curve_snapshot(fan_snapshot)
+        ),
         format!(
             "battery_capacity_percent={}",
             report
@@ -292,6 +297,17 @@ fn render_gpu_pending(pending: Option<&GpuModePending>) -> String {
                 pending.requested_mode, previous, pending.reboot_required
             )
         }
+        None => "none".to_owned(),
+    }
+}
+
+fn render_fan_curve_snapshot(snapshot: Option<&FanCurveSnapshot>) -> String {
+    match snapshot {
+        Some(snapshot) => format!(
+            "{} values from {}",
+            snapshot.points.len(),
+            snapshot.curve_id
+        ),
         None => "none".to_owned(),
     }
 }

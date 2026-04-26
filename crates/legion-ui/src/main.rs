@@ -105,7 +105,11 @@ fn main() -> Result<()> {
         } else if args.diagnostics {
             print_diagnostics(&client.diagnostics_bundle()?)?;
         } else if args.overview {
-            print_overview(&client.raw_probe_report()?, client.gpu_mode_pending()?);
+            print_overview(
+                &client.raw_probe_report()?,
+                client.gpu_mode_pending()?,
+                client.last_known_good_fan_curve()?,
+            );
         } else {
             print_status(&client.status()?);
         }
@@ -136,8 +140,10 @@ fn print_status(status: &UiStatus) {
 fn print_overview(
     report: &legion_common::CapabilityRegistry,
     pending: Option<legion_common::GpuModePending>,
+    fan_snapshot: Option<legion_common::FanCurveSnapshot>,
 ) {
-    for line in render_overview_lines_with_pending(report, pending.as_ref()) {
+    for line in render_overview_lines_with_pending(report, pending.as_ref(), fan_snapshot.as_ref())
+    {
         println!("{line}");
     }
 }

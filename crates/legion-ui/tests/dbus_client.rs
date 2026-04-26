@@ -89,6 +89,7 @@ fn client_reads_daemon_contract_over_private_bus() {
             "temperatures=CPU Temp:52000",
             "gpu_mode=unknown",
             "gpu_pending_reboot=none",
+            "last_known_good_fan_curve=none",
             "battery_capacity_percent=79",
             "battery_status=Charging",
             "battery_health=Good",
@@ -276,6 +277,7 @@ fn overview_cli_prints_read_only_mvp_summary() {
             "temperatures=CPU Temp:52000\n",
             "gpu_mode=unknown\n",
             "gpu_pending_reboot=none\n",
+            "last_known_good_fan_curve=none\n",
             "battery_capacity_percent=79\n",
             "battery_status=Charging\n",
             "battery_health=Good\n",
@@ -283,6 +285,43 @@ fn overview_cli_prints_read_only_mvp_summary() {
             "firmware_toggles=camera_power:1,conservation_mode:1,fn_lock:0\n",
         )
     );
+}
+
+#[test]
+fn overview_cli_surfaces_saved_fan_curve_state() {
+    let state_path = unique_state_path("ui-overview-state");
+    std::fs::write(
+        &state_path,
+        r#"schema_version = 1
+
+[gpu_mode_pending]
+requested_mode = "hybrid"
+previous_mode = "nvidia"
+reboot_required = true
+
+[last_known_good_fan_curve]
+curve_id = "legion_hwmon"
+path = "/tmp/fixture/sys/class/hwmon/hwmon7"
+
+[[last_known_good_fan_curve.points]]
+path = "/tmp/fixture/sys/class/hwmon/hwmon7/pwm1_auto_point1_temp"
+value = "42000"
+"#,
+    )
+    .unwrap();
+
+    let (_bus, _service_connection, address) = fixture_service_with_state(&state_path);
+    let output = Command::new(env!("CARGO_BIN_EXE_legion-control-ui"))
+        .args(["--overview", "--bus-address", &address])
+        .output()
+        .unwrap();
+
+    assert!(output.status.success());
+    assert!(output.stderr.is_empty());
+    let stdout = String::from_utf8(output.stdout).unwrap();
+    assert!(stdout.contains("gpu_pending_reboot=hybrid previous=nvidia reboot_required=true"));
+    assert!(stdout.contains("last_known_good_fan_curve=1 values from legion_hwmon"));
+    let _ = std::fs::remove_file(state_path);
 }
 
 #[test]
