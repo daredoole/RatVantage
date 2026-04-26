@@ -2,7 +2,7 @@ use anyhow::Result;
 use clap::Parser;
 use legion_control_daemon::{
     session_connection, system_connection, LegionControl, DBUS_INTERFACE, DBUS_PATH,
-    READ_ONLY_METHODS,
+    DEFAULT_STATE_PATH, READ_ONLY_METHODS,
 };
 use legion_probe::{probe, ProbeOptions};
 
@@ -16,6 +16,9 @@ struct Args {
 
     #[arg(long, default_value = "/")]
     sysfs_root: std::path::PathBuf,
+
+    #[arg(long, default_value = DEFAULT_STATE_PATH)]
+    state_path: std::path::PathBuf,
 }
 
 fn main() -> Result<()> {
@@ -23,7 +26,7 @@ fn main() -> Result<()> {
     let options = ProbeOptions {
         sysfs_root: args.sysfs_root,
     };
-    let service = LegionControl::new(options.clone());
+    let service = LegionControl::new_with_state_path(options.clone(), args.state_path);
 
     if args.dry_run {
         let registry = probe(&options);

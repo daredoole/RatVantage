@@ -88,6 +88,7 @@ fn client_reads_daemon_contract_over_private_bus() {
             "fan_rpm=CPU Fan:2410",
             "temperatures=CPU Temp:52000",
             "gpu_mode=unknown",
+            "gpu_pending_reboot=none",
             "battery_capacity_percent=79",
             "battery_status=Charging",
             "battery_health=Good",
@@ -274,6 +275,7 @@ fn overview_cli_prints_read_only_mvp_summary() {
             "fan_rpm=CPU Fan:2410\n",
             "temperatures=CPU Temp:52000\n",
             "gpu_mode=unknown\n",
+            "gpu_pending_reboot=none\n",
             "battery_capacity_percent=79\n",
             "battery_status=Charging\n",
             "battery_health=Good\n",
@@ -404,6 +406,34 @@ fn restore_auto_fan_plan_cli_prints_read_only_write_preview_json() {
 }
 
 #[test]
+fn gpu_pending_cli_prints_and_clears_empty_state() {
+    let state_path = unique_state_path("ui-pending-empty");
+    let (_bus, _service_connection, address) = fixture_service_with_state(&state_path);
+    let client = LegionControlClient::address(&address).unwrap();
+    assert_eq!(client.gpu_mode_pending().unwrap(), None);
+    assert_eq!(client.clear_gpu_mode_pending().unwrap(), None);
+
+    let output = Command::new(env!("CARGO_BIN_EXE_legion-control-ui"))
+        .args(["--gpu-mode-pending", "--bus-address", &address])
+        .output()
+        .unwrap();
+
+    assert!(output.status.success());
+    assert!(output.stderr.is_empty());
+    assert_eq!(String::from_utf8(output.stdout).unwrap(), "null\n");
+
+    let output = Command::new(env!("CARGO_BIN_EXE_legion-control-ui"))
+        .args(["--clear-gpu-mode-pending", "--bus-address", &address])
+        .output()
+        .unwrap();
+
+    assert!(output.status.success());
+    assert!(output.stderr.is_empty());
+    assert_eq!(String::from_utf8(output.stdout).unwrap(), "null\n");
+    let _ = std::fs::remove_file(state_path);
+}
+
+#[test]
 fn status_model_uses_unknown_for_missing_hardware_fields() {
     let status = UiStatus::from_parts(Default::default(), Vec::new()).unwrap();
 
@@ -481,6 +511,29 @@ fn fixture_service() -> (PrivateBus, zbus::blocking::Connection, String) {
     (bus, service_connection, address)
 }
 
+fn fixture_service_with_state(
+    state_path: &std::path::Path,
+) -> (PrivateBus, zbus::blocking::Connection, String) {
+    let bus = PrivateBus::start();
+    let service = LegionControl::new_with_state_path(
+        ProbeOptions {
+            sysfs_root: fixture_root(),
+        },
+        state_path,
+    );
+    let service_connection = ConnectionBuilder::address(bus.address())
+        .unwrap()
+        .name(DBUS_INTERFACE)
+        .unwrap()
+        .serve_at(DBUS_PATH, service)
+        .unwrap()
+        .build()
+        .unwrap();
+    let address = bus.address().to_owned();
+
+    (bus, service_connection, address)
+}
+
 fn runtime_fixture_service() -> (PrivateBus, zbus::blocking::Connection, String) {
     let bus = PrivateBus::start();
     let service = LegionControl::new(ProbeOptions {
@@ -500,4 +553,12 @@ fn runtime_fixture_service() -> (PrivateBus, zbus::blocking::Connection, String)
     let address = bus.address().to_owned();
 
     (bus, service_connection, address)
+}
+
+fn unique_state_path(label: &str) -> std::path::PathBuf {
+    std::env::temp_dir().join(format!(
+        "ratvantage-{label}-{}-{}.toml",
+        std::process::id(),
+        std::thread::current().name().unwrap_or("test")
+    ))
 }

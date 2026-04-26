@@ -3,8 +3,8 @@ use clap::Parser;
 #[cfg(not(feature = "gtk-ui"))]
 use legion_control_ui::DBUS_INTERFACE;
 use legion_control_ui::{
-    render_diagnostics_json, render_overview_lines, render_write_plan_json, DiagnosticsBundle,
-    LegionControlClient, UiStatus,
+    render_diagnostics_json, render_overview_lines_with_pending, render_write_plan_json,
+    DiagnosticsBundle, LegionControlClient, UiStatus,
 };
 
 #[derive(Debug, Parser)]
@@ -34,6 +34,15 @@ struct Args {
     plan_restore_auto_fan: bool,
 
     #[arg(long)]
+    gpu_mode_pending: bool,
+
+    #[arg(long, value_name = "MODE")]
+    set_gpu_mode_pending: Option<String>,
+
+    #[arg(long)]
+    clear_gpu_mode_pending: bool,
+
+    #[arg(long)]
     bus_address: Option<String>,
 }
 
@@ -49,12 +58,15 @@ fn main() -> Result<()> {
         args.plan_gpu_mode.is_some(),
         args.plan_fan_preset.is_some(),
         args.plan_restore_auto_fan,
+        args.gpu_mode_pending,
+        args.set_gpu_mode_pending.is_some(),
+        args.clear_gpu_mode_pending,
     ]
     .into_iter()
     .filter(|enabled| *enabled)
     .count();
     if action_count > 1 {
-        bail!("choose exactly one read-only UI command");
+        bail!("choose exactly one UI command");
     }
 
     if action_count == 1 {
@@ -72,10 +84,16 @@ fn main() -> Result<()> {
             print_write_plan(&client.plan_fan_preset_write(&preset_id)?)?;
         } else if args.plan_restore_auto_fan {
             print_write_plan(&client.plan_restore_auto_fan_write()?)?;
+        } else if args.gpu_mode_pending {
+            print_json(&client.gpu_mode_pending()?)?;
+        } else if let Some(mode) = args.set_gpu_mode_pending {
+            print_json(&client.set_gpu_mode_pending(&mode)?)?;
+        } else if args.clear_gpu_mode_pending {
+            print_json(&client.clear_gpu_mode_pending()?)?;
         } else if args.diagnostics {
             print_diagnostics(&client.diagnostics_bundle()?)?;
         } else if args.overview {
-            print_overview(&client.raw_probe_report()?);
+            print_overview(&client.raw_probe_report()?, client.gpu_mode_pending()?);
         } else {
             print_status(&client.status()?);
         }
@@ -103,8 +121,11 @@ fn print_status(status: &UiStatus) {
     }
 }
 
-fn print_overview(report: &legion_common::CapabilityRegistry) {
-    for line in render_overview_lines(report) {
+fn print_overview(
+    report: &legion_common::CapabilityRegistry,
+    pending: Option<legion_common::GpuModePending>,
+) {
+    for line in render_overview_lines_with_pending(report, pending.as_ref()) {
         println!("{line}");
     }
 }
@@ -115,6 +136,10 @@ fn print_diagnostics(bundle: &DiagnosticsBundle) -> Result<()> {
 }
 
 fn print_write_plan(plan: &legion_common::WriteDryRunPlan) -> Result<()> {
-    println!("{}", render_write_plan_json(plan)?);
+    print_json(plan)
+}
+
+fn print_json<T: serde::Serialize>(value: &T) -> Result<()> {
+    println!("{}", render_write_plan_json(value)?);
     Ok(())
 }

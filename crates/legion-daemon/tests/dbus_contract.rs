@@ -1,5 +1,8 @@
+use std::fs;
+
 use legion_common::{
-    Capability, CapabilityRegistry, HardwareSummary, TelemetrySnapshot, WriteDryRunPlan,
+    Capability, CapabilityRegistry, GpuModePending, HardwareSummary, TelemetrySnapshot,
+    WriteDryRunPlan,
 };
 use legion_control_daemon::{LegionControl, DBUS_INTERFACE, DBUS_PATH};
 use legion_probe::ProbeOptions;
@@ -92,7 +95,9 @@ fn introspection_exposes_only_read_only_legion_methods() {
     assert_eq!(
         methods,
         [
+            "ClearGpuModePending",
             "GetCapabilities",
+            "GetGpuModePending",
             "GetHardwareSummary",
             "GetRawProbeReport",
             "GetTelemetry",
@@ -101,12 +106,18 @@ fn introspection_exposes_only_read_only_legion_methods() {
             "PlanGpuModeWrite",
             "PlanPlatformProfileWrite",
             "PlanRestoreAutoFanWrite",
-            "RefreshCapabilities"
+            "RefreshCapabilities",
+            "SetGpuModePending"
         ]
     );
-    assert!(methods
-        .iter()
-        .all(|method| !method.starts_with("Set") && !method.starts_with("Write")));
+    assert!(!methods.iter().any(|method| matches!(
+        method.as_str(),
+        "SetPlatformProfile"
+            | "SetBatteryChargeType"
+            | "SetGpuMode"
+            | "ApplyFanPreset"
+            | "RestoreAutoFan"
+    )));
 }
 
 #[test]
@@ -170,6 +181,58 @@ fn daemon_builds_fan_preset_plan_from_runtime_fixture() {
     assert!(!restore_plan.reboot_required);
 }
 
+#[test]
+fn daemon_loads_clears_and_ignores_invalid_state_files() {
+    let state_path = unique_state_path("pending-gpu");
+    fs::write(
+        &state_path,
+        r#"schema_version = 1
+
+[gpu_mode_pending]
+requested_mode = "hybrid"
+previous_mode = "nvidia"
+reboot_required = true
+"#,
+    )
+    .unwrap();
+
+    let service = LegionControl::new_with_state_path(
+        ProbeOptions {
+            sysfs_root: fixture_root(),
+        },
+        &state_path,
+    );
+    let pending = service.gpu_mode_pending().unwrap().unwrap();
+    assert_eq!(
+        pending,
+        GpuModePending {
+            requested_mode: "hybrid".to_owned(),
+            previous_mode: Some("nvidia".to_owned()),
+            reboot_required: true,
+        }
+    );
+
+    let cleared = service.clear_gpu_mode_pending().unwrap().unwrap();
+    assert_eq!(cleared.requested_mode, "hybrid");
+    let reloaded = LegionControl::new_with_state_path(
+        ProbeOptions {
+            sysfs_root: fixture_root(),
+        },
+        &state_path,
+    );
+    assert_eq!(reloaded.gpu_mode_pending().unwrap(), None);
+
+    fs::write(&state_path, "not valid toml =").unwrap();
+    let corrupt = LegionControl::new_with_state_path(
+        ProbeOptions {
+            sysfs_root: fixture_root(),
+        },
+        &state_path,
+    );
+    assert_eq!(corrupt.gpu_mode_pending().unwrap(), None);
+    let _ = fs::remove_file(state_path);
+}
+
 fn test_proxy() -> (PrivateBus, zbus::blocking::Connection, Proxy<'static>) {
     let bus = PrivateBus::start();
     let service = LegionControl::new(ProbeOptions {
@@ -198,4 +261,12 @@ fn runtime_fixture_root() -> std::path::PathBuf {
         .parent()
         .expect("fixture root must have parent")
         .join("sysfs-82wm-runtime-capture")
+}
+
+fn unique_state_path(label: &str) -> std::path::PathBuf {
+    std::env::temp_dir().join(format!(
+        "ratvantage-{label}-{}-{}.toml",
+        std::process::id(),
+        std::thread::current().name().unwrap_or("test")
+    ))
 }

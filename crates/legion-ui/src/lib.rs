@@ -3,7 +3,7 @@ use std::process::Command;
 
 use anyhow::Result;
 use legion_common::{
-    Capability, CapabilityRegistry, CapabilityStatus, HardwareSummary, RiskLevel,
+    Capability, CapabilityRegistry, CapabilityStatus, GpuModePending, HardwareSummary, RiskLevel,
     TelemetrySnapshot, WriteDryRunPlan,
 };
 use serde::{de::DeserializeOwned, Serialize};
@@ -204,6 +204,13 @@ pub fn risk_level_label(risk: RiskLevel) -> &'static str {
 }
 
 pub fn render_overview_lines(report: &CapabilityRegistry) -> Vec<String> {
+    render_overview_lines_with_pending(report, None)
+}
+
+pub fn render_overview_lines_with_pending(
+    report: &CapabilityRegistry,
+    pending: Option<&GpuModePending>,
+) -> Vec<String> {
     let mut lines = vec![
         "Legion Control overview".to_owned(),
         format!(
@@ -238,6 +245,7 @@ pub fn render_overview_lines(report: &CapabilityRegistry) -> Vec<String> {
                 .and_then(|gpu| gpu.mode.as_deref())
                 .unwrap_or("unknown")
         ),
+        format!("gpu_pending_reboot={}", render_gpu_pending(pending)),
         format!(
             "battery_capacity_percent={}",
             report
@@ -273,6 +281,19 @@ pub fn render_overview_lines(report: &CapabilityRegistry) -> Vec<String> {
         render_ideapad_toggle_values(report)
     ));
     lines
+}
+
+fn render_gpu_pending(pending: Option<&GpuModePending>) -> String {
+    match pending {
+        Some(pending) => {
+            let previous = pending.previous_mode.as_deref().unwrap_or("unknown");
+            format!(
+                "{} previous={} reboot_required={}",
+                pending.requested_mode, previous, pending.reboot_required
+            )
+        }
+        None => "none".to_owned(),
+    }
 }
 
 fn render_sensor_values(sensors: &[legion_common::HwmonSensor], kind: &str) -> String {
@@ -344,8 +365,8 @@ pub fn render_diagnostics_json(bundle: &DiagnosticsBundle) -> Result<String> {
     Ok(serde_json::to_string_pretty(bundle)?)
 }
 
-pub fn render_write_plan_json(plan: &WriteDryRunPlan) -> Result<String> {
-    Ok(serde_json::to_string_pretty(plan)?)
+pub fn render_write_plan_json<T: Serialize>(value: &T) -> Result<String> {
+    Ok(serde_json::to_string_pretty(value)?)
 }
 
 fn detected_sysfs_paths(report: &CapabilityRegistry) -> Vec<String> {
@@ -505,6 +526,18 @@ impl LegionControlClient {
 
     pub fn plan_restore_auto_fan_write(&self) -> Result<WriteDryRunPlan> {
         self.call_json("PlanRestoreAutoFanWrite")
+    }
+
+    pub fn gpu_mode_pending(&self) -> Result<Option<GpuModePending>> {
+        self.call_json("GetGpuModePending")
+    }
+
+    pub fn set_gpu_mode_pending(&self, requested: &str) -> Result<GpuModePending> {
+        self.call_json_arg("SetGpuModePending", requested)
+    }
+
+    pub fn clear_gpu_mode_pending(&self) -> Result<Option<GpuModePending>> {
+        self.call_json("ClearGpuModePending")
     }
 
     pub fn status(&self) -> Result<UiStatus> {

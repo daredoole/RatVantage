@@ -30,6 +30,7 @@ Pre-alpha implementation scaffold exists:
 - Validator-backed dry-run planning for platform profile, battery charge type, GPU mode, fan presets, and fan restore/default.
 - Read-only D-Bus dry-run planning for platform profile, battery charge type, GPU mode, fan presets, and fan restore/default.
 - GPU dry-run plans include reboot-required metadata and rollback guidance; execution remains disabled.
+- App-state-only GPU pending-reboot tracking in `/var/lib/legion-control/state.toml`; no hardware writes are performed.
 - Local CI script and GitHub Actions CI.
 
 No hardware write path exists yet. Write support must wait for validators, polkit policy, rollback behavior, and manual target-machine validation.
@@ -89,6 +90,9 @@ cargo run -p legion-control-ui -- --plan-battery-charge-type Conservation --bus-
 cargo run -p legion-control-ui -- --plan-gpu-mode hybrid --bus-address <dbus-address>
 cargo run -p legion-control-ui -- --plan-fan-preset balanced-daily --bus-address <dbus-address>
 cargo run -p legion-control-ui -- --plan-restore-auto-fan --bus-address <dbus-address>
+cargo run -p legion-control-ui -- --gpu-mode-pending --bus-address <dbus-address>
+cargo run -p legion-control-ui -- --set-gpu-mode-pending hybrid --bus-address <dbus-address>
+cargo run -p legion-control-ui -- --clear-gpu-mode-pending --bus-address <dbus-address>
 cargo run -p legion-control-tray -- --status --bus-address <dbus-address>
 cargo run -p legion-control-tray -- --tooltip --bus-address <dbus-address>
 cargo run -p legion-control-ui --features gtk-ui

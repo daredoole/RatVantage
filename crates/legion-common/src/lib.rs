@@ -15,6 +15,28 @@ pub struct CapabilityRegistry {
     pub telemetry: TelemetrySnapshot,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct DaemonState {
+    pub schema_version: u32,
+    pub gpu_mode_pending: Option<GpuModePending>,
+}
+
+impl Default for DaemonState {
+    fn default() -> Self {
+        Self {
+            schema_version: 1,
+            gpu_mode_pending: None,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct GpuModePending {
+    pub requested_mode: String,
+    pub previous_mode: Option<String>,
+    pub reboot_required: bool,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]
 pub struct HardwareSummary {
     pub sysfs_root: String,
