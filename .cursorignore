@@ -1,0 +1,14 @@
+# Rust build artifacts — never read or edited by agents
+target/
+
+# Raw sysfs fixture stubs — 200+ tiny stub files that pollute the index.
+# Agents should read specific fixture files explicitly when writing tests,
+# not auto-index all of them.
+tests/fixtures/sysfs-82wm-confirmed/
+tests/fixtures/sysfs-82wm-runtime-capture/
+
+# Generated lock file — cargo manages this; agents don't edit it directly.
+Cargo.lock
+
+# RPM packaging assets — rarely touched, not relevant to most tasks.
+packaging/rpm/

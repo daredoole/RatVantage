@@ -1,0 +1,12 @@
+# Rust build artifacts
+target/
+
+# Raw sysfs fixture stubs (200+ tiny stub files — read explicitly when needed)
+tests/fixtures/sysfs-82wm-confirmed/
+tests/fixtures/sysfs-82wm-runtime-capture/
+
+# Generated lock file
+Cargo.lock
+
+# RPM packaging assets
+packaging/rpm/
