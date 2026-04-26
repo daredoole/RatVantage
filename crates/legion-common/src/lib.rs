@@ -54,6 +54,124 @@ pub struct FanCurvePointSnapshot {
     pub value: String,
 }
 
+/// Read-only comparison of two fan curve sysfs snapshots (for example live readings vs last-known-good).
+pub fn format_fan_curve_live_vs_saved(live: &FanCurveSnapshot, saved: &FanCurveSnapshot) -> String {
+    use std::collections::BTreeMap;
+    use std::fmt::Write;
+
+    let mut out = String::new();
+
+    if live.curve_id != saved.curve_id {
+        let _ = writeln!(
+            out,
+            "Note: curve_id differs (live=\"{}\", saved=\"{}\").",
+            live.curve_id, saved.curve_id
+        );
+    }
+
+    match (&live.path, &saved.path) {
+        (Some(l_root), Some(s_root)) if l_root != s_root => {
+            let _ = writeln!(
+                out,
+                "Note: hwmon root paths differ (snapshots may come from different probes or machines)."
+            );
+        }
+        _ => {}
+    }
+
+    let live_map: BTreeMap<&str, &str> = live
+        .points
+        .iter()
+        .map(|point| (point.path.as_str(), point.value.as_str()))
+        .collect();
+    let saved_map: BTreeMap<&str, &str> = saved
+        .points
+        .iter()
+        .map(|point| (point.path.as_str(), point.value.as_str()))
+        .collect();
+
+    if live_map.is_empty() && saved_map.is_empty() {
+        let _ = writeln!(out, "Both snapshots are empty (no sysfs point rows).");
+        return out;
+    }
+
+    let mut same = 0usize;
+    let mut changed: Vec<(&str, &str, &str)> = Vec::new();
+    for (path, live_value) in &live_map {
+        if let Some(saved_value) = saved_map.get(path) {
+            if live_value == saved_value {
+                same += 1;
+            } else {
+                changed.push((path, live_value, saved_value));
+            }
+        }
+    }
+
+    let mut live_only = Vec::new();
+    for (path, live_value) in &live_map {
+        if !saved_map.contains_key(path) {
+            live_only.push((*path, *live_value));
+        }
+    }
+
+    let mut saved_only = Vec::new();
+    for (path, saved_value) in &saved_map {
+        if !live_map.contains_key(path) {
+            saved_only.push((*path, *saved_value));
+        }
+    }
+
+    let _ = writeln!(
+        out,
+        "Summary: {} path(s) with identical values, {} differing, {} only in live, {} only in saved.",
+        same,
+        changed.len(),
+        live_only.len(),
+        saved_only.len()
+    );
+
+    if !changed.is_empty() {
+        let _ = writeln!(out, "\nDiffering values:");
+        const MAX_DIFF_LINES: usize = 40;
+        for (path, live_value, saved_value) in changed.iter().take(MAX_DIFF_LINES) {
+            let _ = writeln!(out, "  {path}");
+            let _ = writeln!(out, "    live={live_value}");
+            let _ = writeln!(out, "    saved={saved_value}");
+        }
+        if changed.len() > MAX_DIFF_LINES {
+            let _ = writeln!(
+                out,
+                "... {} more differing path(s) not shown.",
+                changed.len() - MAX_DIFF_LINES
+            );
+        }
+    }
+
+    if !live_only.is_empty() {
+        let _ = writeln!(out, "\nPaths present only in live snapshot:");
+        const MAX_SIDE: usize = 20;
+        for (path, live_value) in live_only.iter().take(MAX_SIDE) {
+            let _ = writeln!(out, "  {path} = {live_value}");
+        }
+        if live_only.len() > MAX_SIDE {
+            let _ = writeln!(out, "... {} more", live_only.len() - MAX_SIDE);
+        }
+    }
+
+    if !saved_only.is_empty() {
+        let _ = writeln!(out, "\nPaths present only in saved snapshot:");
+        const MAX_SIDE: usize = 20;
+        for (path, saved_value) in saved_only.iter().take(MAX_SIDE) {
+            let _ = writeln!(out, "  {path} = {saved_value}");
+        }
+        if saved_only.len() > MAX_SIDE {
+            let _ = writeln!(out, "... {} more", saved_only.len() - MAX_SIDE);
+        }
+    }
+
+    out
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]
 pub struct HardwareSummary {
     pub sysfs_root: String,
@@ -2054,6 +2172,49 @@ mod tests {
     fn validate_manual_fan_curve_pairs_accepts_monotonic_sysfs_integers() {
         let pairs: Vec<(u32, u32)> = (1..=10).map(|i| (35_000 + i * 1_000, 20 + i)).collect();
         assert_eq!(validate_manual_fan_curve_pairs(&pairs), Ok(()));
+    }
+
+    #[test]
+    fn format_fan_curve_live_vs_saved_reports_matches_and_diffs() {
+        let path = "/sys/class/hwmon/hwmon7/pwm1_auto_point1_temp";
+        let live = FanCurveSnapshot {
+            curve_id: "a".to_owned(),
+            path: Some("/sys/class/hwmon/hwmon7".to_owned()),
+            points: vec![
+                FanCurvePointSnapshot {
+                    path: path.to_owned(),
+                    value: "42000".to_owned(),
+                },
+                FanCurvePointSnapshot {
+                    path: "/sys/class/hwmon/hwmon7/pwm1_auto_point1_pwm".to_owned(),
+                    value: "99".to_owned(),
+                },
+            ],
+        };
+        let saved_same = FanCurveSnapshot {
+            curve_id: "a".to_owned(),
+            path: Some("/sys/class/hwmon/hwmon7".to_owned()),
+            points: live.points.clone(),
+        };
+        let report = format_fan_curve_live_vs_saved(&live, &saved_same);
+        assert!(report.contains("2 path(s) with identical values"));
+        assert!(report.contains("0 differing"));
+
+        let saved_diff = FanCurveSnapshot {
+            curve_id: "b".to_owned(),
+            path: Some("/other".to_owned()),
+            points: vec![FanCurvePointSnapshot {
+                path: path.to_owned(),
+                value: "43000".to_owned(),
+            }],
+        };
+        let report2 = format_fan_curve_live_vs_saved(&live, &saved_diff);
+        assert!(report2.contains("curve_id differs"));
+        assert!(report2.contains("hwmon root paths differ"));
+        assert!(report2.contains("Differing values:"));
+        assert!(report2.contains("1 only in live"));
+        assert!(report2.contains("0 only in saved"));
+        assert!(report2.contains("Paths present only in live snapshot:"));
     }
 
     #[test]

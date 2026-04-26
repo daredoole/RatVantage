@@ -6,9 +6,9 @@ use adw::prelude::*;
 use anyhow::{anyhow, Result};
 use legion_common::{
     decode_fan_scratchpad_toml_v1, encode_fan_scratchpad_toml_v1, fan_curve_hwmon_point_pairs,
-    fan_preset_points_as_sysfs_raw, parse_fan_preset_toml, validate_fan_preset_document,
-    validate_manual_fan_curve_pairs, BatteryChargeTypeCapability, FanCurveCapability,
-    FanCurveHwmonPointPair, FanCurveSnapshot, GpuCapability, GpuModePending,
+    fan_preset_points_as_sysfs_raw, format_fan_curve_live_vs_saved, parse_fan_preset_toml,
+    validate_fan_preset_document, validate_manual_fan_curve_pairs, BatteryChargeTypeCapability,
+    FanCurveCapability, FanCurveHwmonPointPair, FanCurveSnapshot, GpuCapability, GpuModePending,
     IdeapadToggleCapability, LedCapability, PlatformProfileCapability, WriteDryRunPlan,
     WriteExecutionResult, WriteExecutionStatus,
 };
@@ -748,6 +748,7 @@ fn append_fans(
 
     if !bundle.raw_probe_report.fan_curves.is_empty() {
         append_fan_live_curve_readings(page);
+        append_fan_live_vs_saved_compare(page);
         append_manual_fan_curve_scratchpad(page, &bundle.raw_probe_report.fan_curves[0]);
     }
 }
@@ -943,6 +944,76 @@ fn append_fan_live_curve_readings(page: &gtk4::Box) {
                 text_for_refresh
                     .buffer()
                     .set_text(&format!("Live readings failed:\n{error}"));
+            }
+        }
+    });
+}
+
+fn append_fan_live_vs_saved_compare(page: &gtk4::Box) {
+    let section_title = gtk4::Label::new(Some("Live vs saved comparison"));
+    section_title.add_css_class("title-3");
+    section_title.set_xalign(0.0);
+    page.append(&section_title);
+
+    let hint = gtk4::Label::new(Some(
+        "Read-only diff between current sysfs values (GetLiveFanCurveReadings) and the durable last-known-good capture (GetLastKnownGoodFanCurve). Does not refresh other sections.",
+    ));
+    hint.set_wrap(true);
+    hint.set_xalign(0.0);
+    page.append(&hint);
+
+    let actions = gtk4::Box::new(gtk4::Orientation::Horizontal, 8);
+    let compare = gtk4::Button::with_label("Compare live to saved");
+    actions.append(&compare);
+    page.append(&actions);
+
+    let text = gtk4::TextView::new();
+    text.set_editable(false);
+    text.set_cursor_visible(false);
+    text.set_monospace(true);
+    text.set_wrap_mode(gtk4::WrapMode::WordChar);
+    text.buffer().set_text(
+        "Click \"Compare live to saved\" after capturing a last-known-good snapshot to see where sysfs values diverge.",
+    );
+
+    let scroller = gtk4::ScrolledWindow::builder()
+        .min_content_height(120)
+        .vexpand(false)
+        .child(&text)
+        .build();
+    page.append(&scroller);
+
+    let text_for_compare = text.clone();
+    compare.connect_clicked(move |_| {
+        let client_result = LegionControlClient::system();
+        let Ok(client) = client_result else {
+            text_for_compare.buffer().set_text(&format!(
+                "D-Bus client unavailable:\n{}",
+                client_result.err().map(|e| e.to_string()).unwrap_or_default()
+            ));
+            return;
+        };
+        let live_result = client.live_fan_curve_readings();
+        let saved_result = client.last_known_good_fan_curve();
+        match (live_result, saved_result) {
+            (Ok(live), Ok(Some(saved))) => {
+                let report = format_fan_curve_live_vs_saved(&live, &saved);
+                text_for_compare.buffer().set_text(&report);
+            }
+            (Ok(_live), Ok(None)) => {
+                text_for_compare.buffer().set_text(
+                    "No last-known-good snapshot is stored yet.\nUse Capture snapshot in Guided fan planning first, then compare again.",
+                );
+            }
+            (Err(error), _) => {
+                text_for_compare
+                    .buffer()
+                    .set_text(&format!("Live readings failed:\n{error}"));
+            }
+            (_, Err(error)) => {
+                text_for_compare
+                    .buffer()
+                    .set_text(&format!("Saved snapshot read failed:\n{error}"));
             }
         }
     });

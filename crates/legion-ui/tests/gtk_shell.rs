@@ -66,7 +66,7 @@ fn status_and_error_pages_build_under_headless_display() {
 
     assert_eq!(page.orientation(), gtk4::Orientation::Vertical);
     assert_eq!(page.spacing(), 12);
-    assert_eq!(page.observe_children().n_items(), 25);
+    assert_eq!(page.observe_children().n_items(), 29);
 
     let page = gtk_shell::fans_page(Ok(sample_diagnostics()), Ok(Some(sample_fan_snapshot())));
     let page = page
@@ -75,7 +75,7 @@ fn status_and_error_pages_build_under_headless_display() {
 
     assert_eq!(page.orientation(), gtk4::Orientation::Vertical);
     assert_eq!(page.spacing(), 12);
-    assert_eq!(page.observe_children().n_items(), 25);
+    assert_eq!(page.observe_children().n_items(), 29);
 
     let page = gtk_shell::appearance_page(Ok(sample_diagnostics()));
     let page = page
@@ -313,6 +313,10 @@ fn dashboard_pages_render_quick_apply_and_gpu_controls() {
     assert!(fans_text
         .iter()
         .any(|text| text == "Import TOML from editor"));
+    assert!(fans_text
+        .iter()
+        .any(|text| text == "Live vs saved comparison"));
+    assert!(fans_text.iter().any(|text| text == "Compare live to saved"));
 
     let gpu_text = collect_widget_text(&gpu.clone().upcast());
     assert!(gpu_text.iter().any(|text| text == "GPU Mode"));
