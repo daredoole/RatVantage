@@ -25,10 +25,11 @@
 - Completed slice: `fan_curve_snapshot_chart_pairs` in `legion-common` plus GTK Fans “Curve shape (read-only preview)” PWM bars keyed off the saved last-known-good snapshot (v0.2 editor groundwork only).
 - Completed slice: GTK Fans read-only Cairo drawing for temperature→PWM polyline from the same saved snapshot (still not an interactive editor).
 - Completed slice: GTK Fans manual scratchpad includes an interactive temp→PWM chart (drag nearest point to edit row entries), entry `connect_changed` redraw wiring, TOML import chart refresh, and `repopulate_manual_fan_scratchpad_rows` optional chart hook — still scratchpad-only (no daemon fan sysfs writes).
+- Completed slice: the same temp→PWM Cairo chart (scratchpad and read-only LKG preview) draws light horizontal grid lines, left PWM scale ticks (0 / 128 / 255), bottom min/max raw-temperature labels, a centered axis title, plus an expanded scratchpad hint describing horizontal vs vertical axes.
 - Validation for the latest slices passed with `cargo fmt --all`, `xvfb-run -a cargo test -p legion-control-ui --features gtk-ui --test gtk_shell`, and `./scripts/ci-local.sh`.
 - Current user-visible GTK surface now includes `Status`, `Profiles`, `Battery`, `GPU`, `Fans`, `Appearance`, and `Diagnostics`.
 - Direct GPU-mode execution is still disabled in the dashboard; the GTK GPU tab is planning-only and app-state-only, matching the daemon safety policy.
-- Next recommended roadmap slice: extend the GTK Fans scratchpad editor (e.g. add/remove points, axis labels, or export path) while keeping `ApplyFanPreset` / `RestoreAutoFan` gated until execute-mode validation evidence exists.
+- Next recommended roadmap slice: further GTK Fans scratchpad polish (e.g. keyboard nudging of selected points, snap-to-grid, or clearer invalid-row messaging on the chart) while keeping `ApplyFanPreset` / `RestoreAutoFan` gated until execute-mode validation evidence exists.
 - If the KDE Wayland/NVIDIA black-window bug returns, treat it as a compositor/frontend issue and keep the private-session launcher plus `--gdk-backend x11` fallback available while continuing tray/CLI validation.
 
 ## Implemented

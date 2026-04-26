@@ -1030,6 +1030,8 @@ fn append_fan_live_vs_saved_compare(page: &gtk4::Box) {
 struct TempPwmChartLayout {
     t_min: f64,
     t_span: f64,
+    t_min_u: u32,
+    t_max_u: u32,
     plot_w: f64,
     plot_h: f64,
     margin: f64,
@@ -1048,12 +1050,16 @@ fn temp_pwm_chart_layout(
     let m = FAN_CURVE_CHART_MARGIN;
     let plot_w = (w - 2.0 * m).max(1.0);
     let plot_h = (h - 2.0 * m).max(1.0);
-    let t_min = pairs.iter().map(|(temp, _)| *temp).min()? as f64;
-    let t_max = pairs.iter().map(|(temp, _)| *temp).max()? as f64;
+    let t_min_u = pairs.iter().map(|(temp, _)| *temp).min()?;
+    let t_max_u = pairs.iter().map(|(temp, _)| *temp).max()?;
+    let t_min = t_min_u as f64;
+    let t_max = t_max_u as f64;
     let t_span = (t_max - t_min).max(1.0);
     Some(TempPwmChartLayout {
         t_min,
         t_span,
+        t_min_u,
+        t_max_u,
         plot_w,
         plot_h,
         margin: m,
@@ -1077,6 +1083,66 @@ fn temp_pwm_pair_pixel_coords(
             })
             .collect(),
     )
+}
+
+fn draw_temp_pwm_chart_grid_and_axes(
+    cr: &gtk4::cairo::Context,
+    lay: &TempPwmChartLayout,
+    height: f64,
+) {
+    use gtk4::cairo::{FontSlant, FontWeight};
+
+    cr.save().ok();
+    cr.select_font_face("Sans", FontSlant::Normal, FontWeight::Normal);
+    cr.set_font_size(10.0);
+    cr.set_source_rgb(0.45, 0.48, 0.52);
+
+    for frac in [0.25_f64, 0.5_f64, 0.75_f64] {
+        cr.set_source_rgba(0.88, 0.89, 0.91, 1.0);
+        cr.set_line_width(1.0);
+        let y = lay.margin + lay.plot_h * (1.0 - frac);
+        cr.move_to(lay.margin, y);
+        cr.line_to(lay.margin + lay.plot_w, y);
+        let _ = cr.stroke();
+    }
+
+    cr.set_source_rgb(0.45, 0.48, 0.52);
+    cr.set_line_width(1.0);
+    for pwm in [255u32, 128, 0] {
+        let y = lay.margin + lay.plot_h - (pwm as f64 / 255.0) * lay.plot_h;
+        cr.move_to(lay.margin - 6.0, y);
+        cr.line_to(lay.margin, y);
+        let _ = cr.stroke();
+    }
+
+    let label_x = 2.0_f64;
+    for (pwm, dy) in [(255u32, 4.0_f64), (128, 4.0), (0, -2.0)] {
+        let y = lay.margin + lay.plot_h - (pwm as f64 / 255.0) * lay.plot_h + dy;
+        let text = pwm.to_string();
+        cr.move_to(label_x, y);
+        let _ = cr.show_text(&text);
+    }
+
+    let axis_title = "Temperature (raw sysfs) → PWM";
+    if let Ok(ext) = cr.text_extents(axis_title) {
+        let x = lay.margin + (lay.plot_w - ext.width()) / 2.0 - ext.x_bearing();
+        let y = height - 22.0;
+        cr.move_to(x, y);
+        let _ = cr.show_text(axis_title);
+    }
+
+    let lo = lay.t_min_u.to_string();
+    cr.move_to(lay.margin, height - 8.0);
+    let _ = cr.show_text(&lo);
+
+    let hi = lay.t_max_u.to_string();
+    if let Ok(ext) = cr.text_extents(&hi) {
+        let x = lay.margin + lay.plot_w - ext.width() - ext.x_bearing();
+        cr.move_to(x, height - 8.0);
+        let _ = cr.show_text(&hi);
+    }
+
+    cr.restore().ok();
 }
 
 fn nearest_temp_pwm_point_index(
@@ -1121,11 +1187,7 @@ fn draw_temp_pwm_polyline_chart(
     cr.rectangle(lay.margin, lay.margin, lay.plot_w, lay.plot_h);
     let _ = cr.stroke().ok();
 
-    cr.set_source_rgb(0.9, 0.91, 0.94);
-    let y_mid = lay.margin + lay.plot_h * 0.5;
-    cr.move_to(lay.margin, y_mid);
-    cr.line_to(lay.margin + lay.plot_w, y_mid);
-    let _ = cr.stroke().ok();
+    draw_temp_pwm_chart_grid_and_axes(cr, &lay, h);
 
     cr.set_source_rgb(0.1, 0.35, 0.82);
     cr.set_line_width(2.5);
@@ -1556,7 +1618,7 @@ fn append_manual_fan_curve_scratchpad(page: &gtk4::Box, curve: &FanCurveCapabili
     page.append(&rows_heading);
 
     let chart_interaction_hint = gtk4::Label::new(Some(
-        "Drag a point on the chart to adjust temp and PWM in the rows (scratchpad only; not applied to hardware).",
+        "Drag a point on the chart to adjust temp and PWM in the rows (scratchpad only; not applied to hardware). The chart axes label raw sysfs temperature (min–max of your points) horizontally and PWM 0–255 vertically.",
     ));
     chart_interaction_hint.add_css_class("dim-label");
     chart_interaction_hint.set_wrap(true);
