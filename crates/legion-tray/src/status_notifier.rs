@@ -644,22 +644,8 @@ mod tests {
 
         assert!(menu_has_disabled_item(&menu, "82WM Legion Pro 5 16ARX8"));
         assert!(menu_has_disabled_item(&menu, "Power mode: Balanced"));
-        assert!(menu_has_disabled_item(
-            &menu,
-            "Available profiles: Low Power, Balanced, Performance"
-        ));
-        assert!(menu_has_disabled_item(
-            &menu,
-            "Charging mode: Standard"
-        ));
-        assert!(menu_has_disabled_item(
-            &menu,
-            "Available charging modes: Standard, Conservation, Fast"
-        ));
-        assert!(menu_has_disabled_item(
-            &menu,
-            "Battery: 79% / Charging / Good"
-        ));
+        assert!(menu_has_disabled_item(&menu, "Charging mode: Standard"));
+        assert!(menu_has_disabled_item(&menu, "Battery: 79% / Charging / Good"));
         assert!(menu_has_disabled_item(&menu, "Logo LED: on"));
         assert!(menu_has_disabled_item(&menu, "Fn-lock: off"));
         assert!(menu_has_disabled_item(&menu, "Camera power: on"));
@@ -668,19 +654,12 @@ mod tests {
             &menu,
             "GPU pending: hybrid (previous nvidia, reboot required)"
         ));
-        assert!(menu_has_disabled_item(
-            &menu,
-            "Saved fan curve: 1 values from legion_hwmon"
-        ));
-        assert!(menu_has_disabled_item(
-            &menu,
-            "Fan presets: Quiet office, Balanced daily, Gaming, Max safe"
-        ));
-        assert!(menu_has_disabled_item(
-            &menu,
-            "Capabilities: 1 available, 1 missing"
-        ));
         assert!(menu_has_disabled_item(&menu, "Missing: gpu"));
+        assert!(!menu_has_disabled_item(&menu, "Available profiles: Low Power, Balanced, Performance"));
+        assert!(!menu_has_disabled_item(&menu, "Available charging modes: Standard, Conservation, Fast"));
+        assert!(!menu_has_disabled_item(&menu, "Saved fan curve: 1 values from legion_hwmon"));
+        assert!(!menu_has_disabled_item(&menu, "Fan presets: Quiet office, Balanced daily, Gaming, Max safe"));
+        assert!(!menu_has_disabled_item(&menu, "Capabilities: 1 available, 1 missing"));
         assert!(menu_has_disabled_item(&menu, "Power mode"));
         assert!(menu_has_disabled_item(&menu, "Battery charging"));
         assert!(menu_has_disabled_item(&menu, "Logo light"));
