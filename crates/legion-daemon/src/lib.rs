@@ -1,6 +1,7 @@
 use std::{
     fs,
     path::{Path, PathBuf},
+    process::Command,
     sync::{Arc, Mutex},
 };
 
@@ -15,12 +16,12 @@ use legion_common::{
 };
 use legion_probe::{probe, ProbeOptions};
 use serde::Serialize;
-use zbus::{blocking::Connection, blocking::ConnectionBuilder, fdo, interface};
+use zbus::{blocking::Connection, blocking::ConnectionBuilder, fdo, interface, message::Header};
 
 pub const DBUS_INTERFACE: &str = "org.ratvantage.LegionControl1";
 pub const DBUS_PATH: &str = "/org/ratvantage/LegionControl1";
 pub const READ_ONLY_METHODS: &str = "GetHardwareSummary,GetCapabilities,RefreshCapabilities,GetTelemetry,GetRawProbeReport,GetGpuModePending,GetLastKnownGoodFanCurve,PlanPlatformProfileWrite,PlanBatteryChargeTypeWrite,PlanGpuModeWrite,PlanFanPresetWrite,PlanRestoreAutoFanWrite,SetGpuModePending,ClearGpuModePending,CaptureLastKnownGoodFanCurve";
-pub const GATED_WRITE_METHODS: &str = "SetPlatformProfile";
+pub const GATED_WRITE_METHODS: &str = "SetPlatformProfile,SetBatteryChargeType";
 pub const DEFAULT_STATE_PATH: &str = "/var/lib/legion-control/state.toml";
 
 const PACKAGED_FAN_PRESETS: &[&str] = &[
@@ -31,12 +32,13 @@ const PACKAGED_FAN_PRESETS: &[&str] = &[
 ];
 
 const PLATFORM_PROFILE_WRITE_METHOD: &str = "SetPlatformProfile";
-const PLATFORM_PROFILE_AUTH_UNAVAILABLE: &str =
-    "platform profile writes require a future polkit authorizer; execution stays blocked";
+const BATTERY_CHARGE_TYPE_WRITE_METHOD: &str = "SetBatteryChargeType";
+const PKCHECK_MISSING: &str = "pkcheck is required for polkit authorization";
 
 #[derive(Debug, Clone, Default)]
 pub struct WriteAccessPolicy {
     pub platform_profile_enabled: bool,
+    pub battery_charge_type_enabled: bool,
 }
 
 impl WriteAccessPolicy {
@@ -45,25 +47,60 @@ impl WriteAccessPolicy {
         if self.platform_profile_enabled {
             methods.push(PLATFORM_PROFILE_WRITE_METHOD);
         }
+        if self.battery_charge_type_enabled {
+            methods.push(BATTERY_CHARGE_TYPE_WRITE_METHOD);
+        }
         methods
     }
 }
 
 pub trait WriteAuthorizer: Send + Sync {
-    fn authorize(&self, action: &str) -> std::result::Result<(), String>;
+    fn authorize(&self, action: &str, sender: &str) -> std::result::Result<(), String>;
 }
 
 #[derive(Debug, Default)]
-pub struct PolkitAuthorizerUnavailable;
+pub struct PkcheckAuthorizer;
 
-impl WriteAuthorizer for PolkitAuthorizerUnavailable {
-    fn authorize(&self, _action: &str) -> std::result::Result<(), String> {
-        Err(PLATFORM_PROFILE_AUTH_UNAVAILABLE.to_owned())
+impl WriteAuthorizer for PkcheckAuthorizer {
+    fn authorize(&self, action: &str, sender: &str) -> std::result::Result<(), String> {
+        let output = Command::new("pkcheck")
+            .args(pkcheck_args(action, sender))
+            .output()
+            .map_err(|error| {
+                if error.kind() == std::io::ErrorKind::NotFound {
+                    PKCHECK_MISSING.to_owned()
+                } else {
+                    format!("failed to run pkcheck: {error}")
+                }
+            })?;
+
+        if output.status.success() {
+            return Ok(());
+        }
+
+        let stderr = String::from_utf8_lossy(&output.stderr).trim().to_owned();
+        let stdout = String::from_utf8_lossy(&output.stdout).trim().to_owned();
+        let detail = if !stderr.is_empty() {
+            stderr
+        } else if !stdout.is_empty() {
+            stdout
+        } else {
+            format!("pkcheck exited with status {}", output.status)
+        };
+        Err(format!("polkit authorization failed: {detail}"))
     }
 }
 
 pub trait PlatformProfileWriter: Send + Sync {
     fn write_platform_profile(
+        &self,
+        path: &str,
+        requested: &str,
+    ) -> std::result::Result<(), String>;
+}
+
+pub trait BatteryChargeTypeWriter: Send + Sync {
+    fn write_battery_charge_type(
         &self,
         path: &str,
         requested: &str,
@@ -83,6 +120,19 @@ impl PlatformProfileWriter for SysfsPlatformProfileWriter {
     }
 }
 
+#[derive(Debug, Default)]
+pub struct SysfsBatteryChargeTypeWriter;
+
+impl BatteryChargeTypeWriter for SysfsBatteryChargeTypeWriter {
+    fn write_battery_charge_type(
+        &self,
+        path: &str,
+        requested: &str,
+    ) -> std::result::Result<(), String> {
+        fs::write(path, requested).map_err(|error| error.to_string())
+    }
+}
+
 pub struct LegionControl {
     options: ProbeOptions,
     registry: Mutex<CapabilityRegistry>,
@@ -91,6 +141,7 @@ pub struct LegionControl {
     write_policy: WriteAccessPolicy,
     authorizer: Arc<dyn WriteAuthorizer>,
     platform_profile_writer: Arc<dyn PlatformProfileWriter>,
+    battery_charge_type_writer: Arc<dyn BatteryChargeTypeWriter>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -110,8 +161,9 @@ impl LegionControl {
             options,
             state_path,
             WriteAccessPolicy::default(),
-            Arc::new(PolkitAuthorizerUnavailable),
+            Arc::new(PkcheckAuthorizer),
             Arc::new(SysfsPlatformProfileWriter),
+            Arc::new(SysfsBatteryChargeTypeWriter),
         )
     }
 
@@ -121,6 +173,7 @@ impl LegionControl {
         write_policy: WriteAccessPolicy,
         authorizer: Arc<dyn WriteAuthorizer>,
         platform_profile_writer: Arc<dyn PlatformProfileWriter>,
+        battery_charge_type_writer: Arc<dyn BatteryChargeTypeWriter>,
     ) -> Self {
         let state_path = state_path.into();
         let registry = probe(&options);
@@ -134,6 +187,7 @@ impl LegionControl {
             write_policy,
             authorizer,
             platform_profile_writer,
+            battery_charge_type_writer,
         }
     }
 
@@ -179,7 +233,11 @@ impl LegionControl {
         plan_restore_auto_fan(&registry.fan_curves).map_err(PlanningError::Validation)
     }
 
-    pub fn set_platform_profile(&self, requested: &str) -> fdo::Result<WriteExecutionResult> {
+    pub fn set_platform_profile(
+        &self,
+        requested: &str,
+        sender: &str,
+    ) -> fdo::Result<WriteExecutionResult> {
         let plan = self
             .plan_platform_profile_write(requested)
             .map_err(planning_to_fdo)?;
@@ -189,7 +247,7 @@ impl LegionControl {
                 "platform profile writes are disabled by daemon policy",
             ));
         }
-        if let Err(reason) = self.authorizer.authorize(&plan.polkit_action) {
+        if let Err(reason) = self.authorizer.authorize(&plan.polkit_action, sender) {
             return Ok(WriteExecutionResult::blocked_by_authorization(plan, reason));
         }
 
@@ -233,6 +291,70 @@ impl LegionControl {
                 plan,
                 format!(
                     "platform profile read-back mismatch after write and rollback failed: expected `{requested}` got `{readback}`; rollback error: {rollback_error}"
+                ),
+                Some(readback),
+            )),
+        }
+    }
+
+    pub fn set_battery_charge_type(
+        &self,
+        requested: &str,
+        sender: &str,
+    ) -> fdo::Result<WriteExecutionResult> {
+        let plan = self
+            .plan_battery_charge_type_write(requested)
+            .map_err(planning_to_fdo)?;
+        if !self.write_policy.battery_charge_type_enabled {
+            return Ok(WriteExecutionResult::blocked_by_policy(
+                plan,
+                "battery charge type writes are disabled by daemon policy",
+            ));
+        }
+        if let Err(reason) = self.authorizer.authorize(&plan.polkit_action, sender) {
+            return Ok(WriteExecutionResult::blocked_by_authorization(plan, reason));
+        }
+
+        let path = plan.path.clone();
+        let previous_value = plan.previous_value.clone();
+        if let Err(error) = self
+            .battery_charge_type_writer
+            .write_battery_charge_type(&path, requested)
+        {
+            return Ok(WriteExecutionResult::failed(
+                plan,
+                format!("failed to write battery charge type: {error}"),
+                None,
+            ));
+        }
+
+        let readback = self.refresh_battery_charge_type()?;
+        if readback == requested {
+            return Ok(WriteExecutionResult::applied(
+                plan,
+                "battery charge type write applied and read back successfully",
+                Some(readback),
+            ));
+        }
+
+        match self
+            .battery_charge_type_writer
+            .write_battery_charge_type(&path, &previous_value)
+        {
+            Ok(()) => {
+                let rollback_readback = self.refresh_battery_charge_type()?;
+                Ok(WriteExecutionResult::failed(
+                    plan,
+                    format!(
+                        "battery charge type read-back mismatch after write; restored previous value `{previous_value}`"
+                    ),
+                    Some(rollback_readback),
+                ))
+            }
+            Err(rollback_error) => Ok(WriteExecutionResult::failed(
+                plan,
+                format!(
+                    "battery charge type read-back mismatch after write and rollback failed: expected `{requested}` got `{readback}`; rollback error: {rollback_error}"
                 ),
                 Some(readback),
             )),
@@ -325,6 +447,18 @@ impl LegionControl {
                 )
             })
     }
+
+    fn refresh_battery_charge_type(&self) -> fdo::Result<String> {
+        let refreshed = self.refresh()?;
+        refreshed
+            .battery_charge_type
+            .and_then(|charge_type| charge_type.current)
+            .ok_or_else(|| {
+                fdo::Error::Failed(
+                    "battery_charge_type current value missing after write/read-back".to_owned(),
+                )
+            })
+    }
 }
 
 #[allow(non_snake_case)]
@@ -378,8 +512,22 @@ impl LegionControl {
         to_plan_json(self.plan_restore_auto_fan_write())
     }
 
-    fn SetPlatformProfile(&self, requested: &str) -> fdo::Result<String> {
-        to_json(&self.set_platform_profile(requested)?)
+    fn SetPlatformProfile(
+        &self,
+        requested: &str,
+        #[zbus(header)] header: Header<'_>,
+    ) -> fdo::Result<String> {
+        let sender = sender_from_header(&header)?;
+        to_json(&self.set_platform_profile(requested, &sender)?)
+    }
+
+    fn SetBatteryChargeType(
+        &self,
+        requested: &str,
+        #[zbus(header)] header: Header<'_>,
+    ) -> fdo::Result<String> {
+        let sender = sender_from_header(&header)?;
+        to_json(&self.set_battery_charge_type(requested, &sender)?)
     }
 
     fn SetGpuModePending(&self, requested: &str) -> fdo::Result<String> {
@@ -434,6 +582,23 @@ fn validation_to_fdo(error: ValidationError) -> fdo::Error {
     fdo::Error::InvalidArgs(serde_json::to_string(&error).unwrap_or_else(|_| format!("{error:?}")))
 }
 
+fn sender_from_header(header: &Header<'_>) -> fdo::Result<String> {
+    header
+        .sender()
+        .map(ToString::to_string)
+        .ok_or_else(|| fdo::Error::Failed("D-Bus caller sender is missing".to_owned()))
+}
+
+fn pkcheck_args(action: &str, sender: &str) -> Vec<String> {
+    vec![
+        "--action-id".to_owned(),
+        action.to_owned(),
+        "--system-bus-name".to_owned(),
+        sender.to_owned(),
+        "--allow-user-interaction".to_owned(),
+    ]
+}
+
 fn capture_fan_curve_snapshot(registry: &CapabilityRegistry) -> fdo::Result<FanCurveSnapshot> {
     let curve = registry
         .fan_curves
@@ -484,4 +649,38 @@ fn packaged_fan_presets() -> Result<Vec<FanPreset>, PlanningError> {
                 .map_err(|error| PlanningError::PresetUnavailable(error.to_string()))
         })
         .collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn pkcheck_args_use_system_bus_subject_and_interaction_flag() {
+        assert_eq!(
+            pkcheck_args(
+                "org.ratvantage.LegionControl1.set-platform-profile",
+                ":1.42"
+            ),
+            [
+                "--action-id",
+                "org.ratvantage.LegionControl1.set-platform-profile",
+                "--system-bus-name",
+                ":1.42",
+                "--allow-user-interaction",
+            ]
+        );
+    }
+
+    #[test]
+    fn write_access_policy_lists_enabled_gated_methods() {
+        assert_eq!(
+            WriteAccessPolicy {
+                platform_profile_enabled: true,
+                battery_charge_type_enabled: true,
+            }
+            .enabled_methods(),
+            ["SetPlatformProfile", "SetBatteryChargeType"]
+        );
+    }
 }

@@ -32,8 +32,8 @@ Pre-alpha implementation scaffold exists:
 - Disabled write-method contract drafts for platform profile, battery charge type, GPU mode, fan presets, and fan restore/default.
 - Pure validators for platform profile, battery charge type, EnvyControl GPU mode, and packaged fan preset choices.
 - Validator-backed dry-run planning for platform profile, battery charge type, GPU mode, fan presets, and fan restore/default.
-- Gated platform-profile write execution scaffolding with rollback-on-readback-mismatch coverage; the daemon still blocks execution by default until a real polkit authorizer is wired.
-- Read-only D-Bus dry-run planning for battery charge type, GPU mode, fan presets, and fan restore/default.
+- Gated platform-profile and battery charge type execution paths with rollback-on-readback-mismatch coverage; the daemon now uses real `pkcheck` caller authorization and still blocks execution by default unless the write flags are enabled.
+- Read-only D-Bus dry-run planning for GPU mode, fan presets, and fan restore/default.
 - GPU dry-run plans include reboot-required metadata and rollback guidance; execution remains disabled.
 - App-state-only GPU pending-reboot tracking in `/var/lib/legion-control/state.toml`; no hardware writes are performed.
 - App-state-only last-known-good fan curve capture in the same TOML state file; no fan writes are performed.
@@ -41,7 +41,7 @@ Pre-alpha implementation scaffold exists:
 - Read-only diagnostics/export surfaces now include the same durable app-state fields, including `gpu_mode_pending` and `last_known_good_fan_curve`.
 - Local CI script and GitHub Actions CI.
 
-No hardware write path exists yet. Write support must wait for validators, polkit policy, rollback behavior, and manual target-machine validation.
+Only reversible platform-profile and battery charge-type execution paths exist so far, and both remain disabled by default unless the daemon is started with their explicit enable flags. Higher-risk write support must still wait for validators, rollback behavior, and manual target-machine validation.
 
 For continuation work, start from [docs/session-handoff.md](docs/session-handoff.md). It records the latest commits, next roadmap slice, safety constraints, validation commands, and the expected orchestrator/agent workflow for new Codex sessions.
 
@@ -83,19 +83,21 @@ Run local CI before pushing:
 ./scripts/ci-local.sh
 ```
 
-Useful read-only commands:
+Useful commands:
 
 ```bash
 cargo run -p legion-probe -- --json --sysfs-root tests/fixtures/sysfs-82wm-confirmed
 cargo run -p legion-probe -- --json --sysfs-root tests/fixtures/sysfs-82wm-runtime-capture
 cargo run -p legion-control-daemon -- --dry-run
 cargo run -p legion-control-daemon -- --session --sysfs-root tests/fixtures/sysfs-82wm-confirmed
+cargo run -p legion-control-daemon -- --enable-platform-profile-write --enable-battery-charge-type-write
 cargo run -p legion-control-ui -- --status --bus-address <dbus-address>
 cargo run -p legion-control-ui -- --overview --bus-address <dbus-address>
 cargo run -p legion-control-ui -- --diagnostics --bus-address <dbus-address>
 cargo run -p legion-control-ui -- --plan-platform-profile performance --bus-address <dbus-address>
 cargo run -p legion-control-ui -- --set-platform-profile performance --bus-address <dbus-address>
 cargo run -p legion-control-ui -- --plan-battery-charge-type Conservation --bus-address <dbus-address>
+cargo run -p legion-control-ui -- --set-battery-charge-type Conservation --bus-address <dbus-address>
 cargo run -p legion-control-ui -- --plan-gpu-mode hybrid --bus-address <dbus-address>
 cargo run -p legion-control-ui -- --plan-fan-preset balanced-daily --bus-address <dbus-address>
 cargo run -p legion-control-ui -- --plan-restore-auto-fan --bus-address <dbus-address>
@@ -147,9 +149,9 @@ Completed scaffold:
 - Packaged fan preset TOML assets with runtime dry-run validation.
 - Disabled write-method contract drafts.
 - Pure platform profile, battery charge type, and EnvyControl GPU mode validators.
-- Pure dry-run planning for battery charge type, GPU mode, and fan preset writes, plus a validated platform-profile execution path with rollback tests.
-- Daemon planning methods over D-Bus plus gated `SetPlatformProfile` execution; other write methods are still absent.
-- UI CLI previews for platform profile, battery charge type, GPU mode, and fan preset dry-run plans, plus `--set-platform-profile` execution output.
+- Pure dry-run planning for GPU mode and fan preset writes, plus validated platform-profile and battery charge type execution paths with rollback tests.
+- Daemon planning methods over D-Bus plus gated `SetPlatformProfile` and `SetBatteryChargeType` execution; higher-risk write methods are still absent.
+- UI CLI previews for platform profile, battery charge type, GPU mode, and fan preset dry-run plans, plus `--set-platform-profile` and `--set-battery-charge-type` execution output.
 - Read-only diagnostics JSON bundle with hardware summary, compact counts, kernel version, detected sysfs paths, recent daemon log excerpts, and raw probe report.
 - Diagnostics/export parity for durable app state, so CLI `--diagnostics` output and GTK Diagnostics Copy JSON both include `gpu_mode_pending` and `last_known_good_fan_curve`.
 - Read-only overview output includes durable GPU pending-reboot and saved fan curve state, plus LED brightness and firmware toggle values when exposed.

@@ -138,7 +138,7 @@ SetPlatformProfile(s profile) -> s               # JSON execution result
 
 GetBatteryChargeTypes() -> as
 GetBatteryChargeType() -> s
-SetBatteryChargeType(s charge_type) -> ()
+SetBatteryChargeType(s charge_type) -> s         # JSON execution result
 
 GetFanTelemetry() -> s                            # JSON
 GetFanCurve() -> s                                # JSON

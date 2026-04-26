@@ -5,8 +5,8 @@ use legion_common::{
     WriteDryRunPlan, WriteExecutionResult, WriteExecutionStatus,
 };
 use legion_control_daemon::{
-    LegionControl, PlatformProfileWriter, WriteAccessPolicy, WriteAuthorizer, DBUS_INTERFACE,
-    DBUS_PATH,
+    BatteryChargeTypeWriter, LegionControl, PlatformProfileWriter, WriteAccessPolicy,
+    WriteAuthorizer, DBUS_INTERFACE, DBUS_PATH,
 };
 use legion_probe::ProbeOptions;
 use ratvantage_test_support::{
@@ -95,10 +95,19 @@ fn read_only_methods_return_expected_json_contracts() {
     assert!(!execution.applied);
     assert_eq!(execution.plan.method, "SetPlatformProfile");
     assert_eq!(execution.plan.requested_value, "performance");
+
+    let payload: String = proxy
+        .call("SetBatteryChargeType", &("Conservation",))
+        .unwrap();
+    let execution: WriteExecutionResult = serde_json::from_str(&payload).unwrap();
+    assert_eq!(execution.status, WriteExecutionStatus::BlockedByPolicy);
+    assert!(!execution.applied);
+    assert_eq!(execution.plan.method, "SetBatteryChargeType");
+    assert_eq!(execution.plan.requested_value, "Conservation");
 }
 
 #[test]
-fn introspection_exposes_gated_platform_profile_write_only() {
+fn introspection_exposes_gated_reversible_write_methods_only() {
     let (_bus, _service_connection, proxy) = test_proxy();
     let xml = proxy.introspect().unwrap();
     let mut methods = introspected_methods(&xml, DBUS_INTERFACE);
@@ -121,13 +130,14 @@ fn introspection_exposes_gated_platform_profile_write_only() {
             "PlanPlatformProfileWrite",
             "PlanRestoreAutoFanWrite",
             "RefreshCapabilities",
+            "SetBatteryChargeType",
             "SetGpuModePending",
             "SetPlatformProfile",
         ]
     );
     assert!(!methods.iter().any(|method| matches!(
         method.as_str(),
-        "SetBatteryChargeType" | "SetGpuMode" | "ApplyFanPreset" | "RestoreAutoFan"
+        "SetGpuMode" | "ApplyFanPreset" | "RestoreAutoFan"
     )));
 }
 
@@ -177,12 +187,16 @@ fn platform_profile_write_applies_when_policy_and_authorizer_allow_it() {
         &state_path,
         WriteAccessPolicy {
             platform_profile_enabled: true,
+            battery_charge_type_enabled: false,
         },
         Arc::new(AllowAllAuthorizer),
         Arc::new(RealFixturePlatformProfileWriter),
+        Arc::new(RealFixtureBatteryChargeTypeWriter),
     );
 
-    let result = service.set_platform_profile("performance").unwrap();
+    let result = service
+        .set_platform_profile("performance", ":1.99")
+        .unwrap();
     assert_eq!(result.status, WriteExecutionStatus::Applied);
     assert!(result.applied);
     assert_eq!(result.readback_value.as_deref(), Some("performance"));
@@ -208,12 +222,14 @@ fn platform_profile_write_rejects_invalid_choice_before_write() {
         &state_path,
         WriteAccessPolicy {
             platform_profile_enabled: true,
+            battery_charge_type_enabled: false,
         },
         Arc::new(AllowAllAuthorizer),
         Arc::new(RealFixturePlatformProfileWriter),
+        Arc::new(RealFixtureBatteryChargeTypeWriter),
     );
 
-    assert!(service.set_platform_profile("custom").is_err());
+    assert!(service.set_platform_profile("custom", ":1.99").is_err());
     assert_eq!(
         fs::read_to_string(fixture.join("sys/firmware/acpi/platform_profile"))
             .unwrap()
@@ -236,12 +252,16 @@ fn platform_profile_write_reports_write_failure_without_changing_value() {
         &state_path,
         WriteAccessPolicy {
             platform_profile_enabled: true,
+            battery_charge_type_enabled: false,
         },
         Arc::new(AllowAllAuthorizer),
         Arc::new(FailingPlatformProfileWriter),
+        Arc::new(RealFixtureBatteryChargeTypeWriter),
     );
 
-    let result = service.set_platform_profile("performance").unwrap();
+    let result = service
+        .set_platform_profile("performance", ":1.99")
+        .unwrap();
     assert_eq!(result.status, WriteExecutionStatus::Failed);
     assert!(!result.applied);
     assert!(result.message.contains("failed to write platform profile"));
@@ -267,12 +287,16 @@ fn platform_profile_write_rolls_back_after_readback_mismatch() {
         &state_path,
         WriteAccessPolicy {
             platform_profile_enabled: true,
+            battery_charge_type_enabled: false,
         },
         Arc::new(AllowAllAuthorizer),
         Arc::new(MismatchingPlatformProfileWriter),
+        Arc::new(RealFixtureBatteryChargeTypeWriter),
     );
 
-    let result = service.set_platform_profile("performance").unwrap();
+    let result = service
+        .set_platform_profile("performance", ":1.99")
+        .unwrap();
     assert_eq!(result.status, WriteExecutionStatus::Failed);
     assert!(!result.applied);
     assert!(result
@@ -284,6 +308,79 @@ fn platform_profile_write_rolls_back_after_readback_mismatch() {
             .unwrap()
             .trim(),
         "balanced"
+    );
+
+    let _ = fs::remove_file(state_path);
+    let _ = fs::remove_dir_all(fixture);
+}
+
+#[test]
+fn battery_charge_type_write_applies_when_policy_and_authorizer_allow_it() {
+    let fixture = copied_fixture_root("battery-charge-type-write-success");
+    let state_path = unique_state_path("battery-charge-type-write-success");
+    let service = LegionControl::new_with_runtime(
+        ProbeOptions {
+            sysfs_root: fixture.clone(),
+        },
+        &state_path,
+        WriteAccessPolicy {
+            platform_profile_enabled: false,
+            battery_charge_type_enabled: true,
+        },
+        Arc::new(AllowAllAuthorizer),
+        Arc::new(RealFixturePlatformProfileWriter),
+        Arc::new(RealFixtureBatteryChargeTypeWriter),
+    );
+
+    let result = service
+        .set_battery_charge_type("Conservation", ":1.99")
+        .unwrap();
+    assert_eq!(result.status, WriteExecutionStatus::Applied);
+    assert!(result.applied);
+    assert_eq!(result.readback_value.as_deref(), Some("Conservation"));
+    assert_eq!(
+        fs::read_to_string(fixture.join("sys/class/power_supply/BAT0/charge_type"))
+            .unwrap()
+            .trim(),
+        "Conservation"
+    );
+
+    let _ = fs::remove_file(state_path);
+    let _ = fs::remove_dir_all(fixture);
+}
+
+#[test]
+fn battery_charge_type_write_rolls_back_after_readback_mismatch() {
+    let fixture = copied_fixture_root("battery-charge-type-write-rollback");
+    let state_path = unique_state_path("battery-charge-type-write-rollback");
+    let service = LegionControl::new_with_runtime(
+        ProbeOptions {
+            sysfs_root: fixture.clone(),
+        },
+        &state_path,
+        WriteAccessPolicy {
+            platform_profile_enabled: false,
+            battery_charge_type_enabled: true,
+        },
+        Arc::new(AllowAllAuthorizer),
+        Arc::new(RealFixturePlatformProfileWriter),
+        Arc::new(MismatchingBatteryChargeTypeWriter),
+    );
+
+    let result = service
+        .set_battery_charge_type("Conservation", ":1.99")
+        .unwrap();
+    assert_eq!(result.status, WriteExecutionStatus::Failed);
+    assert!(!result.applied);
+    assert!(result
+        .message
+        .contains("restored previous value `Standard`"));
+    assert_eq!(result.readback_value.as_deref(), Some("Standard"));
+    assert_eq!(
+        fs::read_to_string(fixture.join("sys/class/power_supply/BAT0/charge_type"))
+            .unwrap()
+            .trim(),
+        "Standard"
     );
 
     let _ = fs::remove_file(state_path);
@@ -429,7 +526,7 @@ fn unique_state_path(label: &str) -> std::path::PathBuf {
 struct AllowAllAuthorizer;
 
 impl WriteAuthorizer for AllowAllAuthorizer {
-    fn authorize(&self, _action: &str) -> std::result::Result<(), String> {
+    fn authorize(&self, _action: &str, _sender: &str) -> std::result::Result<(), String> {
         Ok(())
     }
 }
@@ -438,6 +535,18 @@ struct RealFixturePlatformProfileWriter;
 
 impl PlatformProfileWriter for RealFixturePlatformProfileWriter {
     fn write_platform_profile(
+        &self,
+        path: &str,
+        requested: &str,
+    ) -> std::result::Result<(), String> {
+        fs::write(path, requested).map_err(|error| error.to_string())
+    }
+}
+
+struct RealFixtureBatteryChargeTypeWriter;
+
+impl BatteryChargeTypeWriter for RealFixtureBatteryChargeTypeWriter {
+    fn write_battery_charge_type(
         &self,
         path: &str,
         requested: &str,
@@ -468,6 +577,23 @@ impl PlatformProfileWriter for MismatchingPlatformProfileWriter {
     ) -> std::result::Result<(), String> {
         let value = if requested == "performance" {
             "balanced"
+        } else {
+            requested
+        };
+        fs::write(path, value).map_err(|error| error.to_string())
+    }
+}
+
+struct MismatchingBatteryChargeTypeWriter;
+
+impl BatteryChargeTypeWriter for MismatchingBatteryChargeTypeWriter {
+    fn write_battery_charge_type(
+        &self,
+        path: &str,
+        requested: &str,
+    ) -> std::result::Result<(), String> {
+        let value = if requested == "Conservation" {
+            "Standard"
         } else {
             requested
         };

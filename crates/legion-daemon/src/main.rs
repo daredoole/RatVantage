@@ -1,7 +1,8 @@
 use anyhow::Result;
 use clap::Parser;
 use legion_control_daemon::{
-    session_connection, system_connection, LegionControl, WriteAccessPolicy, DBUS_INTERFACE,
+    session_connection, system_connection, LegionControl, PkcheckAuthorizer,
+    SysfsBatteryChargeTypeWriter, SysfsPlatformProfileWriter, WriteAccessPolicy, DBUS_INTERFACE,
     DBUS_PATH, DEFAULT_STATE_PATH, GATED_WRITE_METHODS, READ_ONLY_METHODS,
 };
 use legion_probe::{probe, ProbeOptions};
@@ -22,6 +23,9 @@ struct Args {
 
     #[arg(long)]
     enable_platform_profile_write: bool,
+
+    #[arg(long)]
+    enable_battery_charge_type_write: bool,
 }
 
 fn main() -> Result<()> {
@@ -34,9 +38,11 @@ fn main() -> Result<()> {
         args.state_path,
         WriteAccessPolicy {
             platform_profile_enabled: args.enable_platform_profile_write,
+            battery_charge_type_enabled: args.enable_battery_charge_type_write,
         },
-        std::sync::Arc::new(legion_control_daemon::PolkitAuthorizerUnavailable),
-        std::sync::Arc::new(legion_control_daemon::SysfsPlatformProfileWriter),
+        std::sync::Arc::new(PkcheckAuthorizer),
+        std::sync::Arc::new(SysfsPlatformProfileWriter),
+        std::sync::Arc::new(SysfsBatteryChargeTypeWriter),
     );
 
     if args.dry_run {
@@ -46,14 +52,20 @@ fn main() -> Result<()> {
         println!("path={DBUS_PATH}");
         println!("read_only_methods={READ_ONLY_METHODS}");
         println!("gated_write_methods={GATED_WRITE_METHODS}");
-        println!(
-            "enabled_write_methods={}",
+        println!("enabled_write_methods={}", {
+            let mut methods = Vec::new();
             if args.enable_platform_profile_write {
-                "SetPlatformProfile"
-            } else {
-                "none"
+                methods.push("SetPlatformProfile");
             }
-        );
+            if args.enable_battery_charge_type_write {
+                methods.push("SetBatteryChargeType");
+            }
+            if methods.is_empty() {
+                "none".to_owned()
+            } else {
+                methods.join(",")
+            }
+        });
         println!("capability_count={}", registry.capabilities.len());
         return Ok(());
     }

@@ -27,6 +27,9 @@ struct Args {
     #[arg(long, value_name = "CHARGE_TYPE")]
     plan_battery_charge_type: Option<String>,
 
+    #[arg(long, value_name = "CHARGE_TYPE")]
+    set_battery_charge_type: Option<String>,
+
     #[arg(long, value_name = "MODE")]
     plan_gpu_mode: Option<String>,
 
@@ -65,6 +68,7 @@ fn main() -> Result<()> {
         args.plan_platform_profile.is_some(),
         args.set_platform_profile.is_some(),
         args.plan_battery_charge_type.is_some(),
+        args.set_battery_charge_type.is_some(),
         args.plan_gpu_mode.is_some(),
         args.plan_fan_preset.is_some(),
         args.plan_restore_auto_fan,
@@ -92,6 +96,8 @@ fn main() -> Result<()> {
             print_json(&client.set_platform_profile(&profile)?)?;
         } else if let Some(charge_type) = args.plan_battery_charge_type {
             print_write_plan(&client.plan_battery_charge_type_write(&charge_type)?)?;
+        } else if let Some(charge_type) = args.set_battery_charge_type {
+            print_json(&client.set_battery_charge_type(&charge_type)?)?;
         } else if let Some(mode) = args.plan_gpu_mode {
             print_write_plan(&client.plan_gpu_mode_write(&mode)?)?;
         } else if let Some(preset_id) = args.plan_fan_preset {

@@ -554,6 +554,13 @@ impl LegionControlClient {
         self.call_json_arg("PlanBatteryChargeTypeWrite", requested)
     }
 
+    pub fn set_battery_charge_type(
+        &self,
+        requested: &str,
+    ) -> Result<legion_common::WriteExecutionResult> {
+        self.call_json_arg("SetBatteryChargeType", requested)
+    }
+
     pub fn plan_gpu_mode_write(&self, requested: &str) -> Result<WriteDryRunPlan> {
         self.call_json_arg("PlanGpuModeWrite", requested)
     }
