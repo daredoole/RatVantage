@@ -269,7 +269,7 @@ fn append_quick_actions(entries: &mut Vec<TrayMenuEntry>, report: &CapabilityReg
             .platform_profile
             .as_ref()
             .map(|profile| profile.choices.as_slice()),
-        |choice| humanize_choice(choice),
+        humanize_choice,
         |choice| TrayAction::SetPlatformProfile(choice.to_owned()),
     ) {
         sections.extend(section);
@@ -285,7 +285,7 @@ fn append_quick_actions(entries: &mut Vec<TrayMenuEntry>, report: &CapabilityReg
             .battery_charge_type
             .as_ref()
             .map(|charge_type| charge_type.choices.as_slice()),
-        |choice| humanize_choice(choice),
+        humanize_choice,
         |choice| TrayAction::SetBatteryChargeType(choice.to_owned()),
     ) {
         sections.extend(section);
