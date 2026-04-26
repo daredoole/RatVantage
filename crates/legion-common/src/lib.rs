@@ -1071,6 +1071,109 @@ fn validate_fan_curve_supports_preset(
     Ok(())
 }
 
+/// Matched `_auto_pointN_{temp,pwm}` sysfs paths for one index `N` under a fan curve capability.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct FanCurveHwmonPointPair {
+    pub index: u32,
+    pub temp_path: String,
+    pub pwm_path: String,
+}
+
+fn parse_fan_auto_point_path(path: &str) -> Option<(u32, bool)> {
+    const NEEDLE: &str = "_auto_point";
+    let start = path.find(NEEDLE)? + NEEDLE.len();
+    let rest = path.get(start..)?;
+    let num_digits = rest
+        .char_indices()
+        .find(|(_, ch)| !ch.is_ascii_digit())
+        .map(|(offset, _)| offset)
+        .unwrap_or(rest.len());
+    if num_digits == 0 {
+        return None;
+    }
+    let digits_end = start + num_digits;
+    let index: u32 = path.get(start..digits_end)?.parse().ok()?;
+    let suffix = &path[digits_end..];
+    if suffix.starts_with("_temp") {
+        Some((index, true))
+    } else if suffix.starts_with("_pwm") {
+        Some((index, false))
+    } else {
+        None
+    }
+}
+
+/// Returns temp/pwm path pairs for each index that has both nodes in `curve.point_paths`, sorted by index.
+pub fn fan_curve_hwmon_point_pairs(curve: &FanCurveCapability) -> Vec<FanCurveHwmonPointPair> {
+    use std::collections::BTreeMap;
+
+    let mut temps: BTreeMap<u32, String> = BTreeMap::new();
+    let mut pwms: BTreeMap<u32, String> = BTreeMap::new();
+    for path in &curve.point_paths {
+        if let Some((index, is_temp)) = parse_fan_auto_point_path(path) {
+            if is_temp {
+                temps.insert(index, path.clone());
+            } else {
+                pwms.insert(index, path.clone());
+            }
+        }
+    }
+
+    temps
+        .into_iter()
+        .filter_map(|(index, temp_path)| {
+            pwms.get(&index).map(|pwm_path| FanCurveHwmonPointPair {
+                index,
+                temp_path,
+                pwm_path: pwm_path.clone(),
+            })
+        })
+        .collect()
+}
+
+/// Validates raw sysfs integers for a manual curve scratchpad (e.g. millidegree temps, 0–255 pwm).
+/// Rules mirror packaged presets: strictly increasing temperature channel values, non-decreasing pwm, pwm ≤ 255.
+pub fn validate_manual_fan_curve_pairs(pairs: &[(u32, u32)]) -> Result<(), ValidationError> {
+    if pairs.is_empty() {
+        return Err(ValidationError::BlockedChoice {
+            capability_id: "fan_curves".to_owned(),
+            requested: "manual_scratchpad".to_owned(),
+            reason: "no (temp, pwm) pairs to validate".to_owned(),
+        });
+    }
+
+    let mut previous_temperature = None;
+    let mut previous_pwm = None;
+    for (temp, pwm) in pairs {
+        if *pwm > 255 {
+            return Err(ValidationError::BlockedChoice {
+                capability_id: "fan_curves".to_owned(),
+                requested: "manual_scratchpad".to_owned(),
+                reason: format!("pwm sysfs value {pwm} is out of range (max 255)"),
+            });
+        }
+        if previous_temperature.is_some_and(|previous| *temp <= previous) {
+            return Err(ValidationError::BlockedChoice {
+                capability_id: "fan_curves".to_owned(),
+                requested: "manual_scratchpad".to_owned(),
+                reason: "temp channel values must be strictly increasing (check sysfs units, e.g. millidegree)"
+                    .to_owned(),
+            });
+        }
+        if previous_pwm.is_some_and(|previous| *pwm < previous) {
+            return Err(ValidationError::BlockedChoice {
+                capability_id: "fan_curves".to_owned(),
+                requested: "manual_scratchpad".to_owned(),
+                reason: "pwm values must be non-decreasing".to_owned(),
+            });
+        }
+        previous_temperature = Some(*temp);
+        previous_pwm = Some(*pwm);
+    }
+
+    Ok(())
+}
+
 fn blocked_fan_preset<T>(preset: &FanPreset, reason: &str) -> Result<T, ValidationError> {
     Err(ValidationError::BlockedChoice {
         capability_id: "fan_preset".to_owned(),
@@ -1838,6 +1941,57 @@ mod tests {
         ));
         assert!(matches!(
             validate_fan_preset_choice(&[short_curve], &[preset], "balanced-daily"),
+            Err(ValidationError::BlockedChoice { .. })
+        ));
+    }
+
+    #[test]
+    fn fan_curve_hwmon_point_pairs_extracts_sorted_indices() {
+        let curve = complete_fan_curve();
+        let pairs = fan_curve_hwmon_point_pairs(&curve);
+        assert_eq!(pairs.len(), 10);
+        assert_eq!(pairs[0].index, 1);
+        assert!(pairs[0].temp_path.ends_with("pwm1_auto_point1_temp"));
+        assert!(pairs[0].pwm_path.ends_with("pwm1_auto_point1_pwm"));
+        assert_eq!(pairs[9].index, 10);
+    }
+
+    #[test]
+    fn fan_curve_hwmon_point_pairs_handles_single_point_fixture() {
+        let curve = FanCurveCapability {
+            point_paths: vec![
+                "/tmp/hwmon7/pwm1_auto_point1_temp".to_owned(),
+                "/tmp/hwmon7/pwm1_auto_point1_pwm".to_owned(),
+            ],
+            ..complete_fan_curve()
+        };
+        let pairs = fan_curve_hwmon_point_pairs(&curve);
+        assert_eq!(pairs.len(), 1);
+        assert_eq!(pairs[0].index, 1);
+    }
+
+    #[test]
+    fn validate_manual_fan_curve_pairs_accepts_monotonic_sysfs_integers() {
+        let pairs: Vec<(u32, u32)> = (1..=10).map(|i| (35_000 + i * 1_000, 20 + i)).collect();
+        assert_eq!(validate_manual_fan_curve_pairs(&pairs), Ok(()));
+    }
+
+    #[test]
+    fn validate_manual_fan_curve_pairs_rejects_empty_pwm_range_and_order() {
+        assert!(matches!(
+            validate_manual_fan_curve_pairs(&[]),
+            Err(ValidationError::BlockedChoice { .. })
+        ));
+        assert!(matches!(
+            validate_manual_fan_curve_pairs(&[(40_000, 300)]),
+            Err(ValidationError::BlockedChoice { .. })
+        ));
+        assert!(matches!(
+            validate_manual_fan_curve_pairs(&[(50_000, 10), (40_000, 20)]),
+            Err(ValidationError::BlockedChoice { .. })
+        ));
+        assert!(matches!(
+            validate_manual_fan_curve_pairs(&[(40_000, 80), (50_000, 60)]),
             Err(ValidationError::BlockedChoice { .. })
         ));
     }

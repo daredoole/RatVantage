@@ -5,9 +5,10 @@ use crate::{
 use adw::prelude::*;
 use anyhow::{anyhow, Result};
 use legion_common::{
-    BatteryChargeTypeCapability, FanCurveCapability, FanCurveSnapshot, GpuCapability,
-    GpuModePending, IdeapadToggleCapability, LedCapability, PlatformProfileCapability,
-    WriteDryRunPlan, WriteExecutionResult, WriteExecutionStatus,
+    fan_curve_hwmon_point_pairs, validate_manual_fan_curve_pairs, BatteryChargeTypeCapability,
+    FanCurveCapability, FanCurveHwmonPointPair, FanCurveSnapshot, GpuCapability, GpuModePending,
+    IdeapadToggleCapability, LedCapability, PlatformProfileCapability, WriteDryRunPlan,
+    WriteExecutionResult, WriteExecutionStatus,
 };
 use std::path::Path;
 use std::thread_local;
@@ -745,6 +746,7 @@ fn append_fans(
 
     if !bundle.raw_probe_report.fan_curves.is_empty() {
         append_fan_live_curve_readings(page);
+        append_manual_fan_curve_scratchpad(page, &bundle.raw_probe_report.fan_curves[0]);
     }
 }
 
@@ -941,6 +943,240 @@ fn append_fan_live_curve_readings(page: &gtk4::Box) {
                     .set_text(&format!("Live readings failed:\n{error}"));
             }
         }
+    });
+}
+
+type ManualFanScratchRows = Rc<RefCell<Vec<(FanCurveHwmonPointPair, gtk4::Entry, gtk4::Entry)>>>;
+
+fn repopulate_manual_fan_scratchpad_rows(
+    column: &gtk4::Box,
+    pairs: &[FanCurveHwmonPointPair],
+    snapshot: Option<&FanCurveSnapshot>,
+    entries: &ManualFanScratchRows,
+) {
+    clear_points_column(column);
+    entries.borrow_mut().clear();
+    let lookup: HashMap<String, String> = snapshot
+        .map(|snap| {
+            snap.points
+                .iter()
+                .map(|point| (point.path.clone(), point.value.clone()))
+                .collect()
+        })
+        .unwrap_or_default();
+
+    for pair in pairs {
+        let temp_entry = gtk4::Entry::builder()
+            .hexpand(true)
+            .placeholder_text("temp channel (e.g. millidegree)")
+            .build();
+        let pwm_entry = gtk4::Entry::builder()
+            .hexpand(true)
+            .placeholder_text("pwm (0–255)")
+            .build();
+        if let Some(value) = lookup.get(&pair.temp_path) {
+            temp_entry.set_text(value);
+        }
+        if let Some(value) = lookup.get(&pair.pwm_path) {
+            pwm_entry.set_text(value);
+        }
+
+        let row = gtk4::Box::new(gtk4::Orientation::Horizontal, 8);
+        row.append(&gtk4::Label::new(Some(&format!("Point {}", pair.index))));
+        row.append(&temp_entry);
+        row.append(&pwm_entry);
+        column.append(&row);
+        entries
+            .borrow_mut()
+            .push((pair.clone(), temp_entry.clone(), pwm_entry.clone()));
+    }
+}
+
+fn append_manual_fan_curve_scratchpad(page: &gtk4::Box, curve: &FanCurveCapability) {
+    let pairs = fan_curve_hwmon_point_pairs(curve);
+    if pairs.is_empty() {
+        return;
+    }
+    let pairs_for_ui = pairs.clone();
+
+    let section_title = gtk4::Label::new(Some("Manual curve scratchpad"));
+    section_title.add_css_class("title-3");
+    section_title.set_xalign(0.0);
+    page.append(&section_title);
+
+    let hint = gtk4::Label::new(Some(
+        "Edit raw sysfs integers per paired pwm*_auto_pointN node. Validate checks monotonic temp/pwm rules only — no daemon write or apply.",
+    ));
+    hint.set_wrap(true);
+    hint.set_xalign(0.0);
+    page.append(&hint);
+
+    let actions = gtk4::Box::new(gtk4::Orientation::Horizontal, 8);
+    actions.set_spacing(8);
+    let load_live = gtk4::Button::with_label("Load from live");
+    let load_saved = gtk4::Button::with_label("Load from saved");
+    let clear_btn = gtk4::Button::with_label("Clear");
+    let validate_btn = gtk4::Button::with_label("Validate pairs");
+    let copy_json = gtk4::Button::with_label("Copy JSON");
+    actions.append(&load_live);
+    actions.append(&load_saved);
+    actions.append(&clear_btn);
+    actions.append(&validate_btn);
+    actions.append(&copy_json);
+    page.append(&actions);
+
+    let status = gtk4::Label::new(Some(
+        "Use Load from live or saved after refreshing those sections, or type values manually.",
+    ));
+    status.set_wrap(true);
+    status.set_xalign(0.0);
+    status.set_selectable(true);
+    page.append(&status);
+
+    let rows_heading = gtk4::Label::new(Some("Editable pwm/temp pairs"));
+    rows_heading.add_css_class("title-4");
+    rows_heading.set_xalign(0.0);
+    rows_heading.set_margin_top(8);
+    page.append(&rows_heading);
+
+    let rows_column = gtk4::Box::new(gtk4::Orientation::Vertical, 6);
+    rows_column.set_margin_start(4);
+    page.append(&rows_column);
+
+    let entries: ManualFanScratchRows = Rc::new(RefCell::new(Vec::new()));
+    repopulate_manual_fan_scratchpad_rows(&rows_column, &pairs_for_ui, None, &entries);
+
+    let pairs_for_reload = pairs_for_ui.clone();
+    let rows_for_reload = rows_column.clone();
+    let entries_for_reload = entries.clone();
+    let status_for_live = status.clone();
+    load_live.connect_clicked(move |_| {
+        match LegionControlClient::system().and_then(|client| client.live_fan_curve_readings()) {
+            Ok(snapshot) => {
+                repopulate_manual_fan_scratchpad_rows(
+                    &rows_for_reload,
+                    &pairs_for_reload,
+                    Some(&snapshot),
+                    &entries_for_reload,
+                );
+                status_for_live.set_text("Loaded values from live sysfs readings.");
+            }
+            Err(error) => {
+                status_for_live.set_text(&format!("Live load failed: {error}"));
+            }
+        }
+    });
+
+    let pairs_for_saved = pairs_for_ui.clone();
+    let rows_for_saved = rows_column.clone();
+    let entries_for_saved = entries.clone();
+    let status_for_saved = status.clone();
+    load_saved.connect_clicked(move |_| {
+        match LegionControlClient::system().and_then(|client| client.last_known_good_fan_curve()) {
+            Ok(Some(snapshot)) => {
+                repopulate_manual_fan_scratchpad_rows(
+                    &rows_for_saved,
+                    &pairs_for_saved,
+                    Some(&snapshot),
+                    &entries_for_saved,
+                );
+                status_for_saved.set_text("Loaded values from saved last-known-good snapshot.");
+            }
+            Ok(None) => {
+                status_for_saved.set_text("No saved last-known-good snapshot yet.");
+            }
+            Err(error) => {
+                status_for_saved.set_text(&format!("Saved snapshot load failed: {error}"));
+            }
+        }
+    });
+
+    let pairs_for_clear = pairs_for_ui.clone();
+    let rows_for_clear = rows_column.clone();
+    let entries_for_clear = entries.clone();
+    let status_for_clear = status.clone();
+    clear_btn.connect_clicked(move |_| {
+        repopulate_manual_fan_scratchpad_rows(
+            &rows_for_clear,
+            &pairs_for_clear,
+            None,
+            &entries_for_clear,
+        );
+        status_for_clear.set_text("Cleared scratchpad entries.");
+    });
+
+    let entries_for_validate = entries.clone();
+    let status_for_validate = status.clone();
+    validate_btn.connect_clicked(move |_| {
+        let mut parsed = Vec::new();
+        for (_, temp_entry, pwm_entry) in entries_for_validate.borrow().iter() {
+            let temp_text = temp_entry.text();
+            let pwm_text = pwm_entry.text();
+            let temp_trim = temp_text.trim();
+            let pwm_trim = pwm_text.trim();
+            if temp_trim.is_empty() || pwm_trim.is_empty() {
+                status_for_validate.set_text("Fill every temp and pwm cell before validating.");
+                return;
+            }
+            let temp_value = match temp_trim.parse::<u32>() {
+                Ok(value) => value,
+                Err(_) => {
+                    status_for_validate
+                        .set_text(&format!("Temp value `{temp_trim}` is not a valid integer."));
+                    return;
+                }
+            };
+            let pwm_value = match pwm_trim.parse::<u32>() {
+                Ok(value) => value,
+                Err(_) => {
+                    status_for_validate
+                        .set_text(&format!("Pwm value `{pwm_trim}` is not a valid integer."));
+                    return;
+                }
+            };
+            parsed.push((temp_value, pwm_value));
+        }
+
+        match validate_manual_fan_curve_pairs(&parsed) {
+            Ok(()) => {
+                status_for_validate.set_text(&format!(
+                    "OK: {} pair(s) pass sysfs monotonic + pwm range checks (read-only).",
+                    parsed.len()
+                ));
+            }
+            Err(error) => {
+                status_for_validate.set_text(&format!("Validation failed: {error:?}"));
+            }
+        }
+    });
+
+    let entries_for_copy = entries.clone();
+    let status_for_copy = status.clone();
+    copy_json.connect_clicked(move |_| {
+        let payload: Vec<serde_json::Value> = entries_for_copy
+            .borrow()
+            .iter()
+            .map(|(pair, temp_entry, pwm_entry)| {
+                serde_json::json!({
+                    "index": pair.index,
+                    "temp_path": &pair.temp_path,
+                    "temp": temp_entry.text().as_str(),
+                    "pwm_path": &pair.pwm_path,
+                    "pwm": pwm_entry.text().as_str(),
+                })
+            })
+            .collect();
+        let text = match serde_json::to_string_pretty(&payload) {
+            Ok(rendered) => rendered,
+            Err(error) => {
+                status_for_copy.set_text(&format!("JSON encode failed: {error}"));
+                return;
+            }
+        };
+        if let Some(display) = gtk4::gdk::Display::default() {
+            display.clipboard().set_text(&text);
+        }
+        status_for_copy.set_text("Copied scratchpad JSON to the clipboard.");
     });
 }
 
