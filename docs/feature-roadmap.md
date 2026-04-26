@@ -143,6 +143,7 @@ Goal: make the confirmed controls more complete and user-friendly.
 ### Fan curve editor
 
 - Read-only PWM preview from saved snapshot rows (GTK Fans “Curve shape (read-only preview)”) as v0.2 groundwork. [implemented]
+- Read-only Cairo chart (temperature vs PWM) from the same saved snapshot alongside the per-point bars. [implemented]
 - 10-point visual editor.
 - Read current curve when trustworthy.
 - Warn if readback is incomplete, zeroed, or inconsistent. [GTK Fans: optional read-only “Compare live to saved” report when both snapshots exist]

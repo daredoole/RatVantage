@@ -323,6 +323,9 @@ fn dashboard_pages_render_quick_apply_and_gpu_controls() {
         .any(|text| text == "Curve shape (read-only preview)"));
     assert!(fans_text
         .iter()
+        .any(|text| { text.contains("Temperature vs PWM") && text.contains("read-only chart") }));
+    assert!(fans_text
+        .iter()
         .any(|text| text == "Fan preset per platform profile"));
     assert!(fans_text
         .iter()

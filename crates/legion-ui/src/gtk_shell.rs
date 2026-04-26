@@ -1023,6 +1023,67 @@ fn append_fan_live_vs_saved_compare(page: &gtk4::Box) {
     });
 }
 
+fn draw_fan_curve_temp_pwm_chart(
+    cr: &gtk4::cairo::Context,
+    width: i32,
+    height: i32,
+    pairs: &[(u32, u32)],
+) {
+    let w = width.max(1) as f64;
+    let h = height.max(1) as f64;
+    const MARGIN: f64 = 36.0;
+    let plot_w = (w - 2.0 * MARGIN).max(1.0);
+    let plot_h = (h - 2.0 * MARGIN).max(1.0);
+
+    cr.set_source_rgb(0.98, 0.98, 0.99);
+    cr.rectangle(0.0, 0.0, w, h);
+    let _ = cr.fill().ok();
+
+    if pairs.is_empty() {
+        return;
+    }
+
+    let t_min = pairs.iter().map(|(temp, _)| *temp).min().unwrap() as f64;
+    let t_max = pairs.iter().map(|(temp, _)| *temp).max().unwrap() as f64;
+    let t_span = (t_max - t_min).max(1.0);
+
+    cr.set_source_rgb(0.78, 0.8, 0.86);
+    cr.set_line_width(1.0);
+    cr.rectangle(MARGIN, MARGIN, plot_w, plot_h);
+    let _ = cr.stroke().ok();
+
+    cr.set_source_rgb(0.9, 0.91, 0.94);
+    let y_mid = MARGIN + plot_h * 0.5;
+    cr.move_to(MARGIN, y_mid);
+    cr.line_to(MARGIN + plot_w, y_mid);
+    let _ = cr.stroke().ok();
+
+    cr.set_source_rgb(0.1, 0.35, 0.82);
+    cr.set_line_width(2.5);
+    let mut first = true;
+    for (temp, pwm) in pairs {
+        let pwm_clamped = (*pwm).min(255) as f64;
+        let x = MARGIN + ((*temp as f64) - t_min) / t_span * plot_w;
+        let y = MARGIN + plot_h - pwm_clamped / 255.0 * plot_h;
+        if first {
+            cr.move_to(x, y);
+            first = false;
+        } else {
+            cr.line_to(x, y);
+        }
+    }
+    let _ = cr.stroke().ok();
+
+    cr.set_source_rgb(0.05, 0.22, 0.58);
+    for (temp, pwm) in pairs {
+        let pwm_clamped = (*pwm).min(255) as f64;
+        let x = MARGIN + ((*temp as f64) - t_min) / t_span * plot_w;
+        let y = MARGIN + plot_h - pwm_clamped / 255.0 * plot_h;
+        cr.arc(x, y, 4.0, 0.0, std::f64::consts::TAU);
+        let _ = cr.fill().ok();
+    }
+}
+
 fn append_fan_curve_readonly_preview(
     page: &gtk4::Box,
     bundle: &DiagnosticsBundle,
@@ -1042,8 +1103,18 @@ fn append_fan_curve_readonly_preview(
     let group = adw::PreferencesGroup::new();
     group.set_title("Curve shape (read-only preview)");
     group.set_description(Some(
-        "v0.2 groundwork: PWM bars per auto-point index from the saved last-known-good snapshot (visual editor still to come).",
+        "v0.2 groundwork: read-only PWM bars and a temperature→PWM chart from the saved last-known-good snapshot (interactive editing still to come).",
     ));
+
+    let caption = gtk4::Label::new(Some(
+        "Temperature vs PWM (saved last-known-good, read-only chart)",
+    ));
+    caption.add_css_class("dim-label");
+    caption.set_halign(gtk4::Align::Start);
+    caption.set_margin_start(12);
+    caption.set_margin_end(12);
+    caption.set_margin_top(4);
+    group.add(&caption);
 
     for (pair_index, (temp, pwm)) in pairs.iter().enumerate() {
         let pwm_clamped = (*pwm).min(255);
@@ -1064,6 +1135,19 @@ fn append_fan_curve_readonly_preview(
         row.add_suffix(&bar);
         group.add(&row);
     }
+
+    let pairs_chart = Rc::new(pairs);
+    let pairs_for_draw = pairs_chart.clone();
+    let chart = gtk4::DrawingArea::builder()
+        .content_width(400)
+        .content_height(220)
+        .margin_top(10)
+        .margin_bottom(6)
+        .build();
+    chart.set_draw_func(move |_area, cr, w, h| {
+        draw_fan_curve_temp_pwm_chart(cr, w, h, pairs_for_draw.as_ref());
+    });
+    group.add(&chart);
 
     page.append(&group);
 }

@@ -23,6 +23,7 @@
 - Completed slice: durable per-platform-profile fan preset map in daemon state (`GetFanPresetProfileMap` / setters), diagnostics JSON parity, GTK Fans “Fan preset per platform profile” section with per-choice save and clear-all.
 - Completed slice: `fan_preset_reapply_after_resume` policy in daemon state with `GetFanPresetReapplyAfterResume` / `SetFanPresetReapplyAfterResume`, GTK Fans switch, and a system-bus logind `PrepareForSleep` background observer on the production daemon that refreshes the probe after resume and prints a dry-run fan preset plan when a mapping exists (still no fan sysfs execution).
 - Completed slice: `fan_curve_snapshot_chart_pairs` in `legion-common` plus GTK Fans “Curve shape (read-only preview)” PWM bars keyed off the saved last-known-good snapshot (v0.2 editor groundwork only).
+- Completed slice: GTK Fans read-only Cairo drawing for temperature→PWM polyline from the same saved snapshot (still not an interactive editor).
 - Validation for the latest slices passed with `cargo fmt --all`, `xvfb-run -a cargo test -p legion-control-ui --features gtk-ui --test gtk_shell`, and `./scripts/ci-local.sh`.
 - Current user-visible GTK surface now includes `Status`, `Profiles`, `Battery`, `GPU`, `Fans`, `Appearance`, and `Diagnostics`.
 - Direct GPU-mode execution is still disabled in the dashboard; the GTK GPU tab is planning-only and app-state-only, matching the daemon safety policy.
