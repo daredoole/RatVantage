@@ -131,6 +131,7 @@ write_report() {
 
   "${tray_cmd[@]}" --status "${bus_args[@]}" >"$dir/tray-status.txt"
   "${tray_cmd[@]}" --tooltip "${bus_args[@]}" >"$dir/tray-tooltip.txt"
+  "${tray_cmd[@]}" --menu-check "${bus_args[@]}" >"$dir/tray-menu-check.txt"
   "${tray_cmd[@]}" --desktop-check >"$dir/tray-desktop-check.txt"
 
   {
@@ -170,6 +171,7 @@ write_report() {
 - \`watcher-items.txt\`
 - \`tray-status.txt\`
 - \`tray-tooltip.txt\`
+- \`tray-menu-check.txt\`
 - \`tray-desktop-check.txt\`
 - \`item-properties.txt\`
 
@@ -177,8 +179,8 @@ write_report() {
 
 - Tray icon appears in the desktop panel.
 - Tooltip looks correct in the shell UI.
+- Menu reflects runtime profile, battery, preset, and pending-state rows.
 - Menu exposes dashboard, refresh, and quit.
-- Write actions remain disabled.
 - Quit removes the tray item.
 EOF
 }

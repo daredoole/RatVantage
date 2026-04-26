@@ -1,10 +1,30 @@
+use legion_common::{CapabilityRegistry, FanCurveSnapshot, FanPreset, GpuModePending, HwmonSensor};
+use legion_control_ui::UiStatus;
+
+const PACKAGED_FAN_PRESETS: &[&str] = &[
+    include_str!("../../../data/presets/quiet-office.toml"),
+    include_str!("../../../data/presets/balanced-daily.toml"),
+    include_str!("../../../data/presets/gaming.toml"),
+    include_str!("../../../data/presets/max-safe.toml"),
+];
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum TrayAction {
+    NoOp,
     OpenDashboard,
-    SetPlatformProfile,
-    SetBatteryChargeType,
-    ApplyFanPreset,
-    ToggleLogoLed,
+    RefreshStatus,
+    Quit,
+}
+
+impl TrayAction {
+    fn as_str(self) -> &'static str {
+        match self {
+            Self::NoOp => "noop",
+            Self::OpenDashboard => "open_dashboard",
+            Self::RefreshStatus => "refresh_status",
+            Self::Quit => "quit",
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -12,131 +32,444 @@ pub struct TrayMenuItem {
     pub label: String,
     pub action: TrayAction,
     pub enabled: bool,
-    pub disabled_reason: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum TrayMenuEntry {
+    Item(TrayMenuItem),
+    Separator,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TrayMenu {
-    pub items: Vec<TrayMenuItem>,
+    pub entries: Vec<TrayMenuEntry>,
 }
 
 impl TrayMenu {
-    pub fn read_only_scaffold() -> Self {
-        let write_disabled = "D-Bus write methods are not enabled".to_owned();
-        Self {
-            items: vec![
-                TrayMenuItem {
-                    label: "Open dashboard".to_owned(),
-                    action: TrayAction::OpenDashboard,
-                    enabled: true,
-                    disabled_reason: None,
-                },
-                disabled_item(
-                    "Set platform profile",
-                    TrayAction::SetPlatformProfile,
-                    &write_disabled,
-                ),
-                disabled_item(
-                    "Set battery charge type: Fast",
-                    TrayAction::SetBatteryChargeType,
-                    &write_disabled,
-                ),
-                disabled_item(
-                    "Set battery charge type: Standard",
-                    TrayAction::SetBatteryChargeType,
-                    &write_disabled,
-                ),
-                disabled_item(
-                    "Set battery charge type: Conservation",
-                    TrayAction::SetBatteryChargeType,
-                    &write_disabled,
-                ),
-                disabled_item(
-                    "Set battery charge type: Long_Life",
-                    TrayAction::SetBatteryChargeType,
-                    &write_disabled,
-                ),
-                disabled_item(
-                    "Apply preset: Quiet office",
-                    TrayAction::ApplyFanPreset,
-                    &write_disabled,
-                ),
-                disabled_item(
-                    "Apply preset: Balanced daily",
-                    TrayAction::ApplyFanPreset,
-                    &write_disabled,
-                ),
-                disabled_item(
-                    "Apply preset: Gaming",
-                    TrayAction::ApplyFanPreset,
-                    &write_disabled,
-                ),
-                disabled_item(
-                    "Apply preset: Max safe",
-                    TrayAction::ApplyFanPreset,
-                    &write_disabled,
-                ),
-                disabled_item(
-                    "Toggle logo LED",
-                    TrayAction::ToggleLogoLed,
-                    &write_disabled,
-                ),
-            ],
+    pub fn from_status_and_report(
+        status: &UiStatus,
+        report: &CapabilityRegistry,
+        gpu_pending: Option<&GpuModePending>,
+        fan_snapshot: Option<&FanCurveSnapshot>,
+    ) -> Self {
+        let mut entries = Vec::new();
+
+        entries.push(TrayMenuEntry::Item(info_item(machine_label(status))));
+
+        if let Some(profile) = report
+            .platform_profile
+            .as_ref()
+            .and_then(|profile| profile.current.as_deref())
+        {
+            entries.push(TrayMenuEntry::Item(info_item(format!(
+                "Platform profile: {profile}"
+            ))));
         }
+        if let Some(profile_choices) = choices_row(
+            "Profile choices",
+            report
+                .platform_profile
+                .as_ref()
+                .map(|profile| profile.choices.as_slice()),
+        ) {
+            entries.push(TrayMenuEntry::Item(info_item(profile_choices)));
+        }
+
+        if let Some(charge_type) = report
+            .battery_charge_type
+            .as_ref()
+            .and_then(|charge_type| charge_type.current.as_deref())
+        {
+            entries.push(TrayMenuEntry::Item(info_item(format!(
+                "Battery charge type: {charge_type}"
+            ))));
+        }
+        if let Some(charge_choices) = choices_row(
+            "Charge choices",
+            report
+                .battery_charge_type
+                .as_ref()
+                .map(|charge_type| charge_type.choices.as_slice()),
+        ) {
+            entries.push(TrayMenuEntry::Item(info_item(charge_choices)));
+        }
+        if let Some(battery_row) = battery_row(report) {
+            entries.push(TrayMenuEntry::Item(info_item(battery_row)));
+        }
+
+        for fan_row in fan_rows(&report.telemetry.sensors) {
+            entries.push(TrayMenuEntry::Item(info_item(fan_row)));
+        }
+
+        if let Some(gpu_row) = gpu_row(report, gpu_pending) {
+            entries.push(TrayMenuEntry::Item(info_item(gpu_row)));
+        }
+        if let Some(fan_curve_row) = fan_curve_row(fan_snapshot) {
+            entries.push(TrayMenuEntry::Item(info_item(fan_curve_row)));
+        }
+        if let Some(fan_preset_row) = packaged_fan_presets_row() {
+            entries.push(TrayMenuEntry::Item(info_item(fan_preset_row)));
+        }
+
+        let missing_capabilities = status
+            .capabilities
+            .iter()
+            .filter(|capability| capability.status == legion_common::CapabilityStatus::Missing)
+            .map(|capability| capability.id.as_str())
+            .collect::<Vec<_>>();
+        let missing_count = missing_capabilities.len();
+        let available_count = status.capability_count().saturating_sub(missing_count);
+        entries.push(TrayMenuEntry::Item(info_item(format!(
+            "Capabilities: {available_count} available, {missing_count} missing"
+        ))));
+        if !missing_capabilities.is_empty() {
+            entries.push(TrayMenuEntry::Item(info_item(format!(
+                "Missing: {}",
+                missing_capabilities.join(", ")
+            ))));
+        }
+
+        entries.push(TrayMenuEntry::Separator);
+        entries.push(TrayMenuEntry::Item(action_item(
+            "Open dashboard",
+            TrayAction::OpenDashboard,
+        )));
+        entries.push(TrayMenuEntry::Item(action_item(
+            "Refresh status",
+            TrayAction::RefreshStatus,
+        )));
+        entries.push(TrayMenuEntry::Item(action_item("Quit", TrayAction::Quit)));
+
+        Self { entries }
+    }
+
+    pub fn render_lines(&self) -> Vec<String> {
+        let mut lines = vec!["Legion Control tray menu".to_owned()];
+        for (index, entry) in self.entries.iter().enumerate() {
+            match entry {
+                TrayMenuEntry::Separator => lines.push(format!("entry[{index}]=separator")),
+                TrayMenuEntry::Item(item) => lines.push(format!(
+                    "entry[{index}]={} action={} label={}",
+                    if item.enabled { "enabled" } else { "disabled" },
+                    item.action.as_str(),
+                    item.label
+                )),
+            }
+        }
+        lines
     }
 }
 
-fn disabled_item(label: &str, action: TrayAction, reason: &str) -> TrayMenuItem {
+fn action_item(label: &str, action: TrayAction) -> TrayMenuItem {
     TrayMenuItem {
         label: label.to_owned(),
         action,
-        enabled: false,
-        disabled_reason: Some(reason.to_owned()),
+        enabled: true,
     }
+}
+
+fn info_item(label: String) -> TrayMenuItem {
+    TrayMenuItem {
+        label,
+        action: TrayAction::NoOp,
+        enabled: false,
+    }
+}
+
+fn machine_label(status: &UiStatus) -> String {
+    match (
+        status.hardware.product_name.trim(),
+        status.hardware.product_version.trim(),
+    ) {
+        ("", "") => "Legion Control".to_owned(),
+        ("", version) => version.to_owned(),
+        (name, "") => name.to_owned(),
+        (name, version) => format!("{name} {version}"),
+    }
+}
+
+fn choices_row(label: &str, choices: Option<&[String]>) -> Option<String> {
+    let choices = choices?;
+    if choices.is_empty() {
+        None
+    } else {
+        Some(format!("{label}: {}", choices.join(", ")))
+    }
+}
+
+fn battery_row(report: &CapabilityRegistry) -> Option<String> {
+    let battery = report.telemetry.battery.as_ref()?;
+    let mut parts = Vec::new();
+    if let Some(capacity_percent) = battery.capacity_percent {
+        parts.push(format!("{capacity_percent}%"));
+    }
+    if let Some(status) = battery.status.as_deref() {
+        parts.push(status.to_owned());
+    }
+    if let Some(health) = battery.health.as_deref() {
+        parts.push(health.to_owned());
+    }
+    if parts.is_empty() {
+        None
+    } else {
+        Some(format!("Battery: {}", parts.join(" / ")))
+    }
+}
+
+fn fan_rows(sensors: &[HwmonSensor]) -> Vec<String> {
+    sensors
+        .iter()
+        .filter(|sensor| sensor.kind == "fan")
+        .filter_map(|sensor| {
+            sensor.value.map(|value| match sensor.label.as_deref() {
+                Some(label) if !label.is_empty() => format!("Fan: {label} {value} RPM"),
+                _ => format!("Fan: {value} RPM"),
+            })
+        })
+        .collect()
+}
+
+fn gpu_row(report: &CapabilityRegistry, gpu_pending: Option<&GpuModePending>) -> Option<String> {
+    if let Some(pending) = gpu_pending {
+        let detail = match pending.previous_mode.as_deref() {
+            Some(previous) => format!(
+                "GPU pending: {} (previous {previous}, reboot required)",
+                pending.requested_mode
+            ),
+            None => format!("GPU pending: {} (reboot required)", pending.requested_mode),
+        };
+        return Some(detail);
+    }
+
+    report
+        .gpu
+        .as_ref()
+        .and_then(|gpu| gpu.mode.as_deref())
+        .map(|mode| format!("GPU mode: {mode}"))
+}
+
+fn fan_curve_row(fan_snapshot: Option<&FanCurveSnapshot>) -> Option<String> {
+    fan_snapshot.map(|snapshot| {
+        format!(
+            "Saved fan curve: {} values from {}",
+            snapshot.points.len(),
+            snapshot.curve_id
+        )
+    })
+}
+
+fn packaged_fan_presets_row() -> Option<String> {
+    let labels = PACKAGED_FAN_PRESETS
+        .iter()
+        .map(|preset| {
+            toml::from_str::<FanPreset>(preset)
+                .ok()
+                .map(|preset| preset.label)
+        })
+        .collect::<Option<Vec<_>>>()?;
+    Some(format!("Fan presets: {}", labels.join(", ")))
 }
 
 #[cfg(test)]
 mod tests {
+    use legion_common::{
+        BatteryChargeTypeCapability, BatteryTelemetry, Capability, CapabilityRegistry,
+        CapabilityStatus, FanCurvePointSnapshot, FanCurveSnapshot, GpuModePending, HardwareSummary,
+        HwmonSensor, PlatformProfileCapability, RiskLevel,
+    };
+
     use super::*;
 
     #[test]
-    fn read_only_menu_enables_dashboard_and_disables_write_actions() {
-        let menu = TrayMenu::read_only_scaffold();
+    fn menu_builder_reflects_full_runtime_state() {
+        let status = UiStatus::from_parts(
+            HardwareSummary {
+                sysfs_root: "/tmp/fixture".to_owned(),
+                vendor: Some("LENOVO".to_owned()),
+                product_name: Some("82WM".to_owned()),
+                product_version: Some("Legion Pro 5 16ARX8".to_owned()),
+                product_sku: None,
+            },
+            vec![
+                capability("platform_profile", CapabilityStatus::ProbeOnly),
+                capability("battery_charge_type", CapabilityStatus::ProbeOnly),
+                capability("gpu", CapabilityStatus::Missing),
+            ],
+        )
+        .unwrap();
+        let report = CapabilityRegistry {
+            platform_profile: Some(PlatformProfileCapability {
+                current: Some("balanced".to_owned()),
+                choices: vec![
+                    "low-power".to_owned(),
+                    "balanced".to_owned(),
+                    "performance".to_owned(),
+                ],
+                path: "/tmp/platform_profile".to_owned(),
+                choices_path: "/tmp/platform_profile_choices".to_owned(),
+            }),
+            battery_charge_type: Some(BatteryChargeTypeCapability {
+                current: Some("Standard".to_owned()),
+                choices: vec![
+                    "Standard".to_owned(),
+                    "Conservation".to_owned(),
+                    "Fast".to_owned(),
+                ],
+                path: "/tmp/charge_type".to_owned(),
+                choices_path: "/tmp/charge_types".to_owned(),
+            }),
+            telemetry: legion_common::TelemetrySnapshot {
+                sensors: vec![HwmonSensor {
+                    hwmon_name: Some("legion".to_owned()),
+                    label: Some("CPU Fan".to_owned()),
+                    kind: "fan".to_owned(),
+                    input_path: "/tmp/fan1_input".to_owned(),
+                    value: Some(2410),
+                }],
+                battery: Some(BatteryTelemetry {
+                    name: "BAT0".to_owned(),
+                    path: "/tmp/BAT0".to_owned(),
+                    capacity_percent: Some(79),
+                    status: Some("Charging".to_owned()),
+                    health: Some("Good".to_owned()),
+                }),
+            },
+            ..Default::default()
+        };
+        let gpu_pending = GpuModePending {
+            requested_mode: "hybrid".to_owned(),
+            previous_mode: Some("nvidia".to_owned()),
+            reboot_required: true,
+        };
+        let fan_snapshot = FanCurveSnapshot {
+            curve_id: "legion_hwmon".to_owned(),
+            path: Some("/tmp/hwmon".to_owned()),
+            points: vec![FanCurvePointSnapshot {
+                path: "/tmp/hwmon/pwm1_auto_point1_temp".to_owned(),
+                value: "42000".to_owned(),
+            }],
+        };
 
-        assert_eq!(menu.items[0].action, TrayAction::OpenDashboard);
-        assert!(menu.items[0].enabled);
+        let menu = TrayMenu::from_status_and_report(
+            &status,
+            &report,
+            Some(&gpu_pending),
+            Some(&fan_snapshot),
+        );
+
         assert_eq!(
-            menu.items
-                .iter()
-                .filter(|item| item.action == TrayAction::SetBatteryChargeType)
-                .map(|item| item.label.as_str())
-                .collect::<Vec<_>>(),
+            disabled_labels(&menu),
             [
-                "Set battery charge type: Fast",
-                "Set battery charge type: Standard",
-                "Set battery charge type: Conservation",
-                "Set battery charge type: Long_Life"
+                "82WM Legion Pro 5 16ARX8",
+                "Platform profile: balanced",
+                "Profile choices: low-power, balanced, performance",
+                "Battery charge type: Standard",
+                "Charge choices: Standard, Conservation, Fast",
+                "Battery: 79% / Charging / Good",
+                "Fan: CPU Fan 2410 RPM",
+                "GPU pending: hybrid (previous nvidia, reboot required)",
+                "Saved fan curve: 1 values from legion_hwmon",
+                "Fan presets: Quiet office, Balanced daily, Gaming, Max safe",
+                "Capabilities: 2 available, 1 missing",
+                "Missing: gpu",
             ]
         );
         assert_eq!(
-            menu.items
-                .iter()
-                .filter(|item| item.action == TrayAction::ApplyFanPreset)
-                .map(|item| item.label.as_str())
-                .collect::<Vec<_>>(),
+            enabled_labels(&menu),
+            ["Open dashboard", "Refresh status", "Quit"]
+        );
+        assert!(!menu_labels(&menu)
+            .iter()
+            .any(|label| label.starts_with("Set platform profile")));
+        assert!(!menu_labels(&menu)
+            .iter()
+            .any(|label| label.starts_with("Set battery charge type:")));
+        assert!(!menu_labels(&menu)
+            .iter()
+            .any(|label| label.starts_with("Apply preset:")));
+        assert!(!menu_labels(&menu)
+            .iter()
+            .any(|label| label.starts_with("Toggle logo LED")));
+    }
+
+    #[test]
+    fn menu_builder_omits_missing_runtime_rows() {
+        let status = UiStatus::from_parts(
+            HardwareSummary {
+                sysfs_root: "/tmp/fixture".to_owned(),
+                vendor: Some("LENOVO".to_owned()),
+                product_name: Some("82WM".to_owned()),
+                product_version: Some("Legion Pro 5 16ARX8".to_owned()),
+                product_sku: None,
+            },
+            vec![capability("platform_profile", CapabilityStatus::ProbeOnly)],
+        )
+        .unwrap();
+
+        let menu =
+            TrayMenu::from_status_and_report(&status, &CapabilityRegistry::default(), None, None);
+
+        assert_eq!(
+            disabled_labels(&menu),
             [
-                "Apply preset: Quiet office",
-                "Apply preset: Balanced daily",
-                "Apply preset: Gaming",
-                "Apply preset: Max safe"
+                "82WM Legion Pro 5 16ARX8",
+                "Fan presets: Quiet office, Balanced daily, Gaming, Max safe",
+                "Capabilities: 1 available, 0 missing",
             ]
         );
-        assert!(menu.items[1..].iter().all(|item| {
-            !item.enabled
-                && item
-                    .disabled_reason
-                    .as_deref()
-                    .is_some_and(|reason| reason.contains("write methods are not enabled"))
-        }));
+        assert_eq!(
+            enabled_labels(&menu),
+            ["Open dashboard", "Refresh status", "Quit"]
+        );
+        assert!(!menu_labels(&menu)
+            .iter()
+            .any(|label| label.starts_with("Battery:")));
+        assert!(!menu_labels(&menu)
+            .iter()
+            .any(|label| label.starts_with("GPU pending:")));
+        assert!(!menu_labels(&menu)
+            .iter()
+            .any(|label| label.starts_with("Saved fan curve:")));
+    }
+
+    fn capability(id: &str, status: CapabilityStatus) -> Capability {
+        Capability {
+            id: id.to_owned(),
+            label: id.to_owned(),
+            status,
+            risk: RiskLevel::ReadOnly,
+            evidence: Vec::new(),
+            details: serde_json::Value::Null,
+        }
+    }
+
+    fn disabled_labels(menu: &TrayMenu) -> Vec<&str> {
+        menu.entries
+            .iter()
+            .filter_map(|entry| match entry {
+                TrayMenuEntry::Item(item) if !item.enabled => Some(item.label.as_str()),
+                _ => None,
+            })
+            .collect()
+    }
+
+    fn enabled_labels(menu: &TrayMenu) -> Vec<&str> {
+        menu.entries
+            .iter()
+            .filter_map(|entry| match entry {
+                TrayMenuEntry::Item(item) if item.enabled => Some(item.label.as_str()),
+                _ => None,
+            })
+            .collect()
+    }
+
+    fn menu_labels(menu: &TrayMenu) -> Vec<&str> {
+        menu.entries
+            .iter()
+            .filter_map(|entry| match entry {
+                TrayMenuEntry::Item(item) => Some(item.label.as_str()),
+                TrayMenuEntry::Separator => None,
+            })
+            .collect()
     }
 }

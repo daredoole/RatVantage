@@ -12,7 +12,7 @@ The repository now has a working pre-alpha scaffold:
 - Packaged read-only fan preset TOML assets with CI schema validation and runtime dry-run planning.
 - Read-only compatibility bundle workflow for external Legion submissions, including generated probe summaries and PR template support.
 - KDE StatusNotifier smoke report workflow with reusable report bundles under `target/smoke/`.
-- Read-only tray desktop diagnostics via `legion-control-tray --desktop-check`, with unit and CLI coverage.
+- Read-only tray desktop diagnostics via `legion-control-tray --desktop-check`, plus runtime-derived tray menu diagnostics via `legion-control-tray --menu-check`, with unit and CLI coverage.
 - Local CI script, Fedora dependency installer, GitHub Actions CI, and pinned stable Rust toolchain.
 
 Next implementation work should collect more captured fixtures through the compatibility bundle workflow when additional supported Legion machines are available, continue with read-only UI/tray polish if no new hardware reports are available, and leave autostart disabled until GNOME-with-extension smoke exists. Hardware writes remain design-only until validators, polkit policy, rollback, write-specific manual validation, and recovery instructions are complete.
@@ -263,6 +263,12 @@ Implementation options:
 
 Keep it small. The dashboard is the main UI.
 
+Current read-only implementation:
+
+- `menu.rs` builds a state-driven menu from daemon-reported profile choices, battery charge choices, battery telemetry, packaged preset labels, capability summaries, and pending app state.
+- `main.rs` exposes `--status`, `--tooltip`, `--desktop-check`, and `--menu-check` so private-bus tests and smoke bundles can validate the exact derived tray output without a shell UI.
+- `status_notifier.rs` feeds the same derived menu into the live StatusNotifier tray backend, keeping dashboard, refresh, and quit enabled while all hardware-changing rows remain informational only.
+
 ### `legion-probe`
 
 Read-only debug CLI.
@@ -317,6 +323,7 @@ Cards:
 ### Profiles page
 
 - Radio/list rows for detected platform profiles.
+- Tray menu uses the same detected profile choices for read-only diagnostics. [implemented]
 - Badge for external changes.
 - Optional generic PowerProfiles section.
 - Warning if generic PowerProfiles owner may conflict.
@@ -324,6 +331,7 @@ Cards:
 ### Fan Curves page
 
 - Preset list.
+- Tray menu surfaces packaged preset labels as read-only state. [implemented]
 - Apply preset button.
 - Restore safe/default button.
 - Manual editor in v0.2.
@@ -332,6 +340,7 @@ Cards:
 ### Battery page
 
 - Charge type segmented controls.
+- Tray menu surfaces current charge type, detected charge choices, and battery telemetry as read-only state. [implemented]
 - Battery telemetry.
 - Explanation of `Fast`, `Standard`, `Long_Life`.
 - Optional VPC2004/USB charging controls if present.
@@ -522,10 +531,10 @@ ErrorOccurred(s code, s message)
 8. [x] Capture and add a runtime fixture from the supported local 82WM machine.
 9. [x] Draft write-method D-Bus contracts without enabling writes.
 10. [x] Implement validators, pure dry-run planning, and read-only daemon planning methods before any write methods.
-11. [x] Add read-only tray/status helper scaffold.
+11. [x] Add read-only tray/status helper with runtime-derived menu diagnostics.
 12. [x] Add disabled tray autostart packaging placeholder.
 13. [x] Add bracketed battery `charge_types` parsing from the runtime fixture.
-14. [x] Add read-only StatusNotifier tray backend while keeping write actions disabled.
+14. [x] Add read-only StatusNotifier tray backend while keeping runtime menu rows informational-only.
 15. [x] Add repeatable StatusNotifier tray smoke workflow before enabling autostart.
 16. [x] Add read-only daemon session-bus dev mode and record automated KDE StatusNotifier registration smoke.
 17. [x] Record KDE Plasma Wayland StatusNotifier tooltip/menu/quit smoke evidence.

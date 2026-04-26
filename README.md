@@ -14,11 +14,12 @@ Pre-alpha implementation scaffold exists:
 - Probe fixture coverage for confirmed and runtime-captured 82WM-style sysfs paths.
 - Private D-Bus contract tests for read-only daemon methods.
 - UI `--status`, `--overview`, and `--diagnostics` commands plus optional GTK4/libadwaita shell with read-only Status, Profiles, Battery, Fans, Appearance, and Diagnostics tabs behind `gtk-ui`.
-- Read-only tray/status helper scaffold.
+- Read-only tray/status helper with a state-driven menu derived from detected profile choices, battery charge choices, packaged fan presets, and pending runtime state.
 - Tray dashboard launch forwards custom D-Bus addresses for private/session-bus smoke workflows.
 - Tray status separates available and missing capabilities in tooltips.
 - KDE StatusNotifier smoke can emit a reusable report bundle with environment, watcher, and tray summary data.
 - `legion-control-tray --desktop-check` reports desktop/session state, watcher availability, and autostart gating for read-only tray diagnostics.
+- `legion-control-tray --menu-check` prints the same derived tray menu so private-bus tests and smoke bundles can verify the exact runtime menu content.
 - UI status output includes per-capability status and risk labels.
 - Disabled tray autostart packaging placeholder.
 - Runtime-captured 82WM fixture coverage, including bracketed battery `charge_types` current-value parsing.
@@ -104,6 +105,7 @@ cargo run -p legion-control-ui -- --capture-last-known-good-fan-curve --bus-addr
 cargo run -p legion-control-tray -- --status --bus-address <dbus-address>
 cargo run -p legion-control-tray -- --tooltip --bus-address <dbus-address>
 cargo run -p legion-control-tray -- --desktop-check
+cargo run -p legion-control-tray -- --menu-check --bus-address <dbus-address>
 cargo run -p legion-control-ui --features gtk-ui
 scripts/smoke-statusnotifier-tray.sh --hold-seconds 15
 ```
@@ -127,10 +129,11 @@ Completed scaffold:
 - Read-only probe and capability model.
 - Read-only daemon D-Bus methods.
 - UI status, overview, diagnostics clients, and optional GTK shell with read-only Profiles, Battery, Fans, Appearance, and Diagnostics tabs.
-- Read-only tray/status helper scaffold.
-- Read-only StatusNotifier tray backend with disabled write actions.
+- Read-only tray/status helper with a state-driven menu derived from runtime profile choices, battery choices, packaged presets, and pending app state.
+- Read-only StatusNotifier tray backend with dashboard, refresh, quit, and menu diagnostics that match the runtime-derived menu.
 - StatusNotifier dashboard launch keeps `--bus-address` when the tray uses a private bus.
 - Tray tooltip reports platform profile, fan RPM, and available/missing capability counts.
+- Tray menu and `--menu-check` output expose current profile, charge type, battery telemetry, packaged preset labels, capability summaries, and pending app state without enabling writes.
 - KDE StatusNotifier smoke report workflow with recorded local evidence.
 - Read-only tray desktop diagnostics via `legion-control-tray --desktop-check`.
 - Disabled tray autostart packaging placeholder.

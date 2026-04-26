@@ -46,6 +46,61 @@ fn tooltip_cli_prints_single_line_over_private_bus() {
 }
 
 #[test]
+fn menu_check_cli_prints_dynamic_menu_over_private_bus() {
+    let state_path = unique_state_path("tray-menu-state");
+    fs::write(
+        &state_path,
+        r#"schema_version = 1
+
+[gpu_mode_pending]
+requested_mode = "hybrid"
+previous_mode = "nvidia"
+reboot_required = true
+
+[last_known_good_fan_curve]
+curve_id = "legion_hwmon"
+path = "/tmp/fixture/sys/class/hwmon/hwmon7"
+
+[[last_known_good_fan_curve.points]]
+path = "/tmp/fixture/sys/class/hwmon/hwmon7/pwm1_auto_point1_temp"
+value = "42000"
+"#,
+    )
+    .unwrap();
+
+    let (_bus, _service_connection, address) = fixture_service_with_state(&state_path);
+    let output = Command::new(env!("CARGO_BIN_EXE_legion-control-tray"))
+        .args(["--menu-check", "--bus-address", &address])
+        .output()
+        .unwrap();
+
+    assert!(output.status.success());
+    let stdout = String::from_utf8(output.stdout).unwrap();
+    assert!(stdout.contains("Legion Control tray menu"));
+    assert!(stdout.contains("label=82WM Legion Pro 5 16ARX8"));
+    assert!(stdout.contains("label=Platform profile: balanced"));
+    assert!(stdout.contains("label=Profile choices: low-power, balanced, performance"));
+    assert!(stdout.contains("label=Battery charge type: Standard"));
+    assert!(stdout.contains("label=Charge choices: Standard, Conservation, Fast"));
+    assert!(stdout.contains("label=Battery: 79% / Charging / Good"));
+    assert!(stdout.contains("label=Fan: CPU Fan 2410 RPM"));
+    assert!(stdout.contains("label=GPU pending: hybrid (previous nvidia, reboot required)"));
+    assert!(stdout.contains("label=Saved fan curve: 1 values from legion_hwmon"));
+    assert!(stdout.contains("label=Fan presets: Quiet office, Balanced daily, Gaming, Max safe"));
+    assert!(stdout.contains("label=Capabilities: 7 available, 1 missing"));
+    assert!(stdout.contains("label=Missing: gpu"));
+    assert!(stdout.contains("enabled action=open_dashboard label=Open dashboard"));
+    assert!(stdout.contains("enabled action=refresh_status label=Refresh status"));
+    assert!(stdout.contains("enabled action=quit label=Quit"));
+    assert!(!stdout.contains("Set platform profile"));
+    assert!(!stdout.contains("Set battery charge type:"));
+    assert!(!stdout.contains("Apply preset:"));
+    assert!(!stdout.contains("Toggle logo LED"));
+
+    let _ = fs::remove_file(state_path);
+}
+
+#[test]
 fn desktop_check_cli_reports_kde_env_without_session_bus() {
     let output = Command::new(env!("CARGO_BIN_EXE_legion-control-tray"))
         .arg("--desktop-check")

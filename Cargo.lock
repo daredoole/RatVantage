@@ -967,6 +967,7 @@ dependencies = [
  "legion-probe",
  "ratvantage-test-support",
  "serde_json",
+ "toml",
  "zbus 4.4.0",
 ]
 
