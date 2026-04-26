@@ -1,12 +1,5 @@
-use legion_common::{CapabilityRegistry, FanCurveSnapshot, FanPreset, GpuModePending, HwmonSensor};
+use legion_common::{CapabilityRegistry, FanCurveSnapshot, GpuModePending, HwmonSensor};
 use legion_control_ui::UiStatus;
-
-const PACKAGED_FAN_PRESETS: &[&str] = &[
-    include_str!("../../../data/presets/quiet-office.toml"),
-    include_str!("../../../data/presets/balanced-daily.toml"),
-    include_str!("../../../data/presets/gaming.toml"),
-    include_str!("../../../data/presets/max-safe.toml"),
-];
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum TrayAction {
@@ -70,7 +63,7 @@ impl TrayMenu {
         status: &UiStatus,
         report: &CapabilityRegistry,
         gpu_pending: Option<&GpuModePending>,
-        fan_snapshot: Option<&FanCurveSnapshot>,
+        _fan_snapshot: Option<&FanCurveSnapshot>,
     ) -> Self {
         let mut entries = Vec::new();
 
@@ -86,15 +79,6 @@ impl TrayMenu {
                 humanize_choice(profile)
             ))));
         }
-        if let Some(profile_choices) = choices_row(
-            "Available profiles",
-            report
-                .platform_profile
-                .as_ref()
-                .map(|profile| profile.choices.as_slice()),
-        ) {
-            entries.push(TrayMenuEntry::Item(info_item(profile_choices)));
-        }
 
         if let Some(charge_type) = report
             .battery_charge_type
@@ -106,15 +90,7 @@ impl TrayMenu {
                 humanize_choice(charge_type)
             ))));
         }
-        if let Some(charge_choices) = choices_row(
-            "Available charging modes",
-            report
-                .battery_charge_type
-                .as_ref()
-                .map(|charge_type| charge_type.choices.as_slice()),
-        ) {
-            entries.push(TrayMenuEntry::Item(info_item(charge_choices)));
-        }
+
         if let Some(battery_row) = battery_row(report) {
             entries.push(TrayMenuEntry::Item(info_item(battery_row)));
         }
@@ -132,12 +108,6 @@ impl TrayMenu {
         if let Some(gpu_row) = gpu_row(report, gpu_pending) {
             entries.push(TrayMenuEntry::Item(info_item(gpu_row)));
         }
-        if let Some(fan_curve_row) = fan_curve_row(fan_snapshot) {
-            entries.push(TrayMenuEntry::Item(info_item(fan_curve_row)));
-        }
-        if let Some(fan_preset_row) = packaged_fan_presets_row() {
-            entries.push(TrayMenuEntry::Item(info_item(fan_preset_row)));
-        }
 
         let missing_capabilities = status
             .capabilities
@@ -145,11 +115,6 @@ impl TrayMenu {
             .filter(|capability| capability.status == legion_common::CapabilityStatus::Missing)
             .map(|capability| capability.id.as_str())
             .collect::<Vec<_>>();
-        let missing_count = missing_capabilities.len();
-        let available_count = status.capability_count().saturating_sub(missing_count);
-        entries.push(TrayMenuEntry::Item(info_item(format!(
-            "Capabilities: {available_count} available, {missing_count} missing"
-        ))));
         if !missing_capabilities.is_empty() {
             entries.push(TrayMenuEntry::Item(info_item(format!(
                 "Missing: {}",
@@ -217,22 +182,6 @@ fn machine_label(status: &UiStatus) -> String {
     }
 }
 
-fn choices_row(label: &str, choices: Option<&[String]>) -> Option<String> {
-    let choices = choices?;
-    if choices.is_empty() {
-        None
-    } else {
-        Some(format!(
-            "{label}: {}",
-            choices
-                .iter()
-                .map(|choice| humanize_choice(choice))
-                .collect::<Vec<_>>()
-                .join(", ")
-        ))
-    }
-}
-
 fn battery_row(report: &CapabilityRegistry) -> Option<String> {
     let battery = report.telemetry.battery.as_ref()?;
     let mut parts = Vec::new();
@@ -257,7 +206,7 @@ fn led_rows(report: &CapabilityRegistry) -> Vec<String> {
 }
 
 fn append_quick_actions(entries: &mut Vec<TrayMenuEntry>, report: &CapabilityRegistry) {
-    let mut sections = Vec::new();
+    let mut sections: Vec<Vec<TrayMenuEntry>> = Vec::new();
 
     if let Some(section) = quick_action_section(
         "Power mode",
@@ -272,7 +221,7 @@ fn append_quick_actions(entries: &mut Vec<TrayMenuEntry>, report: &CapabilityReg
         humanize_choice,
         |choice| TrayAction::SetPlatformProfile(choice.to_owned()),
     ) {
-        sections.extend(section);
+        sections.push(section);
     }
 
     if let Some(section) = quick_action_section(
@@ -288,28 +237,35 @@ fn append_quick_actions(entries: &mut Vec<TrayMenuEntry>, report: &CapabilityReg
         humanize_choice,
         |choice| TrayAction::SetBatteryChargeType(choice.to_owned()),
     ) {
-        sections.extend(section);
+        sections.push(section);
     }
 
     if let Some(section) = led_quick_action_section(report) {
-        sections.extend(section);
+        sections.push(section);
     }
 
     if let Some(section) = ideapad_toggle_quick_action_section(report) {
-        sections.extend(section);
+        sections.push(section);
     }
 
     if let Some(section) = camera_power_guidance_section(report) {
-        sections.extend(section);
+        sections.push(section);
     }
 
     if let Some(section) = usb_charging_guidance_section(report) {
-        sections.extend(section);
+        sections.push(section);
     }
 
     if !sections.is_empty() {
         entries.push(TrayMenuEntry::Separator);
-        entries.extend(sections);
+        let mut first = true;
+        for section in sections {
+            if !first {
+                entries.push(TrayMenuEntry::Separator);
+            }
+            entries.extend(section);
+            first = false;
+        }
     }
 }
 
@@ -561,28 +517,6 @@ fn gpu_row(report: &CapabilityRegistry, gpu_pending: Option<&GpuModePending>) ->
         .map(|mode| format!("GPU mode: {mode}"))
 }
 
-fn fan_curve_row(fan_snapshot: Option<&FanCurveSnapshot>) -> Option<String> {
-    fan_snapshot.map(|snapshot| {
-        format!(
-            "Saved fan curve: {} values from {}",
-            snapshot.points.len(),
-            snapshot.curve_id
-        )
-    })
-}
-
-fn packaged_fan_presets_row() -> Option<String> {
-    let labels = PACKAGED_FAN_PRESETS
-        .iter()
-        .map(|preset| {
-            toml::from_str::<FanPreset>(preset)
-                .ok()
-                .map(|preset| preset.label)
-        })
-        .collect::<Option<Vec<_>>>()?;
-    Some(format!("Fan presets: {}", labels.join(", ")))
-}
-
 #[cfg(test)]
 mod tests {
     use legion_common::{
@@ -721,9 +655,7 @@ mod tests {
             [
                 "82WM Legion Pro 5 16ARX8",
                 "Power mode: Balanced",
-                "Available profiles: Low Power, Balanced, Performance",
                 "Charging mode: Standard",
-                "Available charging modes: Standard, Conservation, Fast",
                 "Battery: 79% / Charging / Good",
                 "Logo LED: on",
                 "Fn-lock: off",
@@ -731,9 +663,6 @@ mod tests {
                 "USB charging: off",
                 "Fan: CPU Fan 2410 RPM",
                 "GPU pending: hybrid (previous nvidia, reboot required)",
-                "Saved fan curve: 1 values from legion_hwmon",
-                "Fan presets: Quiet office, Balanced daily, Gaming, Max safe",
-                "Capabilities: 2 available, 1 missing",
                 "Missing: gpu",
                 "Power mode",
                 "Battery charging",
@@ -763,16 +692,19 @@ mod tests {
         );
         assert!(!menu_labels(&menu)
             .iter()
-            .any(|label| label.starts_with("Apply preset:")));
-        assert!(!menu_labels(&menu)
-            .iter()
-            .any(|label| label.starts_with("Toggle logo LED")));
-        assert!(!menu_labels(&menu)
-            .iter()
             .any(|label| label.contains("input12::capslock")));
         assert!(!menu_labels(&menu)
             .iter()
             .any(|label| label.contains("conservation_mode")));
+        assert!(!menu_labels(&menu)
+            .iter()
+            .any(|label| label.starts_with("Available profiles:")));
+        assert!(!menu_labels(&menu)
+            .iter()
+            .any(|label| label.starts_with("Available charging modes:")));
+        assert!(!menu_labels(&menu)
+            .iter()
+            .any(|label| label.starts_with("Fan presets:")));
     }
 
     #[test]
@@ -794,16 +726,9 @@ mod tests {
 
         assert_eq!(
             disabled_labels(&menu),
-            [
-                "82WM Legion Pro 5 16ARX8",
-                "Fan presets: Quiet office, Balanced daily, Gaming, Max safe",
-                "Capabilities: 1 available, 0 missing",
-            ]
+            ["82WM Legion Pro 5 16ARX8"]
         );
-        assert_eq!(
-            enabled_labels(&menu),
-            ["Dashboard", "Refresh", "Quit"]
-        );
+        assert_eq!(enabled_labels(&menu), ["Dashboard", "Refresh", "Quit"]);
         assert!(!menu_labels(&menu)
             .iter()
             .any(|label| label.starts_with("Battery:")));
@@ -813,6 +738,12 @@ mod tests {
         assert!(!menu_labels(&menu)
             .iter()
             .any(|label| label.starts_with("Saved fan curve:")));
+        assert!(!menu_labels(&menu)
+            .iter()
+            .any(|label| label.starts_with("Fan presets:")));
+        assert!(!menu_labels(&menu)
+            .iter()
+            .any(|label| label.starts_with("Capabilities:")));
     }
 
     #[test]

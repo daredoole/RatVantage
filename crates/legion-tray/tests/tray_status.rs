@@ -79,19 +79,19 @@ value = "42000"
     assert!(stdout.contains("Legion Control tray menu"));
     assert!(stdout.contains("label=82WM Legion Pro 5 16ARX8"));
     assert!(stdout.contains("label=Power mode: Balanced"));
-    assert!(stdout.contains("label=Available profiles: Low Power, Balanced, Performance"));
     assert!(stdout.contains("label=Charging mode: Standard"));
-    assert!(stdout.contains("label=Available charging modes: Standard, Conservation, Fast"));
     assert!(stdout.contains("label=Battery: 79% / Charging / Good"));
     assert!(stdout.contains("label=Logo LED: on"));
     assert!(stdout.contains("label=Fn-lock: off"));
     assert!(stdout.contains("label=Camera power: on"));
     assert!(stdout.contains("label=Fan: CPU Fan 2410 RPM"));
     assert!(stdout.contains("label=GPU pending: hybrid (previous nvidia, reboot required)"));
-    assert!(stdout.contains("label=Saved fan curve: 1 values from legion_hwmon"));
-    assert!(stdout.contains("label=Fan presets: Quiet office, Balanced daily, Gaming, Max safe"));
-    assert!(stdout.contains("label=Capabilities: 7 available, 1 missing"));
     assert!(stdout.contains("label=Missing: gpu"));
+    assert!(!stdout.contains("label=Available profiles:"));
+    assert!(!stdout.contains("label=Available charging modes:"));
+    assert!(!stdout.contains("label=Saved fan curve:"));
+    assert!(!stdout.contains("label=Fan presets:"));
+    assert!(!stdout.contains("label=Capabilities:"));
     assert!(stdout.contains(
         "enabled action=set_platform_profile:low-power label=Low Power"
     ));
