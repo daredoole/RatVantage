@@ -32,6 +32,7 @@ pub struct StatusNotifierTray {
     last_notice: Option<String>,
     last_write_status: Option<String>,
     last_snapshot: Option<RuntimeSnapshot>,
+    last_notification_ids: HashMap<&'static str, u32>,
     state_stale: bool,
     state_loader: StateLoader,
     action_executor: ActionExecutor,
@@ -41,10 +42,11 @@ pub struct StatusNotifierTray {
 type StateLoader = Arc<dyn Fn(Option<&str>) -> Result<LoadedTrayState> + Send + Sync>;
 type ActionExecutor =
     Arc<dyn Fn(Option<&str>, &TrayAction) -> Result<WriteExecutionResult> + Send + Sync>;
-type NotificationSender = Arc<dyn Fn(&DesktopNotification) -> Result<()> + Send + Sync>;
+type NotificationSender = Arc<dyn Fn(&DesktopNotification, u32) -> Result<u32> + Send + Sync>;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct DesktopNotification {
+    key: &'static str,
     title: String,
     body: String,
 }
@@ -85,6 +87,7 @@ impl StatusNotifierTray {
             last_notice: None,
             last_write_status: None,
             last_snapshot: None,
+            last_notification_ids: HashMap::new(),
             state_stale: false,
             state_loader,
             action_executor,
@@ -121,10 +124,21 @@ impl StatusNotifierTray {
                 self.state_stale = false;
                 let mut notification_errors = Vec::new();
                 for notification in state_notifications {
-                    if let Err(error) = (self.notification_sender)(&notification) {
+                    let replaces_id = self
+                        .last_notification_ids
+                        .get(notification.key)
+                        .copied()
+                        .unwrap_or(0);
+                    match (self.notification_sender)(&notification, replaces_id) {
+                        Ok(notification_id) => {
+                            self.last_notification_ids
+                                .insert(notification.key, notification_id);
+                        }
+                        Err(error) => {
                         let message = format!("failed to send desktop notification: {error}");
                         eprintln!("{message}");
                         notification_errors.push(message);
+                        }
                     }
                 }
                 if !notification_errors.is_empty() {
@@ -400,11 +414,11 @@ fn profile_change_notification(
     let previous_profile = previous.and_then(current_platform_profile)?;
     let current_profile = current_platform_profile(current)?;
     (previous_profile != current_profile).then(|| DesktopNotification {
-        title: "Legion profile changed".to_owned(),
+        key: "platform_profile",
+        title: "Legion profile".to_owned(),
         body: format!(
-            "{} switched from {} to {}.",
+            "{} current mode: {}.",
             notification_machine_label(current),
-            humanize_profile(previous_profile),
             humanize_profile(current_profile),
         ),
     })
@@ -426,11 +440,11 @@ fn battery_charge_type_change_notification(
     let previous_charge_type = previous.and_then(current_battery_charge_type)?;
     let current_charge_type = current_battery_charge_type(current)?;
     (previous_charge_type != current_charge_type).then(|| DesktopNotification {
-        title: "Battery charge type changed".to_owned(),
+        key: "battery_charge_type",
+        title: "Battery charge type".to_owned(),
         body: format!(
-            "{} switched from {} to {}.",
+            "{} current mode: {}.",
             notification_machine_label(current),
-            humanize_charge_type(previous_charge_type),
             humanize_charge_type(current_charge_type),
         ),
     })
@@ -480,7 +494,7 @@ fn humanize_charge_type(charge_type: &str) -> String {
     charge_type.replace('_', " ")
 }
 
-fn send_desktop_notification(notification: &DesktopNotification) -> Result<()> {
+fn send_desktop_notification(notification: &DesktopNotification, replaces_id: u32) -> Result<u32> {
     let connection = Connection::session().context("failed to connect to desktop session bus")?;
     let proxy = Proxy::new(
         &connection,
@@ -489,12 +503,12 @@ fn send_desktop_notification(notification: &DesktopNotification) -> Result<()> {
         "org.freedesktop.Notifications",
     )
     .context("failed to bind desktop notification proxy")?;
-    let _: u32 = proxy
+    let notification_id: u32 = proxy
         .call(
             "Notify",
             &(
                 "Legion Control",
-                0u32,
+                replaces_id,
                 ICON_NAME,
                 notification.title.as_str(),
                 notification.body.as_str(),
@@ -504,7 +518,7 @@ fn send_desktop_notification(notification: &DesktopNotification) -> Result<()> {
             ),
         )
         .context("failed to send desktop notification")?;
-    Ok(())
+    Ok(notification_id)
 }
 
 fn dashboard_command_args(bus_address: Option<&str>) -> Vec<String> {
@@ -949,8 +963,9 @@ mod tests {
         assert_eq!(
             notifications.lock().unwrap().as_slice(),
             &[DesktopNotification {
-                title: "Legion profile changed".to_owned(),
-                body: "82WM Legion Pro 5 16ARX8 switched from Balanced to Performance.".to_owned(),
+                key: "platform_profile",
+                title: "Legion profile".to_owned(),
+                body: "82WM Legion Pro 5 16ARX8 current mode: Performance.".to_owned(),
             }]
         );
         let tooltip = tray.tool_tip().description;
@@ -999,8 +1014,9 @@ mod tests {
         assert_eq!(
             notifications.lock().unwrap().as_slice(),
             &[DesktopNotification {
-                title: "Battery charge type changed".to_owned(),
-                body: "82WM Legion Pro 5 16ARX8 switched from Standard to Long Life.".to_owned(),
+                key: "battery_charge_type",
+                title: "Battery charge type".to_owned(),
+                body: "82WM Legion Pro 5 16ARX8 current mode: Long Life.".to_owned(),
             }]
         );
     }
@@ -1027,7 +1043,7 @@ mod tests {
                 }
             }),
             Arc::new(|_, _| anyhow::bail!("unexpected action")),
-            Arc::new(|_| anyhow::bail!("notifications unavailable")),
+            Arc::new(|_, _| anyhow::bail!("notifications unavailable")),
         )
         .with_snapshot(snapshot);
         let mut tray = tray;
@@ -1037,6 +1053,48 @@ mod tests {
         assert_eq!(
             tray.last_error.as_deref(),
             Some("failed to send desktop notification: notifications unavailable")
+        );
+    }
+
+    #[test]
+    fn refresh_status_reuses_previous_notification_id_for_profile_updates() {
+        let shutdown_requested = Arc::new(AtomicBool::new(false));
+        let snapshots = Arc::new(std::sync::Mutex::new(vec![
+            tray_state_fixture("performance", "Standard", true, false),
+            tray_state_fixture("quiet", "Standard", true, false),
+        ]));
+        let initial = tray_state_fixture("balanced", "Standard", true, false);
+        let notification_replaces_ids = Arc::new(std::sync::Mutex::new(Vec::<u32>::new()));
+        let tray = StatusNotifierTray::new_with_runtime(
+            initial.summary.clone(),
+            initial.menu.clone(),
+            None,
+            shutdown_requested,
+            Arc::new({
+                let snapshots = Arc::clone(&snapshots);
+                move |_| {
+                    let mut guard = snapshots.lock().unwrap();
+                    Ok(guard.remove(0))
+                }
+            }),
+            Arc::new(|_, _| anyhow::bail!("unexpected action")),
+            Arc::new({
+                let notification_replaces_ids = Arc::clone(&notification_replaces_ids);
+                move |_, replaces_id| {
+                    notification_replaces_ids.lock().unwrap().push(replaces_id);
+                    Ok(91)
+                }
+            }),
+        )
+        .with_snapshot(initial.snapshot);
+        let mut tray = tray;
+
+        tray.refresh_status();
+        tray.refresh_status();
+
+        assert_eq!(
+            notification_replaces_ids.lock().unwrap().as_slice(),
+            &[0, 91]
         );
     }
 
@@ -1405,15 +1463,15 @@ mod tests {
     }
 
     fn noop_notification_sender() -> NotificationSender {
-        Arc::new(|_| Ok(()))
+        Arc::new(|_, replaces_id| Ok(replaces_id.max(1)))
     }
 
     fn recording_notification_sender(
         notifications: Arc<std::sync::Mutex<Vec<DesktopNotification>>>,
     ) -> NotificationSender {
-        Arc::new(move |notification| {
+        Arc::new(move |notification, replaces_id| {
             notifications.lock().unwrap().push(notification.clone());
-            Ok(())
+            Ok(replaces_id.max(1))
         })
     }
 
