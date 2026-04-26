@@ -27,6 +27,7 @@ pub struct StatusNotifierTray {
     shutdown_requested: Arc<AtomicBool>,
     last_error: Option<String>,
     last_notice: Option<String>,
+    last_write_status: Option<String>,
     last_snapshot: Option<RuntimeSnapshot>,
     state_stale: bool,
     state_loader: StateLoader,
@@ -69,6 +70,7 @@ impl StatusNotifierTray {
             shutdown_requested,
             last_error: None,
             last_notice: None,
+            last_write_status: None,
             last_snapshot: None,
             state_stale: false,
             state_loader,
@@ -99,6 +101,7 @@ impl StatusNotifierTray {
                 self.menu = state.menu;
                 self.last_snapshot = Some(state.snapshot);
                 self.last_error = None;
+                self.last_write_status = None;
                 self.state_stale = false;
             }
             Err(error) => {
@@ -134,11 +137,23 @@ impl StatusNotifierTray {
     }
 
     fn execute_write_action(&mut self, action: TrayAction) {
-        let mut error = match (self.action_executor)(self.bus_address.as_deref(), &action) {
-            Ok(result) if result.applied => None,
-            Ok(result) => Some(result.message),
-            Err(action_error) => Some(format!("failed to execute tray action: {action_error}")),
-        };
+        let (write_status, mut error) =
+            match (self.action_executor)(self.bus_address.as_deref(), &action) {
+                Ok(result) => (
+                    write_result_status(&result),
+                    if result.applied {
+                        None
+                    } else {
+                        Some(result.message)
+                    },
+                ),
+                Err(action_error) => (
+                    Some(format!(
+                        "Last write could not be sent to the daemon: {action_error}"
+                    )),
+                    Some(format!("failed to execute tray action: {action_error}")),
+                ),
+            };
 
         match (self.state_loader)(self.bus_address.as_deref()) {
             Ok(state) => {
@@ -158,6 +173,7 @@ impl StatusNotifierTray {
 
         self.last_error = error;
         self.last_notice = None;
+        self.last_write_status = write_status;
     }
 
     fn tooltip_description(&self) -> String {
@@ -209,6 +225,14 @@ impl Tray for StatusNotifierTray {
         if self.state_stale {
             entries.push(MenuItem::Standard(StandardItem {
                 label: "Tray status unavailable, retrying refresh.".to_owned(),
+                enabled: false,
+                ..StandardItem::default()
+            }));
+            entries.push(MenuItem::Separator);
+        }
+        if let Some(status) = &self.last_write_status {
+            entries.push(MenuItem::Standard(StandardItem {
+                label: status.clone(),
                 enabled: false,
                 ..StandardItem::default()
             }));
@@ -373,6 +397,25 @@ fn is_write_action(action: &TrayAction) -> bool {
             | TrayAction::SetLedState(_, _)
             | TrayAction::SetIdeapadToggle(_, _)
     )
+}
+
+fn write_result_status(result: &WriteExecutionResult) -> Option<String> {
+    match result.status {
+        legion_common::WriteExecutionStatus::Applied => None,
+        legion_common::WriteExecutionStatus::BlockedByPolicy => {
+            Some("Last write blocked by daemon policy.".to_owned())
+        }
+        legion_common::WriteExecutionStatus::BlockedByAuthorization => {
+            Some("Last write blocked by authorization.".to_owned())
+        }
+        legion_common::WriteExecutionStatus::Failed => {
+            if result.message.contains("restored previous value") {
+                Some("Last write failed and the previous hardware state was restored.".to_owned())
+            } else {
+                Some("Last write failed; inspect tray details for the daemon message.".to_owned())
+            }
+        }
+    }
 }
 
 #[cfg(test)]
@@ -681,6 +724,10 @@ mod tests {
             Some("platform profile read-back mismatch after write")
         );
         assert!(tray.last_notice.is_none());
+        assert!(menu_has_disabled_item(
+            &menu,
+            "Last write failed; inspect tray details for the daemon message."
+        ));
     }
 
     #[test]
@@ -744,6 +791,71 @@ mod tests {
             &menu,
             &format!("Tray notice: {notice}")
         ));
+        assert!(!menu_has_disabled_item(
+            &menu,
+            "Last write blocked by daemon policy."
+        ));
+    }
+
+    #[test]
+    fn status_notifier_records_blocked_write_status_row() {
+        let shutdown_requested = Arc::new(AtomicBool::new(false));
+        let state = Arc::new(std::sync::Mutex::new(tray_state_fixture(
+            "balanced", "Standard", true, false,
+        )));
+        let menu = state.lock().unwrap().menu.clone();
+        let tray = StatusNotifierTray::new_with_runtime(
+            summary(),
+            menu,
+            None,
+            shutdown_requested,
+            loader_for_state(state),
+            Arc::new(|_, _| {
+                Ok(WriteExecutionResult::blocked_by_policy(
+                    write_plan("SetPlatformProfile"),
+                    "platform profile writes are disabled by daemon policy",
+                ))
+            }),
+        );
+        let mut tray = tray;
+
+        tray.handle_action(TrayAction::SetPlatformProfile("performance".to_owned()));
+
+        let menu = tray.menu();
+        assert!(menu_has_disabled_item(
+            &menu,
+            "Last write blocked by daemon policy."
+        ));
+    }
+
+    #[test]
+    fn status_notifier_records_transport_error_write_status_row() {
+        let shutdown_requested = Arc::new(AtomicBool::new(false));
+        let state = Arc::new(std::sync::Mutex::new(tray_state_fixture(
+            "balanced", "Standard", true, false,
+        )));
+        let menu = state.lock().unwrap().menu.clone();
+        let tray = StatusNotifierTray::new_with_runtime(
+            summary(),
+            menu,
+            None,
+            shutdown_requested,
+            loader_for_state(state),
+            Arc::new(|_, _| anyhow::bail!("transport unavailable")),
+        );
+        let mut tray = tray;
+
+        tray.handle_action(TrayAction::SetPlatformProfile("performance".to_owned()));
+
+        let menu = tray.menu();
+        assert!(menu_has_disabled_item(
+            &menu,
+            "Last write could not be sent to the daemon: transport unavailable"
+        ));
+        assert_eq!(
+            tray.last_error.as_deref(),
+            Some("failed to execute tray action: transport unavailable")
+        );
     }
 
     #[test]

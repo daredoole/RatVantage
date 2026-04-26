@@ -7,7 +7,7 @@ Current pre-alpha code provides the safe read-only base:
 - Runtime probe for hardware summary, capabilities, telemetry, and raw probe report.
 - Root-capable daemon shape with read-only D-Bus APIs plus gated reversible execution for `SetPlatformProfile`, `SetBatteryChargeType`, `SetLedState`, and restricted `SetIdeapadToggle`.
 - UI status client and optional GTK4/libadwaita shell with Status, Profiles, Battery, Fans, Appearance, and Diagnostics tabs; the Profiles, Battery, and Appearance tabs now include gated quick-apply controls with inline execution feedback.
-- Tray/status helper with a state-driven menu derived from detected profile choices, battery charge choices, LED state, ideapad toggle state, packaged preset labels, pending runtime state, reversible quick actions for platform profile, battery charge type, ylogo LED, and `fn_lock`, plus dashboard-routed guidance rows for warning-gated `camera_power` and `usb_charging`.
+- Tray/status helper with a state-driven menu derived from detected profile choices, battery charge choices, LED state, ideapad toggle state, packaged preset labels, pending runtime state, reversible quick actions for platform profile, battery charge type, ylogo LED, and `fn_lock`, dashboard-routed guidance rows for warning-gated `camera_power` and `usb_charging`, plus visible last-write status rows for blocked, failed, or rolled-back actions.
 - StatusNotifier tray backend with dashboard, refresh, auto-refresh/resume reloads, write action execution, stale-state write-action suppression, recovery notices, and `--menu-check` diagnostics for the runtime-derived menu.
 - StatusNotifier dashboard launch forwards custom D-Bus addresses for private/session-bus workflows.
 - Tray tooltip reports platform profile, fan RPM, and available/missing capabilities.
@@ -38,7 +38,7 @@ Current pre-alpha code provides the safe read-only base:
 - UI dry-run plan previews for platform profile, battery charge type, LED state, ideapad toggle, GPU mode, fan preset, and fan restore/default writes, plus gated execution output for the currently enabled reversible methods.
 - UI status output includes per-capability status and risk labels.
 - Read-only GTK Profiles, Battery, and Fans tabs show platform profile choices, battery charge choices, fan telemetry, fan curve paths, packaged preset IDs, sysfs source paths, and battery telemetry from the diagnostics bundle.
-- GTK runtime refresh loop now reprobes on focus/visibility, keeps the last good page during daemon outages, and surfaces recovery/drift notices after reconnect.
+- GTK runtime refresh loop now reprobes on focus/visibility, keeps the last good page during daemon outages, surfaces recovery/drift notices after reconnect, and serves as the shared post-write refresh path when the dashboard shell is active.
 - Read-only GTK Appearance tab shows LED brightness nodes and firmware toggle values from the diagnostics bundle.
 - Read-only GTK diagnostics tab for the same hardware/debug bundle, including Copy JSON.
 - Packaged read-only fan preset TOML assets with CI schema validation and runtime dry-run planning.
@@ -48,7 +48,7 @@ Current pre-alpha code provides the safe read-only base:
 
 - Keep tray autostart disabled; GNOME AppIndicator extension path is still untested.
 - Collect more captured fixtures through the compatibility bundle workflow when additional supported Legion machines are available.
-- If no new hardware reports are available, continue with resume/recovery hardening around the current reversible write set, while keeping tray/UI refresh behavior aligned with the shared reload path; KDE-specific smoke/reporting is now in place, while GNOME validation remains blocked.
+- If no new hardware reports are available, continue with manual validation guidance, recovery UX polish, and broader desktop-session smoke around the current reversible write set; tray/UI refresh behavior is now aligned on the shared reload path, KDE-specific smoke/reporting is in place, and GNOME validation remains blocked.
 - Keep progress docs current after each completed roadmap slice.
 - Keep GitHub CI as remote guard; run `./scripts/ci-local.sh` before pushing to reduce failed CI minutes.
 

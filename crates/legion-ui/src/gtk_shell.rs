@@ -8,8 +8,10 @@ use legion_common::{
     BatteryChargeTypeCapability, FanCurveSnapshot, GpuModePending, IdeapadToggleCapability,
     LedCapability, PlatformProfileCapability, WriteExecutionResult, WriteExecutionStatus,
 };
+use std::thread_local;
 use std::{
     cell::RefCell,
+    collections::HashMap,
     rc::Rc,
     time::{Duration, Instant},
 };
@@ -18,6 +20,18 @@ const AUTO_REFRESH_INTERVAL: Duration = Duration::from_secs(30);
 const RESUME_REFRESH_GAP: Duration = Duration::from_secs(90);
 
 type SnapshotLoader = Rc<dyn Fn() -> Result<RuntimeSnapshot>>;
+
+thread_local! {
+    static DASHBOARD_REFRESH_HOOK: RefCell<Option<Rc<dyn Fn()>>> = RefCell::new(None);
+    static WRITE_FEEDBACK_STATE: RefCell<HashMap<&'static str, WriteFeedbackState>> =
+        RefCell::new(HashMap::new());
+}
+
+#[derive(Clone)]
+struct WriteFeedbackState {
+    title: String,
+    subtitle: String,
+}
 
 pub fn run() -> Result<()> {
     let app = adw::Application::builder()
@@ -40,6 +54,10 @@ pub fn run() -> Result<()> {
                 LegionControlClient::system().and_then(|client| client.refresh_runtime_snapshot())
             }),
         );
+        install_dashboard_refresh_hook({
+            let runtime = Rc::clone(&runtime);
+            Rc::new(move || runtime.borrow_mut().refresh_now())
+        });
         runtime.borrow_mut().refresh_now();
         install_runtime_refresh(&window, Rc::clone(&runtime));
         window.set_content(Some(&root));
@@ -119,6 +137,60 @@ fn install_runtime_refresh(
     gtk4::glib::timeout_add_local(Duration::from_secs(5), move || {
         runtime.borrow_mut().maybe_auto_refresh();
         gtk4::glib::ControlFlow::Continue
+    });
+}
+
+fn install_dashboard_refresh_hook(hook: Rc<dyn Fn()>) {
+    DASHBOARD_REFRESH_HOOK.with(|slot| {
+        *slot.borrow_mut() = Some(hook);
+    });
+}
+
+#[cfg(test)]
+fn clear_dashboard_refresh_hook() {
+    DASHBOARD_REFRESH_HOOK.with(|slot| {
+        *slot.borrow_mut() = None;
+    });
+}
+
+fn request_dashboard_refresh() -> bool {
+    DASHBOARD_REFRESH_HOOK.with(|slot| {
+        let hook = slot.borrow().as_ref().map(Rc::clone);
+        if let Some(hook) = hook {
+            hook();
+            true
+        } else {
+            false
+        }
+    })
+}
+
+fn default_write_feedback_state() -> WriteFeedbackState {
+    WriteFeedbackState {
+        title: "Apply result".to_owned(),
+        subtitle: "No write attempted yet.".to_owned(),
+    }
+}
+
+fn load_write_feedback_state(capability_label: &'static str) -> WriteFeedbackState {
+    WRITE_FEEDBACK_STATE.with(|state| {
+        state
+            .borrow()
+            .get(capability_label)
+            .cloned()
+            .unwrap_or_else(default_write_feedback_state)
+    })
+}
+
+fn store_write_feedback_state(capability_label: &'static str, title: &str, subtitle: &str) {
+    WRITE_FEEDBACK_STATE.with(|state| {
+        state.borrow_mut().insert(
+            capability_label,
+            WriteFeedbackState {
+                title: title.to_owned(),
+                subtitle: subtitle.to_owned(),
+            },
+        );
     });
 }
 
@@ -769,8 +841,10 @@ fn build_platform_profile_controls(
             LegionControlClient::system().and_then(|client| client.set_platform_profile(requested))
         },
         move |_| {
-            if let Some(row) = &current_row {
-                refresh_platform_profile_row(row);
+            if !request_dashboard_refresh() {
+                if let Some(row) = &current_row {
+                    refresh_platform_profile_row(row);
+                }
             }
         },
     )
@@ -792,8 +866,10 @@ fn build_battery_charge_type_controls(
                 .and_then(|client| client.set_battery_charge_type(requested))
         },
         move |_| {
-            if let Some(row) = &current_row {
-                refresh_battery_charge_type_row(row);
+            if !request_dashboard_refresh() {
+                if let Some(row) = &current_row {
+                    refresh_battery_charge_type_row(row);
+                }
             }
         },
     )
@@ -828,7 +904,7 @@ fn build_led_state_controls(
     row.add_suffix(&on);
     group.add(&row);
 
-    let feedback_row = write_feedback_row(None);
+    let feedback_row = write_feedback_row("Y-logo LED");
     group.add(&feedback_row);
 
     let led_id = led.name.clone();
@@ -894,7 +970,7 @@ fn build_ideapad_toggle_controls(
     row.add_suffix(&on);
     group.add(&row);
 
-    let feedback_row = write_feedback_row(None);
+    let feedback_row = write_feedback_row("Fn-lock");
     group.add(&feedback_row);
 
     let toggle_id = toggle.name.clone();
@@ -905,6 +981,7 @@ fn build_ideapad_toggle_controls(
         handle_ideapad_toggle_button_click(
             &feedback_row_for_off,
             current_row_for_off.as_ref(),
+            "Fn-lock",
             &toggle_id,
             &path,
             false,
@@ -919,6 +996,7 @@ fn build_ideapad_toggle_controls(
         handle_ideapad_toggle_button_click(
             &feedback_row_for_on,
             current_row_for_on.as_ref(),
+            "Fn-lock",
             &toggle_id,
             &path,
             true,
@@ -970,7 +1048,7 @@ fn build_camera_power_controls(
     confirm_row.add_suffix(&cancel);
     group.add(&confirm_row);
 
-    let feedback_row = write_feedback_row(None);
+    let feedback_row = write_feedback_row("Camera power");
     group.add(&feedback_row);
 
     let pending_enabled = Rc::new(RefCell::new(None::<bool>));
@@ -1033,6 +1111,7 @@ fn build_camera_power_controls(
         handle_ideapad_toggle_button_click(
             &feedback_row_for_confirm,
             current_row_for_confirm.as_ref(),
+            "Camera power",
             &toggle_id,
             &path,
             enabled,
@@ -1092,7 +1171,7 @@ fn build_usb_charging_controls(
     confirm_row.add_suffix(&cancel);
     group.add(&confirm_row);
 
-    let feedback_row = write_feedback_row(None);
+    let feedback_row = write_feedback_row("USB charging");
     group.add(&feedback_row);
 
     let pending_enabled = Rc::new(RefCell::new(None::<bool>));
@@ -1155,6 +1234,7 @@ fn build_usb_charging_controls(
         handle_ideapad_toggle_button_click(
             &feedback_row_for_confirm,
             current_row_for_confirm.as_ref(),
+            "USB charging",
             &toggle_id,
             &path,
             enabled,
@@ -1177,7 +1257,7 @@ fn build_write_controls<F, G>(
     choices: Option<&[String]>,
     chooser_title: &str,
     button_label: &str,
-    capability_label: &str,
+    capability_label: &'static str,
     execute: F,
     on_result: G,
 ) -> adw::PreferencesGroup
@@ -1224,7 +1304,7 @@ where
     row.add_suffix(&apply);
     group.add(&row);
 
-    let feedback_row = write_feedback_row(None);
+    let feedback_row = write_feedback_row(capability_label);
     group.add(&feedback_row);
 
     let feedback_row_for_click = feedback_row.clone();
@@ -1235,6 +1315,11 @@ where
         else {
             feedback_row_for_click.set_title("Apply result");
             feedback_row_for_click.set_subtitle("Failed - no selected value was available.");
+            store_write_feedback_state(
+                capability_label,
+                "Apply result",
+                "Failed - no selected value was available.",
+            );
             return;
         };
 
@@ -1244,15 +1329,19 @@ where
 
         match execute(&requested) {
             Ok(result) => {
-                feedback_row_for_click.set_title(write_feedback_title(Some(&result)));
-                feedback_row_for_click.set_subtitle(&write_feedback_subtitle(Some(&result)));
+                let title = write_feedback_title(Some(&result));
+                let subtitle = write_feedback_subtitle(Some(&result));
+                feedback_row_for_click.set_title(title);
+                feedback_row_for_click.set_subtitle(&subtitle);
+                store_write_feedback_state(capability_label, title, &subtitle);
                 on_result(&result);
             }
             Err(error) => {
                 feedback_row_for_click.set_title("Apply error");
-                feedback_row_for_click.set_subtitle(&format!(
-                    "Failed - daemon call could not be completed: {error}"
-                ));
+                let subtitle = format!("Failed - daemon call could not be completed: {error}");
+                feedback_row_for_click.set_subtitle(&subtitle);
+                store_write_feedback_state(capability_label, "Apply error", &subtitle);
+                let _ = request_dashboard_refresh();
             }
         }
     });
@@ -1270,10 +1359,11 @@ fn build_write_feedback_group(capability_label: &str) -> adw::PreferencesGroup {
     group
 }
 
-fn write_feedback_row(result: Option<&WriteExecutionResult>) -> adw::ActionRow {
+fn write_feedback_row(capability_label: &'static str) -> adw::ActionRow {
+    let state = load_write_feedback_state(capability_label);
     adw::ActionRow::builder()
-        .title(write_feedback_title(result))
-        .subtitle(write_feedback_subtitle(result))
+        .title(&state.title)
+        .subtitle(&state.subtitle)
         .selectable(false)
         .build()
 }
@@ -1335,17 +1425,23 @@ fn handle_led_button_click(
 
     match LegionControlClient::system().and_then(|client| client.set_led_state(led_id, enabled)) {
         Ok(result) => {
-            feedback_row.set_title(write_feedback_title(Some(&result)));
-            feedback_row.set_subtitle(&write_feedback_subtitle(Some(&result)));
-            if let Some(row) = current_row {
-                refresh_led_row(row, led_id, path, max_brightness, &result);
+            let title = write_feedback_title(Some(&result));
+            let subtitle = write_feedback_subtitle(Some(&result));
+            feedback_row.set_title(title);
+            feedback_row.set_subtitle(&subtitle);
+            store_write_feedback_state("Y-logo LED", title, &subtitle);
+            if !request_dashboard_refresh() {
+                if let Some(row) = current_row {
+                    refresh_led_row(row, led_id, path, max_brightness, &result);
+                }
             }
         }
         Err(error) => {
             feedback_row.set_title("Apply error");
-            feedback_row.set_subtitle(&format!(
-                "Failed - daemon call could not be completed: {error}"
-            ));
+            let subtitle = format!("Failed - daemon call could not be completed: {error}");
+            feedback_row.set_subtitle(&subtitle);
+            store_write_feedback_state("Y-logo LED", "Apply error", &subtitle);
+            let _ = request_dashboard_refresh();
         }
     }
 }
@@ -1353,6 +1449,7 @@ fn handle_led_button_click(
 fn handle_ideapad_toggle_button_click(
     feedback_row: &adw::ActionRow,
     current_row: Option<&adw::ActionRow>,
+    capability_label: &'static str,
     toggle_id: &str,
     path: &str,
     enabled: bool,
@@ -1364,17 +1461,23 @@ fn handle_ideapad_toggle_button_click(
         .and_then(|client| client.set_ideapad_toggle(toggle_id, enabled))
     {
         Ok(result) => {
-            feedback_row.set_title(write_feedback_title(Some(&result)));
-            feedback_row.set_subtitle(&write_feedback_subtitle(Some(&result)));
-            if let Some(row) = current_row {
-                refresh_ideapad_toggle_row(row, toggle_id, path, &result);
+            let title = write_feedback_title(Some(&result));
+            let subtitle = write_feedback_subtitle(Some(&result));
+            feedback_row.set_title(title);
+            feedback_row.set_subtitle(&subtitle);
+            store_write_feedback_state(capability_label, title, &subtitle);
+            if !request_dashboard_refresh() {
+                if let Some(row) = current_row {
+                    refresh_ideapad_toggle_row(row, toggle_id, path, &result);
+                }
             }
         }
         Err(error) => {
             feedback_row.set_title("Apply error");
-            feedback_row.set_subtitle(&format!(
-                "Failed - daemon call could not be completed: {error}"
-            ));
+            let subtitle = format!("Failed - daemon call could not be completed: {error}");
+            feedback_row.set_subtitle(&subtitle);
+            store_write_feedback_state(capability_label, "Apply error", &subtitle);
+            let _ = request_dashboard_refresh();
         }
     }
 }
@@ -1505,4 +1608,52 @@ fn render_ideapad_toggle_row(toggle: &IdeapadToggleCapability) -> String {
     let value = toggle.current_value.as_deref().unwrap_or("unknown");
     let path = toggle.path.as_deref().unwrap_or("unknown");
     format!("{value} - {path}")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::{cell::Cell, rc::Rc};
+
+    #[test]
+    fn request_dashboard_refresh_reports_missing_hook() {
+        clear_dashboard_refresh_hook();
+        assert!(!request_dashboard_refresh());
+    }
+
+    #[test]
+    fn request_dashboard_refresh_invokes_installed_hook() {
+        clear_dashboard_refresh_hook();
+
+        let refresh_count = Rc::new(Cell::new(0usize));
+        let refresh_count_for_hook = Rc::clone(&refresh_count);
+        install_dashboard_refresh_hook(Rc::new(move || {
+            refresh_count_for_hook.set(refresh_count_for_hook.get() + 1);
+        }));
+
+        assert!(request_dashboard_refresh());
+        assert_eq!(refresh_count.get(), 1);
+
+        clear_dashboard_refresh_hook();
+    }
+
+    #[test]
+    fn write_feedback_row_reuses_stored_feedback_state() {
+        store_write_feedback_state(
+            "Platform profile",
+            "Apply blocked by policy",
+            "Writes are disabled for this daemon instance.",
+        );
+
+        let state = load_write_feedback_state("Platform profile");
+        assert_eq!(state.title, "Apply blocked by policy");
+        assert_eq!(
+            state.subtitle,
+            "Writes are disabled for this daemon instance."
+        );
+
+        WRITE_FEEDBACK_STATE.with(|state| {
+            state.borrow_mut().remove("Platform profile");
+        });
+    }
 }
