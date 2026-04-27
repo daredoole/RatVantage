@@ -170,6 +170,14 @@ GNOME-specific capture is **not** required for your own evidence bundles.
   from this harness.
 - `gpu_mode`: read the plan JSON only; `SetGpuMode` is not an executable D-Bus method in RatVantage.
 
+## Reviewing a bundle locally
+
+From the repo root (requires `jq`):
+
+```bash
+scripts/review-write-validation-bundle.sh target/validation/<your-bundle-dir>
+```
+
 ## Bundle contents
 
 The harness writes a report bundle containing:
