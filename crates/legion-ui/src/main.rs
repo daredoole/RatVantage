@@ -163,6 +163,8 @@ fn main() -> Result<()> {
                 &client.raw_probe_report()?,
                 client.gpu_mode_pending()?,
                 client.last_known_good_fan_curve()?,
+                client.fan_preset_by_platform_profile()?,
+                client.fan_preset_reapply_after_resume()?,
             );
         } else {
             print_status(&client.status()?);
@@ -195,9 +197,16 @@ fn print_overview(
     report: &legion_common::CapabilityRegistry,
     pending: Option<legion_common::GpuModePending>,
     fan_snapshot: Option<legion_common::FanCurveSnapshot>,
+    fan_preset_map: std::collections::BTreeMap<String, String>,
+    fan_preset_reapply_after_resume: bool,
 ) {
-    for line in render_overview_lines_with_pending(report, pending.as_ref(), fan_snapshot.as_ref())
-    {
+    for line in render_overview_lines_with_pending(
+        report,
+        pending.as_ref(),
+        fan_snapshot.as_ref(),
+        &fan_preset_map,
+        fan_preset_reapply_after_resume,
+    ) {
         println!("{line}");
     }
 }

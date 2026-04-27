@@ -93,6 +93,8 @@ fn client_reads_daemon_contract_over_private_bus() {
             "gpu_mode=unknown",
             "gpu_pending_reboot=none",
             "last_known_good_fan_curve=none",
+            "fan_preset_by_platform_profile=none",
+            "fan_preset_reapply_after_resume=false",
             "battery_capacity_percent=79",
             "battery_status=Charging",
             "battery_health=Good",
@@ -367,6 +369,8 @@ fn overview_cli_prints_read_only_mvp_summary() {
             "gpu_mode=unknown\n",
             "gpu_pending_reboot=none\n",
             "last_known_good_fan_curve=none\n",
+            "fan_preset_by_platform_profile=none\n",
+            "fan_preset_reapply_after_resume=false\n",
             "battery_capacity_percent=79\n",
             "battery_status=Charging\n",
             "battery_health=Good\n",
@@ -382,6 +386,7 @@ fn overview_cli_surfaces_saved_fan_curve_state() {
     std::fs::write(
         &state_path,
         r#"schema_version = 1
+fan_preset_reapply_after_resume = true
 
 [gpu_mode_pending]
 requested_mode = "hybrid"
@@ -395,6 +400,9 @@ path = "/tmp/fixture/sys/class/hwmon/hwmon7"
 [[last_known_good_fan_curve.points]]
 path = "/tmp/fixture/sys/class/hwmon/hwmon7/pwm1_auto_point1_temp"
 value = "42000"
+
+[fan_preset_by_platform_profile]
+balanced = "quiet-office"
 "#,
     )
     .unwrap();
@@ -410,6 +418,8 @@ value = "42000"
     let stdout = String::from_utf8(output.stdout).unwrap();
     assert!(stdout.contains("gpu_pending_reboot=hybrid pending (was nvidia); reboot required"));
     assert!(stdout.contains("last_known_good_fan_curve=1 point on legion_hwmon"));
+    assert!(stdout.contains("fan_preset_by_platform_profile=balanced=quiet-office"));
+    assert!(stdout.contains("fan_preset_reapply_after_resume=true"));
     let _ = std::fs::remove_file(state_path);
 }
 

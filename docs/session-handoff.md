@@ -39,7 +39,8 @@
 - Completed slice: GTK screenshot smoke in `./scripts/ci-local.sh` and GitHub Actions now includes **`gpu`** and **`fans`** (`--pages status,battery,gpu,fans`); `docs/gtk-smoke-testing.md` notes the CI subset.
 - Completed slice: tray/menu and notification copy polish (clearer status rows, tooltip telemetry labels, desktop notification titles/bodies, write-result wording); `ApplyFanPreset` / `RestoreAutoFan` remain gated.
 - Completed slice: `legion-common` helpers `format_gpu_mode_pending_summary` and `format_fan_curve_snapshot_summary` shared by `--overview`, tray status lines, GTK pending-reboot rows, and runtime refresh notices (same human-readable text everywhere).
-- Next recommended roadmap slice: further UX or documentation only if needed; fan preset execution still waits on execute-mode validation evidence.
+- Completed slice: `--overview` now prints `fan_preset_by_platform_profile` (sorted `profile=preset_id` pairs, or `none`) and `fan_preset_reapply_after_resume`, matching durable daemon state already exposed in `--diagnostics` JSON.
+- Next recommended roadmap slice: live write-validation evidence for gated fan execution when you are ready on hardware; until then small UX or doc polish only as needed.
 - If the KDE Wayland/NVIDIA black-window bug returns, treat it as a compositor/frontend issue and keep the private-session launcher plus `--gdk-backend x11` fallback available while continuing tray/CLI validation.
 
 ## Implemented
@@ -56,7 +57,7 @@
 - Durable app-state-only last-known-good fan curve capture via `GetLastKnownGoodFanCurve`, `CaptureLastKnownGoodFanCurve`, and the UI `--last-known-good-fan-curve`, `--capture-last-known-good-fan-curve` commands.
 - Read-only live fan curve sysfs readings via `GetLiveFanCurveReadings` and `legion-control-ui --fan-curve-live` (GTK Fans tab includes a refresh control).
 - Tray/status output, UI `--overview`, and GTK Status/Fans pages surface the durable GPU pending and saved fan curve state.
-- UI `--overview` command for platform profile, battery charge type, fan RPM, temperatures, GPU mode, durable app state, battery telemetry, LED brightness, and firmware toggle values.
+- UI `--overview` command for platform profile, battery charge type, fan RPM, temperatures, GPU mode, durable app state (GPU pending, saved fan curve, per-profile fan preset map, resume re-apply flag), battery telemetry, LED brightness, and firmware toggle values.
 - UI `--diagnostics` command for a read-only JSON debug bundle containing hardware summary, compact capability/sensor/fan/path counts, kernel version, detected sysfs paths, durable app-state fields `gpu_mode_pending` and `last_known_good_fan_curve`, recent daemon log excerpts, and raw probe report.
 - UI `--set-platform-profile`, `--set-battery-charge-type`, `--set-led-state`, and `--set-ideapad-toggle` commands for gated reversible execution results over D-Bus.
 - Platform profile and battery charge type models include both current-value paths and choice-list paths for diagnostics.

@@ -32,8 +32,8 @@ Current pre-alpha code provides the safe read-only base:
 - Current 82WM read-only validation evidence for DMI, platform profiles, charge choices, sensors, LEDs, firmware toggles, and EnvyControl.
 - Read-only battery telemetry for capacity, status, and health where `BAT0` exposes it.
 - Read-only EnvyControl GPU mode query when `envycontrol --query` is available.
-- Read-only UI `--overview` summary for platform profile, battery mode, fan RPM, temperatures, GPU mode, battery telemetry, LED brightness, and firmware toggle values; durable GPU-pending and saved fan-curve snapshot lines use the same `legion-common` formatters as the tray.
-- UI overview includes app-state-only GPU pending-reboot status and saved fan curve snapshots when recorded by the daemon.
+- Read-only UI `--overview` summary for platform profile, battery mode, fan RPM, temperatures, GPU mode, battery telemetry, LED brightness, and firmware toggle values; durable GPU-pending and saved fan-curve snapshot lines use the same `legion-common` formatters as the tray; overview also prints per-profile fan preset map and resume re-apply policy (`fan_preset_by_platform_profile`, `fan_preset_reapply_after_resume`) in line with diagnostics JSON.
+- UI overview includes app-state-only GPU pending-reboot status, saved fan curve snapshots, fan preset profile map, and resume re-apply flag when recorded by the daemon.
 - Tray/status output and GTK pages surface app-state-only GPU pending-reboot state and saved fan curve snapshots.
 - Read-only UI `--diagnostics` JSON bundle with hardware summary, compact counts, kernel version, detected sysfs paths, recent daemon log excerpts, and raw probe report.
 - Diagnostics/export parity for durable app state, so CLI `--diagnostics` output and GTK Diagnostics Copy JSON include `gpu_mode_pending`, `last_known_good_fan_curve`, `fan_preset_by_platform_profile`, and `fan_preset_reapply_after_resume`.

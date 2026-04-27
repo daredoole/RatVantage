@@ -238,13 +238,15 @@ pub fn risk_level_label(risk: RiskLevel) -> &'static str {
 }
 
 pub fn render_overview_lines(report: &CapabilityRegistry) -> Vec<String> {
-    render_overview_lines_with_pending(report, None, None)
+    render_overview_lines_with_pending(report, None, None, &BTreeMap::new(), false)
 }
 
 pub fn render_overview_lines_with_pending(
     report: &CapabilityRegistry,
     pending: Option<&GpuModePending>,
     fan_snapshot: Option<&FanCurveSnapshot>,
+    fan_preset_by_platform_profile: &BTreeMap<String, String>,
+    fan_preset_reapply_after_resume: bool,
 ) -> Vec<String> {
     let mut lines = vec![
         "Legion Control overview".to_owned(),
@@ -289,6 +291,11 @@ pub fn render_overview_lines_with_pending(
             format_fan_curve_snapshot_summary(fan_snapshot)
         ),
         format!(
+            "fan_preset_by_platform_profile={}",
+            format_fan_preset_profile_map_line(fan_preset_by_platform_profile)
+        ),
+        format!("fan_preset_reapply_after_resume={fan_preset_reapply_after_resume}"),
+        format!(
             "battery_capacity_percent={}",
             report
                 .telemetry
@@ -323,6 +330,17 @@ pub fn render_overview_lines_with_pending(
         render_ideapad_toggle_values(report)
     ));
     lines
+}
+
+fn format_fan_preset_profile_map_line(map: &BTreeMap<String, String>) -> String {
+    if map.is_empty() {
+        "none".to_owned()
+    } else {
+        map.iter()
+            .map(|(profile, preset_id)| format!("{profile}={preset_id}"))
+            .collect::<Vec<_>>()
+            .join(",")
+    }
 }
 
 fn render_sensor_values(sensors: &[legion_common::HwmonSensor], kind: &str) -> String {
@@ -545,9 +563,24 @@ fn detected_sysfs_paths(report: &CapabilityRegistry) -> Vec<String> {
 mod tests {
     use super::*;
     use legion_common::{
-        Capability, CapabilityStatus, FanCurvePointSnapshot, FanCurveSnapshot, HardwareSummary,
-        PlatformProfileCapability, RiskLevel,
+        Capability, CapabilityRegistry, CapabilityStatus, FanCurvePointSnapshot, FanCurveSnapshot,
+        HardwareSummary, PlatformProfileCapability, RiskLevel,
     };
+
+    #[test]
+    fn render_overview_lines_include_fan_preset_fields() {
+        use std::collections::BTreeMap;
+
+        let report = CapabilityRegistry::default();
+        let mut map = BTreeMap::new();
+        map.insert("performance".to_owned(), "gaming".to_owned());
+        map.insert("balanced".to_owned(), "quiet-office".to_owned());
+        let lines = render_overview_lines_with_pending(&report, None, None, &map, true);
+        assert!(lines.contains(
+            &"fan_preset_by_platform_profile=balanced=quiet-office,performance=gaming".to_owned()
+        ));
+        assert!(lines.contains(&"fan_preset_reapply_after_resume=true".to_owned()));
+    }
 
     #[test]
     fn runtime_refresh_notice_reports_recovery_profile_and_capability_drift() {
