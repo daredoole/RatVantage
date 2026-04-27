@@ -78,4 +78,8 @@ jq -r '.controls[] | select(.control_id == "platform_profile") |
   "plan_file: \(.plan_file // "none")\nset_file: \(.set_file // "none")\nrevert_file: \(.revert_file // "none")"' "$BUNDLE/validation-report.json"
 echo
 
-echo "Done. To archive: zip -r bundle.zip \"$(basename "$BUNDLE")\"" && echo "  (run from the parent directory of the bundle)"
+base="$(basename "$BUNDLE")"
+echo "To archive (works from any cwd — uses absolute path):"
+echo "  zip -r \"${base}.zip\" \"$BUNDLE\""
+echo "Or from the bundle's parent directory:"
+echo "  (cd \"$(dirname "$BUNDLE")\" && zip -r \"${base}.zip\" \"$base\")"
