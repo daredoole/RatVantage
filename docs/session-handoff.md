@@ -45,6 +45,7 @@
 - Completed slice: write-validation harness also captures **GPU mode** dry-run plans (`--plan-gpu-mode`) when diagnostics show EnvyControl with a switchable current mode; execute mode still never touches GPU or fan sysfs.
 - Completed slice: README documents live **EnvyControl GPU probe** verification (`envycontrol --query` + `legion-probe --json`) and clarifies fixture `sysfs-root` runs intentionally omit GPU probing.
 - Completed slice: read-only **PowerProfiles** session D-Bus probe (`org.freedesktop.UPower.PowerProfiles` name owner + `ActiveProfile`) in `legion-probe` when `sysfs_root` is `/`; raw probe JSON, `power_profiles` capability row, `--overview` line `desktop_power_profiles=`, and GTK Profiles **Desktop PowerProfiles** card; fixtures keep `power_profiles` null and the capability **missing** so CI counts stay stable.
+- Completed slice: write-validation harness supports **`--execute-only <control_id>`** (narrow apply+revert per PR bundle), stderr nudge when `--execute` is used without it, `execute-skipped-filter` status in JSON, and expanded **live-write-validation** docs (daemon flag table, fan execution gate, KDE-first GNOME deferral).
 - Next recommended roadmap slice: on supported Legion hardware, run execute-mode validation for fan methods only after daemon policy enables them and operators attach evidence bundles.
 - If the KDE Wayland/NVIDIA black-window bug returns, treat it as a compositor/frontend issue and keep the private-session launcher plus `--gdk-backend x11` fallback available while continuing tray/CLI validation.
 
@@ -186,10 +187,17 @@ cargo run -p legion-probe -- --json --sysfs-root tests/fixtures/sysfs-82wm-runti
    scripts/capture-write-validation-report.sh \
      --output target/validation/<machine>-<control>-live \
      --execute \
+     --execute-only <control_id> \
      --system-bus
    ```
 
-2. Inspect `report.md`, CLI transcripts, and diagnostics inside that directory; keep the tree as the artifact you reference in PRs or release notes.
+   Use `control_id` values from `docs/live-write-validation.md` (for example
+   `platform_profile`, `battery_charge_type`, `platform::ylogo`, `fn_lock`,
+   `camera_power`, `usb_charging`). Omitting `--execute-only` still works but
+   emits a stderr reminder: prefer one family per bundle for reviewable PR
+   evidence.
+
+2. Inspect `validation-report.md`, `validation-report.json`, CLI transcripts, and diagnostics inside that directory; keep the tree as the artifact you reference in PRs or release notes.
 
 3. Prefer **one** write family per capture (matching daemon flags), confirm read-back/rollback behavior, then disable flags again if you are done testing.
 

@@ -19,6 +19,8 @@ Execute mode is explicit and requires an already-running privileged daemon:
 - add --execute
 - target either --system-bus or --bus-address <address>
 - the script records set/revert results, but still expects operator review
+- prefer --execute-only <control_id> so each PR/evidence bundle exercises one
+  write family at a time (still captures plans for other controls)
 
 Options:
   --output <dir>         Required bundle directory.
@@ -26,6 +28,9 @@ Options:
   --bus-address <addr>   Use an existing daemon on the given D-Bus address.
   --system-bus           Use the system bus instead of a custom bus address.
   --execute              Attempt real reversible writes and then revert them.
+  --execute-only <id>    With --execute, only apply/revert this control id
+                         (see docs/live-write-validation.md). Plans for all
+                         controls still run when available.
   --skip-compat-bundle   Skip nested compatibility/fixture capture evidence.
   --skip-tray-smoke      Skip StatusNotifier tray smoke/report capture.
   --hold-seconds <n>     Hold window for tray smoke reports. Default: 1
@@ -39,6 +44,12 @@ Examples:
     --output target/validation/82wm-live \
     --execute \
     --system-bus
+
+  scripts/capture-write-validation-report.sh \
+    --output target/validation/82wm-live-platform-profile \
+    --execute \
+    --execute-only platform_profile \
+    --system-bus
 EOF
 }
 
@@ -51,6 +62,7 @@ sysfs_root="/"
 bus_address=""
 use_system_bus=0
 execute_writes=0
+execute_only=""
 capture_compat_bundle=1
 capture_tray_smoke=1
 hold_seconds=1
@@ -76,6 +88,10 @@ while (($#)); do
     --execute)
       execute_writes=1
       shift
+      ;;
+    --execute-only)
+      execute_only="${2:?missing value for --execute-only}"
+      shift 2
       ;;
     --skip-compat-bundle)
       capture_compat_bundle=0
@@ -114,6 +130,11 @@ fi
 
 if (( execute_writes )) && (( !use_system_bus )) && [[ -z "$bus_address" ]]; then
   echo "--execute requires either --system-bus or --bus-address" >&2
+  exit 2
+fi
+
+if [[ -n "$execute_only" ]] && (( !execute_writes )); then
+  echo "--execute-only requires --execute" >&2
   exit 2
 fi
 
@@ -295,8 +316,12 @@ else
   target_bus_mode="custom-address"
 fi
 
+if (( execute_writes )) && [[ -z "$execute_only" ]]; then
+  echo "note: for PR-quality evidence, pass --execute-only <control_id> so only one write family runs apply+revert (see docs/live-write-validation.md)." >&2
+fi
+
 python3 - "$metadata_json" "$environment_txt" "$target_bus_mode" "$bus_address" \
-  "$sysfs_root" "$execute_writes" "$capture_compat_bundle" "$capture_tray_smoke" <<'PY'
+  "$sysfs_root" "$execute_writes" "$capture_compat_bundle" "$capture_tray_smoke" "$execute_only" <<'PY'
 import json
 import pathlib
 import sys
@@ -310,6 +335,7 @@ import sys
     execute_writes,
     capture_compat_bundle,
     capture_tray_smoke,
+    execute_only,
 ) = sys.argv[1:]
 
 environment = {}
@@ -327,6 +353,7 @@ metadata = {
     "sysfs_root": sysfs_root,
     "capture_compat_bundle": capture_compat_bundle == "1",
     "capture_tray_smoke": capture_tray_smoke == "1",
+    "execute_only": execute_only or None,
     "environment": environment,
 }
 
@@ -575,7 +602,12 @@ while IFS=$'\t' read -r control_id label kind available current requested manual
     esac
     plan_exit="$(cat "${plan_file}.exit")"
 
-    if (( execute_writes )) && [[ "$plan_exit" == "0" ]] && [[ "$kind" == "platform_profile" || "$kind" == "battery_charge_type" || "$kind" == "led_state" || "$kind" == "ideapad_toggle" ]]; then
+    execute_this=1
+    if [[ -n "$execute_only" && "$control_id" != "$execute_only" ]]; then
+      execute_this=0
+    fi
+
+    if (( execute_writes )) && (( execute_this )) && [[ "$plan_exit" == "0" ]] && [[ "$kind" == "platform_profile" || "$kind" == "battery_charge_type" || "$kind" == "led_state" || "$kind" == "ideapad_toggle" ]]; then
       before_overview_file="$output/steps/${prefix}-${safe_id}-before-overview.txt"
       run_ui_capture "$before_overview_file" --overview || true
 
@@ -767,7 +799,14 @@ for row in rows[1:]:
         if metadata["mode"] == "plan-only":
             final_status = "planned" if plan_exit == "0" else "plan-failed"
         else:
-            if set_payload and set_payload.get("applied") and revert_payload and revert_payload.get("applied"):
+            if not set_file:
+                if plan_exit != "0":
+                    final_status = "plan-failed"
+                elif metadata.get("execute_only"):
+                    final_status = "execute-skipped-filter"
+                else:
+                    final_status = "execute-not-run"
+            elif set_payload and set_payload.get("applied") and revert_payload and revert_payload.get("applied"):
                 final_status = "pass"
             elif set_payload and set_payload.get("status") == "BlockedByAuthorization":
                 final_status = "blocked-by-authorization"
@@ -823,6 +862,7 @@ lines = [
     f"- Mode: `{metadata['mode']}`",
     f"- Target bus: `{metadata['target_bus_mode']}`",
     f"- Sysfs root: `{metadata['sysfs_root']}`",
+    f"- Execute-only filter: `{metadata.get('execute_only') or 'none'}`",
     f"- Tray smoke: `{tray_smoke_status}`",
     "",
     "## Summary",
@@ -876,6 +916,7 @@ operator_lines = [
     "## Before execute mode",
     "",
     "- Confirm the daemon is running with only the write flag required for the control under test.",
+    "- Prefer `scripts/capture-write-validation-report.sh --execute --execute-only <control_id>` so apply+revert runs for a single family per bundle.",
     "- Confirm the relevant `--plan-*` step succeeded and the rollback value looks sane.",
     "- Close or prepare apps affected by camera or keyboard state changes.",
     "",

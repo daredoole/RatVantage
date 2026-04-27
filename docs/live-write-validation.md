@@ -24,6 +24,21 @@ This harness does not bypass existing safety constraints. It only drives the
 validated D-Bus surface that already exists in the daemon and records evidence
 around it.
 
+## Fan execution gate (policy)
+
+`ApplyFanPreset` and `RestoreAutoFan` are **not** exposed as executable D-Bus
+methods in shipping builds, and there are **no** `--enable-fan-*` daemon CLI
+flags yet. The UI and tray remain **dry-run / planning only** for fan curves.
+
+Shipping fan execution requires **all** of:
+
+1. Narrow **live** write-validation bundles (per-control style) once a maintainer
+   workflow exists for fan sysfs, not only fixture dry-runs.
+2. Explicit **maintainer agreement** and polkit actions wired for those methods.
+3. Rollback/read-back tests on real hardware classes you intend to support.
+
+Until then, treat fan rows in validation output as **evidence of planning only**.
+
 ## Modes
 
 ### Plan-only
@@ -70,18 +85,71 @@ scripts/capture-write-validation-report.sh \
 Execute mode expects an already-running privileged daemon. The harness does not
 start a root-capable daemon for you.
 
+### Execute-only (one write family per bundle)
+
+For PRs and release notes, **prefer** a separate output directory per control
+family so each bundle is easy to review:
+
+```bash
+scripts/capture-write-validation-report.sh \
+  --output target/validation/<machine>-live-platform_profile \
+  --execute \
+  --execute-only platform_profile \
+  --system-bus
+```
+
+With `--execute-only <control_id>`, the script still records **plans** for every
+available control, but runs **apply + revert** only for the matching `control_id`
+(see table below). Other controls show status `execute-skipped-filter` in
+`validation-report.json` when their plan succeeded.
+
+Valid `control_id` values (must match exactly):
+
+| `control_id` | Daemon flags (system service override / manual run) |
+|---|---|
+| `platform_profile` | `--enable-platform-profile-write` |
+| `battery_charge_type` | `--enable-battery-charge-type-write` |
+| `platform::ylogo` | `--enable-led-state-write` |
+| `fn_lock` | `--enable-ideapad-toggle-write` |
+| `camera_power` | `--enable-camera-power-write` |
+| `usb_charging` | `--enable-usb-charging-write` |
+
+Example: edit the systemd unit drop-in or ExecStart so **only** the flag for the
+family under test is enabled, reload, restart the daemon, run the harness, then
+turn flags off again.
+
+Reference dry-run / plan-only daemon flags (from `docs/session-handoff.md`):
+
+```text
+cargo run -p legion-control-daemon -- --enable-platform-profile-write --enable-battery-charge-type-write --enable-led-state-write --enable-ideapad-toggle-write --enable-camera-power-write
+```
+
+Add `--enable-usb-charging-write` when capturing USB charging evidence.
+
 ## Recommended live workflow
 
-1. Start the daemon with only the write flag needed for the control under test.
-2. Run the harness in plan-only mode first and inspect the generated plan files.
-3. Run the harness in execute mode.
-4. Review the generated `WriteExecutionResult` JSON for the apply step.
-5. Confirm the manual hardware behavior for that control.
-6. Confirm the revert step restores the original state.
+1. Pick **one** row from the table above.
+2. Start the root daemon with **only** the write flag(s) needed for that row
+   (`SetIdeapadToggle` is shared; `fn_lock` still uses the ideapad flag, while
+   `camera_power` / `usb_charging` use their dedicated flags).
+3. Run plan-only capture on `/` sysfs first and inspect plan JSON under `steps/`.
+4. Run execute capture with `--execute-only <control_id>` and `--system-bus`
+   (or `--bus-address` for a session daemon started with the same policy).
+5. Review `validation-report.md`, `validation-report.json`, and `steps/*apply*.json`
+   for `WriteExecutionResult` / polkit outcomes.
+6. Confirm the manual hardware behavior for that control, then confirm revert
+   restored the original state.
 
-Do not batch multiple unrelated writes into one manual decision. The harness
-records them all, but operator review should still happen one control at a
-time.
+Do not batch unrelated daemon flag groups into one “first live test” decision.
+The harness can still **plan** every control in one run; **execute-only** keeps
+apply+revert narrow.
+
+## GNOME tray smoke (deferred when on KDE-only)
+
+StatusNotifier tray autostart stays **off** until GNOME + AppIndicator smoke
+exists. If your daily session is **KDE Plasma**, use the existing KDE tray smoke
+workflow under `scripts/smoke-statusnotifier-tray.sh` and `target/smoke/`;
+GNOME-specific capture is **not** required for your own evidence bundles.
 
 ## Per-control operator checks
 

@@ -135,6 +135,7 @@ scripts/run-local-session-app.sh --frontend ui --gsk-renderer cairo
 scripts/smoke-statusnotifier-tray.sh --hold-seconds 15
 scripts/capture-write-validation-report.sh --output target/validation/<machine-label>-plan
 scripts/capture-write-validation-report.sh --output target/validation/<machine-label>-live --execute --system-bus
+scripts/capture-write-validation-report.sh --output target/validation/<machine-label>-live-profile --execute --execute-only platform_profile --system-bus
 ```
 
 ### Verify GPU mode probe (live system)
@@ -169,12 +170,13 @@ write surface, use:
 ```bash
 scripts/capture-write-validation-report.sh --output target/validation/<machine-label>-plan
 scripts/capture-write-validation-report.sh --output target/validation/<machine-label>-live --execute --system-bus
+scripts/capture-write-validation-report.sh --output target/validation/<machine-label>-live-profile --execute --execute-only platform_profile --system-bus
 ```
 
 The default run is plan-only and starts its own private session-bus daemon. The
-explicit `--execute` mode expects a real privileged daemon target and records
-apply/revert evidence one control at a time. See
-[docs/live-write-validation.md](docs/live-write-validation.md).
+explicit `--execute` mode expects a real privileged daemon target; pass
+`--execute-only <control_id>` so each bundle applies and reverts **one** write
+family (see [docs/live-write-validation.md](docs/live-write-validation.md)).
 
 For local frontend development without installing a system-bus daemon, use:
 

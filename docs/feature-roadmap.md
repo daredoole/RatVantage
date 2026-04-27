@@ -51,7 +51,7 @@ Current pre-alpha code provides the safe read-only base:
 
 ## Next immediate work
 
-- Keep tray autostart disabled; GNOME AppIndicator extension path is still untested.
+- Keep tray autostart disabled; GNOME AppIndicator extension path is still untested (KDE-primary contributors can defer GNOME smoke; use the KDE StatusNotifier report workflow until a GNOME session is available).
 - Collect more captured fixtures through the compatibility bundle workflow when additional supported Legion machines are available.
 - If no new hardware reports are available, use the live write-validation harness to capture execute-mode evidence on supported Legion hardware one control at a time; tray/UI refresh behavior is now aligned on the shared reload path, KDE-specific smoke/reporting is in place, and GNOME validation remains blocked.
 - If the KDE Wayland/NVIDIA GTK blackout returns, retry the shell with the scroll-bounded startup path and automatic `GSK_RENDERER=gl` fallback before treating it as compositor-specific; if it still reproduces, use the private-session launcher with `--gdk-backend x11` while keeping tray/CLI validation moving.
