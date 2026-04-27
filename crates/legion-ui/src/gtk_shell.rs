@@ -1822,8 +1822,11 @@ fn append_manual_fan_curve_scratchpad(page: &gtk4::Box, curve: &FanCurveCapabili
     hint.set_xalign(0.0);
     page.append(&hint);
 
-    let actions = gtk4::Box::new(gtk4::Orientation::Horizontal, 8);
-    actions.set_spacing(8);
+    let actions_column = gtk4::Box::new(gtk4::Orientation::Vertical, 6);
+    let actions_row_load = gtk4::Box::new(gtk4::Orientation::Horizontal, 8);
+    actions_row_load.set_spacing(8);
+    let actions_row_export = gtk4::Box::new(gtk4::Orientation::Horizontal, 8);
+    actions_row_export.set_spacing(8);
     let load_live = gtk4::Button::with_label("Load from live");
     let load_saved = gtk4::Button::with_label("Load from saved");
     let clear_btn = gtk4::Button::with_label("Clear");
@@ -1856,15 +1859,17 @@ fn append_manual_fan_curve_scratchpad(page: &gtk4::Box, curve: &FanCurveCapabili
     copy_toml.set_tooltip_text(Some(
         "Copy rows as ratvantage_fan_scratchpad_v1 TOML when every cell holds a valid integer.",
     ));
-    actions.append(&load_live);
-    actions.append(&load_saved);
-    actions.append(&clear_btn);
-    actions.append(&validate_btn);
-    actions.append(&preview_sysfs);
-    actions.append(&copy_sysfs_preview);
-    actions.append(&copy_json);
-    actions.append(&copy_toml);
-    page.append(&actions);
+    actions_row_load.append(&load_live);
+    actions_row_load.append(&load_saved);
+    actions_row_load.append(&clear_btn);
+    actions_row_load.append(&validate_btn);
+    actions_row_export.append(&preview_sysfs);
+    actions_row_export.append(&copy_sysfs_preview);
+    actions_row_export.append(&copy_json);
+    actions_row_export.append(&copy_toml);
+    actions_column.append(&actions_row_load);
+    actions_column.append(&actions_row_export);
+    page.append(&actions_column);
 
     let status = gtk4::Label::new(Some(
         "Use Load from live or saved after refreshing those sections, or type values manually.",
