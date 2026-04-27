@@ -221,7 +221,7 @@ Completed scaffold:
 - UI CLI previews for platform profile, battery charge type, GPU mode, and fan preset dry-run plans, plus `--set-platform-profile` and `--set-battery-charge-type` execution output.
 - Read-only diagnostics JSON bundle with hardware summary, compact counts, kernel version, detected sysfs paths, recent daemon log excerpts, and raw probe report.
 - Diagnostics/export parity for durable app state, so CLI `--diagnostics` output and GTK Diagnostics Copy JSON both include `gpu_mode_pending` and `last_known_good_fan_curve`.
-- Read-only overview output includes durable GPU pending-reboot and saved fan curve state, plus LED brightness and firmware toggle values when exposed.
+- Read-only overview output includes durable GPU pending-reboot and saved fan curve state, a `desktop_power_profiles=` line when the session D-Bus API is probed (fixtures show `not_applicable`), plus LED brightness and firmware toggle values when exposed.
 - Diagnostics include choice file paths for platform profiles and battery charge types.
 - Read-only GTK Fans tab for fan telemetry, detected fan curve paths, and packaged preset IDs.
 - Read-only GTK diagnostics tab with the same debug bundle and a Copy JSON action.

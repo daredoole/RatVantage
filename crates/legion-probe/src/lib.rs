@@ -9,6 +9,8 @@ use legion_common::{
     PlatformProfileCapability, RiskLevel, TelemetrySnapshot,
 };
 
+mod power_profiles;
+
 #[derive(Debug, Clone)]
 pub struct ProbeOptions {
     pub sysfs_root: PathBuf,
@@ -32,6 +34,7 @@ pub fn probe(options: &ProbeOptions) -> CapabilityRegistry {
     let firmware_attributes = detect_firmware_attributes(&options.sysfs_root);
     let ideapad_toggles = detect_ideapad_toggles(&options.sysfs_root);
     let gpu = detect_envycontrol_gpu(&options.sysfs_root);
+    let power_profiles = power_profiles::detect_power_profiles(&options.sysfs_root);
 
     let mut capabilities = Vec::new();
     push_capability(
@@ -72,6 +75,15 @@ pub fn probe(options: &ProbeOptions) -> CapabilityRegistry {
         !ideapad_toggles.is_empty(),
     );
     push_capability(&mut capabilities, "gpu", "GPU mode", gpu.is_some());
+    push_capability(
+        &mut capabilities,
+        "power_profiles",
+        "Desktop PowerProfiles",
+        power_profiles
+            .as_ref()
+            .and_then(|probe| probe.unique_owner.as_ref())
+            .is_some(),
+    );
 
     CapabilityRegistry {
         hardware: detect_hardware(&options.sysfs_root),
@@ -88,6 +100,7 @@ pub fn probe(options: &ProbeOptions) -> CapabilityRegistry {
         firmware_attributes,
         ideapad_toggles,
         gpu,
+        power_profiles,
     }
 }
 
@@ -513,6 +526,7 @@ mod tests {
             toggle.name == "conservation_mode" && toggle.current_value.as_deref() == Some("1")
         }));
         assert!(registry.gpu.is_none());
+        assert!(registry.power_profiles.is_none());
         let battery = registry.telemetry.battery.as_ref().unwrap();
         assert_eq!(battery.name, "BAT0");
         assert_eq!(battery.capacity_percent, Some(79));
@@ -583,6 +597,7 @@ mod tests {
             .leds
             .iter()
             .any(|led| led.name == "platform::ylogo"));
+        assert!(registry.power_profiles.is_none());
     }
 
     #[test]
@@ -606,6 +621,7 @@ mod tests {
         assert!(registry.leds.is_empty());
         assert!(registry.ideapad_toggles.is_empty());
         assert!(registry.telemetry.battery.is_none());
+        assert!(registry.power_profiles.is_none());
 
         fs::remove_dir_all(root).unwrap();
     }

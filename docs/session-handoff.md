@@ -44,6 +44,7 @@
 - Completed slice: `tests/fixtures/sysfs-82wm-confirmed` hwmon fan curve now exposes **pwm1_auto_point1..10** temp/pwm nodes so packaged **balanced-daily** dry-run planning succeeds on the default fixture (daemon dbus contract + validation harness report show `planned` for fan preset).
 - Completed slice: write-validation harness also captures **GPU mode** dry-run plans (`--plan-gpu-mode`) when diagnostics show EnvyControl with a switchable current mode; execute mode still never touches GPU or fan sysfs.
 - Completed slice: README documents live **EnvyControl GPU probe** verification (`envycontrol --query` + `legion-probe --json`) and clarifies fixture `sysfs-root` runs intentionally omit GPU probing.
+- Completed slice: read-only **PowerProfiles** session D-Bus probe (`org.freedesktop.UPower.PowerProfiles` name owner + `ActiveProfile`) in `legion-probe` when `sysfs_root` is `/`; raw probe JSON, `power_profiles` capability row, `--overview` line `desktop_power_profiles=`, and GTK Profiles **Desktop PowerProfiles** card; fixtures keep `power_profiles` null and the capability **missing** so CI counts stay stable.
 - Next recommended roadmap slice: on supported Legion hardware, run execute-mode validation for fan methods only after daemon policy enables them and operators attach evidence bundles.
 - If the KDE Wayland/NVIDIA black-window bug returns, treat it as a compositor/frontend issue and keep the private-session launcher plus `--gdk-backend x11` fallback available while continuing tray/CLI validation.
 

@@ -3,9 +3,10 @@ use std::process::Command;
 
 use anyhow::Result;
 use legion_common::{
-    format_fan_curve_snapshot_summary, format_gpu_mode_pending_summary, Capability,
-    CapabilityRegistry, CapabilityStatus, FanCurveSnapshot, GpuModePending, HardwareSummary,
-    RiskLevel, TelemetrySnapshot, WriteDryRunPlan, WriteExecutionResult,
+    format_fan_curve_snapshot_summary, format_gpu_mode_pending_summary,
+    format_power_profiles_probe_summary, Capability, CapabilityRegistry, CapabilityStatus,
+    FanCurveSnapshot, GpuModePending, HardwareSummary, RiskLevel, TelemetrySnapshot,
+    WriteDryRunPlan, WriteExecutionResult,
 };
 use serde::{de::DeserializeOwned, Serialize};
 use zbus::blocking::{Connection, ConnectionBuilder, Proxy};
@@ -281,6 +282,10 @@ pub fn render_overview_lines_with_pending(
                 .as_ref()
                 .and_then(|gpu| gpu.mode.as_deref())
                 .unwrap_or("unknown")
+        ),
+        format!(
+            "desktop_power_profiles={}",
+            format_power_profiles_probe_summary(report.power_profiles.as_ref())
         ),
         format!(
             "gpu_pending_reboot={}",
@@ -580,6 +585,9 @@ mod tests {
             &"fan_preset_by_platform_profile=balanced=quiet-office,performance=gaming".to_owned()
         ));
         assert!(lines.contains(&"fan_preset_reapply_after_resume=true".to_owned()));
+        assert!(lines
+            .iter()
+            .any(|line| line.starts_with("desktop_power_profiles=not_applicable")));
     }
 
     #[test]

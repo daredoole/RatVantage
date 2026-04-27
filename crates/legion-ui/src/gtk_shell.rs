@@ -593,6 +593,32 @@ fn append_profiles(page: &gtk4::Box, bundle: &DiagnosticsBundle) {
 
     let feedback = build_write_feedback_group("Platform profile");
     page.append(&feedback);
+
+    if let Some(pp) = &bundle.raw_probe_report.power_profiles {
+        let desktop = adw::PreferencesGroup::new();
+        desktop.set_title("Desktop PowerProfiles");
+        desktop.set_description(Some(
+            "Session D-Bus `org.freedesktop.UPower.PowerProfiles` (often power-profiles-daemon).",
+        ));
+        desktop.add(&info_row("Bus", &pp.bus));
+        desktop.add(&info_row("Well-known name", &pp.well_known_name));
+        if let Some(owner) = &pp.unique_owner {
+            desktop.add(&info_row("Unique owner", owner));
+            desktop.add(&info_row(
+                "Active profile",
+                pp.active_profile.as_deref().unwrap_or("unknown"),
+            ));
+        } else if let Some(detail) = &pp.detail {
+            desktop.add(&info_row("Unavailable", detail));
+        } else {
+            desktop.add(&info_row("Unavailable", "no D-Bus owner"));
+        }
+        desktop.add(&info_row(
+            "Probe status",
+            capability_status_label(pp.status),
+        ));
+        page.append(&desktop);
+    }
 }
 
 fn append_battery(page: &gtk4::Box, bundle: &DiagnosticsBundle) {

@@ -13,6 +13,9 @@ pub struct CapabilityRegistry {
     pub firmware_attributes: Vec<FirmwareAttributeCapability>,
     pub ideapad_toggles: Vec<IdeapadToggleCapability>,
     pub gpu: Option<GpuCapability>,
+    /// Session-bus `org.freedesktop.UPower.PowerProfiles` probe when `sysfs_root` is `/` (fixtures use `null`).
+    #[serde(default)]
+    pub power_profiles: Option<PowerProfilesCapability>,
     pub telemetry: TelemetrySnapshot,
 }
 
@@ -65,6 +68,19 @@ pub struct FanCurvePointSnapshot {
 
 /// Human-readable value for `gpu_pending_reboot=` in `--overview`, tray status lines, and tooltips.
 /// Returns `"none"` when there is no pending switch.
+/// One-line summary for `--overview` and similar surfaces (`not_applicable` when the probe skipped D-Bus).
+pub fn format_power_profiles_probe_summary(value: Option<&PowerProfilesCapability>) -> String {
+    match value {
+        None => "not_applicable".to_owned(),
+        Some(p) if p.unique_owner.is_some() => {
+            let owner = p.unique_owner.as_deref().unwrap_or("");
+            let active = p.active_profile.as_deref().unwrap_or("unknown");
+            format!("owner={owner} active={active}")
+        }
+        Some(p) => p.detail.clone().unwrap_or_else(|| "unavailable".to_owned()),
+    }
+}
+
 pub fn format_gpu_mode_pending_summary(pending: Option<&GpuModePending>) -> String {
     match pending {
         None => "none".to_owned(),
@@ -338,6 +354,19 @@ pub struct GpuCapability {
     pub provider: String,
     pub status: CapabilityStatus,
     pub mode: Option<String>,
+}
+
+/// Read-only snapshot of the generic desktop power profile API (power-profiles-daemon or another owner).
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct PowerProfilesCapability {
+    /// Typically `session` (per-user bus where PowerProfiles is advertised).
+    pub bus: String,
+    pub well_known_name: String,
+    pub unique_owner: Option<String>,
+    pub active_profile: Option<String>,
+    pub status: CapabilityStatus,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub detail: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]
@@ -1569,6 +1598,35 @@ mod tests {
         assert_eq!(
             format_gpu_mode_pending_summary(Some(&pending)),
             "hybrid pending (was nvidia); reboot required"
+        );
+    }
+
+    #[test]
+    fn format_power_profiles_probe_summary_fixture_and_live_shapes() {
+        assert_eq!(format_power_profiles_probe_summary(None), "not_applicable");
+        let live = PowerProfilesCapability {
+            bus: "session".to_owned(),
+            well_known_name: "org.freedesktop.UPower.PowerProfiles".to_owned(),
+            unique_owner: Some(":1.42".to_owned()),
+            active_profile: Some("balanced".to_owned()),
+            status: CapabilityStatus::ProbeOnly,
+            detail: None,
+        };
+        assert_eq!(
+            format_power_profiles_probe_summary(Some(&live)),
+            "owner=:1.42 active=balanced"
+        );
+        let no_owner = PowerProfilesCapability {
+            bus: "session".to_owned(),
+            well_known_name: "org.freedesktop.UPower.PowerProfiles".to_owned(),
+            unique_owner: None,
+            active_profile: None,
+            status: CapabilityStatus::Missing,
+            detail: Some("name_has_no_owner".to_owned()),
+        };
+        assert_eq!(
+            format_power_profiles_probe_summary(Some(&no_owner)),
+            "name_has_no_owner"
         );
     }
 

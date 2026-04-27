@@ -10,3 +10,4 @@ anyhow.workspace = true
 clap.workspace = true
 legion-common.workspace = true
 serde_json.workspace = true
+zbus.workspace = true

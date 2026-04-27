@@ -18,15 +18,15 @@ fn status_cli_prints_tray_summary_over_private_bus() {
     let stdout = String::from_utf8(output.stdout).unwrap();
     assert!(stdout.contains("Legion Control tray status"));
     assert!(stdout.contains(
-        "tooltip=82WM Legion Pro 5 16ARX8: Profile: balanced, Fans: 2410 RPM, 7 available capabilities, 1 missing"
+        "tooltip=82WM Legion Pro 5 16ARX8: Profile: balanced, Fans: 2410 RPM, 7 available capabilities, 2 missing"
     ));
-    assert!(stdout.contains("capability_count=8"));
+    assert!(stdout.contains("capability_count=9"));
     assert!(stdout.contains("available_capability_count=7"));
-    assert!(stdout.contains("missing_capability_count=1"));
+    assert!(stdout.contains("missing_capability_count=2"));
     assert!(stdout.contains("platform_profile=balanced"));
     assert!(stdout.contains("fan_rpm=2410 RPM"));
     assert!(stdout.contains(
-        "capabilities=battery_charge_type,fan_curves,firmware_attributes,gpu,hwmon,ideapad_toggles,leds,platform_profile"
+        "capabilities=battery_charge_type,fan_curves,firmware_attributes,gpu,hwmon,ideapad_toggles,leds,platform_profile,power_profiles"
     ));
 }
 
@@ -41,7 +41,7 @@ fn tooltip_cli_prints_single_line_over_private_bus() {
     assert!(output.status.success());
     assert_eq!(
         String::from_utf8(output.stdout).unwrap(),
-        "82WM Legion Pro 5 16ARX8: Profile: balanced, Fans: 2410 RPM, 7 available capabilities, 1 missing\n"
+        "82WM Legion Pro 5 16ARX8: Profile: balanced, Fans: 2410 RPM, 7 available capabilities, 2 missing\n"
     );
 }
 

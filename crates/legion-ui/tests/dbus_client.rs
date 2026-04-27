@@ -38,12 +38,15 @@ fn client_reads_daemon_contract_over_private_bus() {
             "hwmon",
             "ideapad_toggles",
             "leds",
-            "platform_profile"
+            "platform_profile",
+            "power_profiles"
         ]
     );
     assert!(capabilities.iter().all(|capability| {
         capability.risk == RiskLevel::ReadOnly
-            && (capability.status == CapabilityStatus::ProbeOnly || capability.id == "gpu")
+            && (capability.status == CapabilityStatus::ProbeOnly
+                || capability.id == "gpu"
+                || capability.id == "power_profiles")
             && capability.details.is_null()
     }));
     assert!(
@@ -91,6 +94,7 @@ fn client_reads_daemon_contract_over_private_bus() {
             "fan_rpm=CPU Fan:2410",
             "temperatures=CPU Temp:52000",
             "gpu_mode=unknown",
+            "desktop_power_profiles=not_applicable",
             "gpu_pending_reboot=none",
             "last_known_good_fan_curve=none",
             "fan_preset_by_platform_profile=none",
@@ -142,16 +146,20 @@ fn client_reads_daemon_contract_over_private_bus() {
     assert_eq!(json["fan_preset_reapply_after_resume"], false);
     assert_eq!(json["recent_daemon_logs"], serde_json::json!([]));
     assert_eq!(json["hardware"]["product_name"], "82WM");
-    assert_eq!(json["summary"]["capability_count"], 8);
+    assert_eq!(json["summary"]["capability_count"], 9);
     assert_eq!(json["summary"]["available_capability_count"], 7);
-    assert_eq!(json["summary"]["missing_capability_count"], 1);
+    assert_eq!(json["summary"]["missing_capability_count"], 2);
     assert_eq!(json["summary"]["capability_status_counts"]["probe_only"], 7);
-    assert_eq!(json["summary"]["capability_status_counts"]["missing"], 1);
+    assert_eq!(json["summary"]["capability_status_counts"]["missing"], 2);
     assert_eq!(json["summary"]["sensor_count"], 2);
     assert_eq!(json["summary"]["fan_curve_count"], 1);
     assert_eq!(
         json["summary"]["detected_sysfs_path_count"],
         bundle.detected_sysfs_paths.len()
+    );
+    assert_eq!(
+        json["raw_probe_report"]["power_profiles"],
+        serde_json::Value::Null
     );
     assert_eq!(
         json["raw_probe_report"]["platform_profile"]["current"],
@@ -283,7 +291,7 @@ fn status_model_normalizes_daemon_data_for_ui() {
         status.hardware.product_sku.as_deref(),
         Some("LENOVO_MT_82WM_BU_idea_FM_Legion Pro 5 16ARX8")
     );
-    assert_eq!(status.capability_count(), 8);
+    assert_eq!(status.capability_count(), 9);
     assert_eq!(
         status.capability_ids(),
         [
@@ -294,13 +302,16 @@ fn status_model_normalizes_daemon_data_for_ui() {
             "hwmon",
             "ideapad_toggles",
             "leds",
-            "platform_profile"
+            "platform_profile",
+            "power_profiles"
         ]
     );
     assert!(status.capabilities.iter().all(|capability| {
         !capability.label.is_empty()
             && capability.risk == RiskLevel::ReadOnly
-            && (capability.status == CapabilityStatus::ProbeOnly || capability.id == "gpu")
+            && (capability.status == CapabilityStatus::ProbeOnly
+                || capability.id == "gpu"
+                || capability.id == "power_profiles")
     }));
     assert!(
         status
@@ -309,6 +320,11 @@ fn status_model_normalizes_daemon_data_for_ui() {
             .any(|capability| capability.id == "gpu"
                 && capability.status == CapabilityStatus::Missing)
     );
+    assert!(status
+        .capabilities
+        .iter()
+        .any(|capability| capability.id == "power_profiles"
+            && capability.status == CapabilityStatus::Missing));
     assert_eq!(
         status.render_lines(),
         [
@@ -316,9 +332,9 @@ fn status_model_normalizes_daemon_data_for_ui() {
             "vendor=LENOVO",
             "product_name=82WM",
             "product_version=Legion Pro 5 16ARX8",
-            "capability_count=8",
-            "capabilities=battery_charge_type,fan_curves,firmware_attributes,gpu,hwmon,ideapad_toggles,leds,platform_profile",
-            "capability_statuses=battery_charge_type:probe_only:read_only,fan_curves:probe_only:read_only,firmware_attributes:probe_only:read_only,gpu:missing:read_only,hwmon:probe_only:read_only,ideapad_toggles:probe_only:read_only,leds:probe_only:read_only,platform_profile:probe_only:read_only",
+            "capability_count=9",
+            "capabilities=battery_charge_type,fan_curves,firmware_attributes,gpu,hwmon,ideapad_toggles,leds,platform_profile,power_profiles",
+            "capability_statuses=battery_charge_type:probe_only:read_only,fan_curves:probe_only:read_only,firmware_attributes:probe_only:read_only,gpu:missing:read_only,hwmon:probe_only:read_only,ideapad_toggles:probe_only:read_only,leds:probe_only:read_only,platform_profile:probe_only:read_only,power_profiles:missing:read_only",
         ]
     );
 }
@@ -341,9 +357,9 @@ fn status_cli_prints_hardware_and_capability_summary() {
             "vendor=LENOVO\n",
             "product_name=82WM\n",
             "product_version=Legion Pro 5 16ARX8\n",
-            "capability_count=8\n",
-            "capabilities=battery_charge_type,fan_curves,firmware_attributes,gpu,hwmon,ideapad_toggles,leds,platform_profile\n",
-            "capability_statuses=battery_charge_type:probe_only:read_only,fan_curves:probe_only:read_only,firmware_attributes:probe_only:read_only,gpu:missing:read_only,hwmon:probe_only:read_only,ideapad_toggles:probe_only:read_only,leds:probe_only:read_only,platform_profile:probe_only:read_only\n",
+            "capability_count=9\n",
+            "capabilities=battery_charge_type,fan_curves,firmware_attributes,gpu,hwmon,ideapad_toggles,leds,platform_profile,power_profiles\n",
+            "capability_statuses=battery_charge_type:probe_only:read_only,fan_curves:probe_only:read_only,firmware_attributes:probe_only:read_only,gpu:missing:read_only,hwmon:probe_only:read_only,ideapad_toggles:probe_only:read_only,leds:probe_only:read_only,platform_profile:probe_only:read_only,power_profiles:missing:read_only\n",
         )
     );
 }
@@ -367,6 +383,7 @@ fn overview_cli_prints_read_only_mvp_summary() {
             "fan_rpm=CPU Fan:2410\n",
             "temperatures=CPU Temp:52000\n",
             "gpu_mode=unknown\n",
+            "desktop_power_profiles=not_applicable\n",
             "gpu_pending_reboot=none\n",
             "last_known_good_fan_curve=none\n",
             "fan_preset_by_platform_profile=none\n",
@@ -437,6 +454,10 @@ fn diagnostics_cli_prints_read_only_debug_bundle_json() {
     let json: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
     assert_eq!(json["hardware"]["vendor"], "LENOVO");
     assert_eq!(json["hardware"]["product_name"], "82WM");
+    assert_eq!(
+        json["raw_probe_report"]["power_profiles"],
+        serde_json::Value::Null
+    );
     assert_eq!(
         json["raw_probe_report"]["battery_charge_type"]["current"],
         "Standard"

@@ -32,7 +32,8 @@ Current pre-alpha code provides the safe read-only base:
 - Current 82WM read-only validation evidence for DMI, platform profiles, charge choices, sensors, LEDs, firmware toggles, and EnvyControl.
 - Read-only battery telemetry for capacity, status, and health where `BAT0` exposes it.
 - Read-only EnvyControl GPU mode query when `envycontrol --query` is available.
-- Read-only UI `--overview` summary for platform profile, battery mode, fan RPM, temperatures, GPU mode, battery telemetry, LED brightness, and firmware toggle values; durable GPU-pending and saved fan-curve snapshot lines use the same `legion-common` formatters as the tray; overview also prints per-profile fan preset map and resume re-apply policy (`fan_preset_by_platform_profile`, `fan_preset_reapply_after_resume`) in line with diagnostics JSON.
+- Read-only session-bus probe for generic desktop `org.freedesktop.UPower.PowerProfiles` (D-Bus name owner and `ActiveProfile` when the probe uses real `/`; fixture `sysfs-root` runs keep `power_profiles` as `null` like the GPU block).
+- Read-only UI `--overview` summary for platform profile, battery mode, fan RPM, temperatures, GPU mode, desktop PowerProfiles D-Bus summary line (`desktop_power_profiles=`), battery telemetry, LED brightness, and firmware toggle values; durable GPU-pending and saved fan-curve snapshot lines use the same `legion-common` formatters as the tray; overview also prints per-profile fan preset map and resume re-apply policy (`fan_preset_by_platform_profile`, `fan_preset_reapply_after_resume`) in line with diagnostics JSON.
 - UI overview includes app-state-only GPU pending-reboot status, saved fan curve snapshots, fan preset profile map, and resume re-apply flag when recorded by the daemon.
 - Tray/status output and GTK pages surface app-state-only GPU pending-reboot state and saved fan curve snapshots.
 - Read-only UI `--diagnostics` JSON bundle with hardware summary, compact counts, kernel version, detected sysfs paths, recent daemon log excerpts, and raw probe report.
@@ -40,7 +41,7 @@ Current pre-alpha code provides the safe read-only base:
 - Diagnostics include `platform_profile_choices` and `charge_types` source paths.
 - UI dry-run plan previews for platform profile, battery charge type, LED state, ideapad toggle, GPU mode, fan preset, and fan restore/default writes, plus gated execution output for the currently enabled reversible methods.
 - UI status output includes per-capability status and risk labels.
-- Read-only GTK Profiles and Battery tabs show platform profile choices, battery charge choices, and battery telemetry from the diagnostics bundle.
+- Read-only GTK Profiles and Battery tabs show platform profile choices, battery charge choices, and battery telemetry from the diagnostics bundle; Profiles also shows a **Desktop PowerProfiles** read-only card when the raw probe includes a session-bus snapshot (absent on fixture-backed daemons).
 - The GTK Fans tab shows fan telemetry, curve paths, last-known-good snapshot status, packaged preset selection with daemon dry-run previews for fan preset and restore-to-auto plans, capture for the durable last-known-good snapshot, read-only live sysfs curve readings, per-point tables for both live and saved snapshots, a read-only live-vs-saved comparison action, a validated manual scratchpad with JSON/TOML exchange (packaged preset TOML import when counts match) plus an interactive temp→PWM chart that edits scratchpad rows by drag or arrow keys (Shift = coarse steps), click-to-select with highlighted point, row entry focus syncing that highlight, labeled axes on the same Cairo plot as the read-only preview, in-chart text when rows are not yet plottable, and a **Preview sysfs targets** buffer that lists validated per-path integers locally plus **Copy sysfs preview** for the pane text (still no fan execution in the dashboard).
 - GTK runtime refresh loop now reprobes on focus/visibility, keeps the last good page during daemon outages, surfaces recovery/drift notices after reconnect, and serves as the shared post-write refresh path when the dashboard shell is active.
 - Read-only GTK Appearance tab shows LED brightness nodes and firmware toggle values from the diagnostics bundle.
@@ -200,7 +201,7 @@ Expose only when probed and with warnings:
 
 ### Desktop integration
 
-- Better PowerProfiles D-Bus owner detection.
+- Better PowerProfiles D-Bus owner detection. [read-only owner + `ActiveProfile` probe implemented in `legion-probe` for `/` sysfs; no sync policy yet]
 - Optional sync policy between Lenovo platform profile and generic desktop power profile.
 - Notifications for profile/fan reset after resume.
 - KDE-specific tray behavior testing. [implemented as report-capable smoke workflow with recorded KDE Wayland evidence]

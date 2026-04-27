@@ -996,6 +996,7 @@ dependencies = [
  "clap",
  "legion-common",
  "serde_json",
+ "zbus 4.4.0",
 ]
 
 [[package]]
