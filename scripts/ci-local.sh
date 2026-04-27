@@ -70,7 +70,7 @@ scripts/run-local-session-app.sh \
   --sysfs-root tests/fixtures/sysfs-82wm-confirmed >/tmp/ratvantage-local-session-status.txt
 scripts/capture-gtk-smoke-report.sh \
   --sysfs-root tests/fixtures/sysfs-82wm-confirmed \
-  --pages status,battery \
+  --pages status,battery,gpu,fans \
   --output "$fixture_tmp/gtk-smoke" >/tmp/ratvantage-gtk-smoke.txt
 cargo run -p legion-probe -- --json --sysfs-root "$fixture_tmp/captured" >/tmp/ratvantage-captured-probe.json
 cargo run -p legion-probe -- --json --sysfs-root tests/fixtures/sysfs-82wm-confirmed >/tmp/ratvantage-probe.json

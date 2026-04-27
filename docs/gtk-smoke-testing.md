@@ -34,6 +34,8 @@ scripts/capture-gtk-smoke-report.sh \
   --output target/smoke/gtk-status-battery
 ```
 
+`./scripts/ci-local.sh` and GitHub Actions use **`status,battery,gpu,fans`** so fixture CI still captures the GPU and Fans tabs without the full default page list.
+
 ## Live local smoke
 
 To render your current machine data through the same Xvfb path:

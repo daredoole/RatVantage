@@ -61,7 +61,7 @@ jobs:
         run: scripts/run-local-session-app.sh --frontend status --sysfs-root tests/fixtures/sysfs-82wm-confirmed
 
       - name: GTK screenshot smoke test
-        run: scripts/capture-gtk-smoke-report.sh --sysfs-root tests/fixtures/sysfs-82wm-confirmed --pages status,battery --output /tmp/ratvantage-gtk-smoke
+        run: scripts/capture-gtk-smoke-report.sh --sysfs-root tests/fixtures/sysfs-82wm-confirmed --pages status,battery,gpu,fans --output /tmp/ratvantage-gtk-smoke
 
       - name: Daemon dry-run smoke test
         run: cargo run -p legion-control-daemon -- --dry-run
