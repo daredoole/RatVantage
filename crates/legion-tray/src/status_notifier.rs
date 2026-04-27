@@ -195,9 +195,7 @@ impl StatusNotifierTray {
                     },
                 ),
                 Err(action_error) => (
-                    Some(format!(
-                        "Last write could not be sent to the daemon: {action_error}"
-                    )),
+                    Some(format!("Could not reach the daemon: {action_error}")),
                     Some(format!("failed to execute tray action: {action_error}")),
                 ),
             };
@@ -226,10 +224,10 @@ impl StatusNotifierTray {
     fn tooltip_description(&self) -> String {
         let mut lines = vec![self.summary.tooltip.clone()];
         if let Some(notice) = &self.last_notice {
-            lines.push(format!("Last tray notice: {notice}"));
+            lines.push(format!("Recent notice: {notice}"));
         }
         if let Some(error) = &self.last_error {
-            lines.push(format!("Last tray error: {error}"));
+            lines.push(format!("Recent error: {error}"));
         }
         lines.join("\n")
     }
@@ -271,7 +269,7 @@ impl Tray for StatusNotifierTray {
         let mut entries = Vec::new();
         if self.state_stale {
             entries.push(MenuItem::Standard(StandardItem {
-                label: "Tray status unavailable, retrying refresh.".to_owned(),
+                label: "Status temporarily unavailable; retrying refresh.".to_owned(),
                 enabled: false,
                 ..StandardItem::default()
             }));
@@ -287,7 +285,7 @@ impl Tray for StatusNotifierTray {
         }
         if let Some(notice) = &self.last_notice {
             entries.push(MenuItem::Standard(StandardItem {
-                label: format!("Tray notice: {notice}"),
+                label: format!("Notice: {notice}"),
                 enabled: false,
                 ..StandardItem::default()
             }));
@@ -436,9 +434,9 @@ fn profile_change_notification(
     let current_profile = current_platform_profile(current)?;
     (previous_profile != current_profile).then(|| DesktopNotification {
         key: "platform_profile",
-        title: "Legion profile".to_owned(),
+        title: "Platform profile".to_owned(),
         body: format!(
-            "{} current mode: {}.",
+            "{} — performance mode is now {}.",
             notification_machine_label(current),
             humanize_profile(current_profile),
         ),
@@ -462,9 +460,9 @@ fn battery_charge_type_change_notification(
     let current_charge_type = current_battery_charge_type(current)?;
     (previous_charge_type != current_charge_type).then(|| DesktopNotification {
         key: "battery_charge_type",
-        title: "Battery charge type".to_owned(),
+        title: "Battery charging".to_owned(),
         body: format!(
-            "{} current mode: {}.",
+            "{} — charging mode is now {}.",
             notification_machine_label(current),
             humanize_charge_type(current_charge_type),
         ),
@@ -593,16 +591,16 @@ fn write_result_status(result: &WriteExecutionResult) -> Option<String> {
     match result.status {
         legion_common::WriteExecutionStatus::Applied => None,
         legion_common::WriteExecutionStatus::BlockedByPolicy => {
-            Some("Last write blocked by daemon policy.".to_owned())
+            Some("Change blocked: daemon has writes disabled.".to_owned())
         }
         legion_common::WriteExecutionStatus::BlockedByAuthorization => {
-            Some("Last write blocked by authorization.".to_owned())
+            Some("Change blocked: authorization denied.".to_owned())
         }
         legion_common::WriteExecutionStatus::Failed => {
             if result.message.contains("restored previous value") {
-                Some("Last write failed and the previous hardware state was restored.".to_owned())
+                Some("Change failed; previous hardware state was restored.".to_owned())
             } else {
-                Some("Last write failed; inspect tray details for the daemon message.".to_owned())
+                Some("Change failed; see the tray error line for the daemon message.".to_owned())
             }
         }
     }
@@ -644,7 +642,7 @@ mod tests {
 
         assert!(menu_has_disabled_item(&menu, "82WM Legion Pro 5 16ARX8"));
         assert!(menu_has_disabled_item(&menu, "Power mode: Balanced"));
-        assert!(menu_has_disabled_item(&menu, "Charging mode: Standard"));
+        assert!(menu_has_disabled_item(&menu, "Charge type: Standard"));
         assert!(menu_has_disabled_item(
             &menu,
             "Battery: 79% / Charging / Good"
@@ -655,9 +653,9 @@ mod tests {
         assert!(menu_has_disabled_item(&menu, "Fan: CPU Fan 2410 RPM"));
         assert!(menu_has_disabled_item(
             &menu,
-            "GPU pending: hybrid (previous nvidia, reboot required)"
+            "GPU: switch to hybrid pending (was nvidia) — reboot required"
         ));
-        assert!(menu_has_disabled_item(&menu, "Missing: gpu"));
+        assert!(menu_has_disabled_item(&menu, "Unavailable: gpu"));
         assert!(!menu_has_disabled_item(
             &menu,
             "Available profiles: Low Power, Balanced, Performance"
@@ -684,7 +682,7 @@ mod tests {
         assert!(menu_has_disabled_item(&menu, "Fn-lock"));
         assert!(menu_has_disabled_item(
             &menu,
-            "Camera power: on - open Dashboard to change"
+            "Camera power: on · change in Dashboard"
         ));
         assert!(menu_has_enabled_item(&menu, "Low Power"));
         assert!(menu_has_enabled_item(&menu, "Performance"));
@@ -767,7 +765,7 @@ mod tests {
         tray.handle_action(TrayAction::SetBatteryChargeType("Conservation".to_owned()));
 
         let menu = tray.menu();
-        assert!(menu_has_disabled_item(&menu, "Charging mode: Conservation"));
+        assert!(menu_has_disabled_item(&menu, "Charge type: Conservation"));
         assert!(menu_has_enabled_item(&menu, "Standard"));
         assert!(tray.last_error.is_none());
     }
@@ -885,7 +883,7 @@ mod tests {
         assert!(tray.last_notice.is_none());
         assert!(menu_has_disabled_item(
             &menu,
-            "Last write failed; inspect tray details for the daemon message."
+            "Change failed; see the tray error line for the daemon message."
         ));
     }
 
@@ -932,7 +930,7 @@ mod tests {
         let menu = tray.menu();
         assert!(menu_has_disabled_item(
             &menu,
-            "Tray status unavailable, retrying refresh."
+            "Status temporarily unavailable; retrying refresh."
         ));
         assert!(menu_has_disabled_item(&menu, "Low Power"));
 
@@ -946,20 +944,17 @@ mod tests {
             notifications.lock().unwrap().as_slice(),
             &[DesktopNotification {
                 key: "platform_profile",
-                title: "Legion profile".to_owned(),
-                body: "82WM Legion Pro 5 16ARX8 current mode: Performance.".to_owned(),
+                title: "Platform profile".to_owned(),
+                body: "82WM Legion Pro 5 16ARX8 — performance mode is now Performance.".to_owned(),
             }]
         );
         let tooltip = tray.tool_tip().description;
-        assert!(tooltip.contains("Last tray notice:"));
+        assert!(tooltip.contains("Recent notice:"));
         let menu = tray.menu();
-        assert!(menu_has_disabled_item(
-            &menu,
-            &format!("Tray notice: {notice}")
-        ));
+        assert!(menu_has_disabled_item(&menu, &format!("Notice: {notice}")));
         assert!(!menu_has_disabled_item(
             &menu,
-            "Last write blocked by daemon policy."
+            "Change blocked: daemon has writes disabled."
         ));
     }
 
@@ -997,8 +992,8 @@ mod tests {
             notifications.lock().unwrap().as_slice(),
             &[DesktopNotification {
                 key: "battery_charge_type",
-                title: "Battery charge type".to_owned(),
-                body: "82WM Legion Pro 5 16ARX8 current mode: Long Life.".to_owned(),
+                title: "Battery charging".to_owned(),
+                body: "82WM Legion Pro 5 16ARX8 — charging mode is now Long Life.".to_owned(),
             }]
         );
     }
@@ -1108,7 +1103,7 @@ mod tests {
         let menu = tray.menu();
         assert!(menu_has_disabled_item(
             &menu,
-            "Last write blocked by daemon policy."
+            "Change blocked: daemon has writes disabled."
         ));
     }
 
@@ -1135,7 +1130,7 @@ mod tests {
         let menu = tray.menu();
         assert!(menu_has_disabled_item(
             &menu,
-            "Last write could not be sent to the daemon: transport unavailable"
+            "Could not reach the daemon: transport unavailable"
         ));
         assert_eq!(
             tray.last_error.as_deref(),

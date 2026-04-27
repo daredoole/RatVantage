@@ -86,7 +86,7 @@ impl TrayMenu {
             .and_then(|charge_type| charge_type.current.as_deref())
         {
             entries.push(TrayMenuEntry::Item(info_item(format!(
-                "Charging mode: {}",
+                "Charge type: {}",
                 humanize_choice(charge_type)
             ))));
         }
@@ -117,7 +117,7 @@ impl TrayMenu {
             .collect::<Vec<_>>();
         if !missing_capabilities.is_empty() {
             entries.push(TrayMenuEntry::Item(info_item(format!(
-                "Missing: {}",
+                "Unavailable: {}",
                 missing_capabilities.join(", ")
             ))));
         }
@@ -434,9 +434,9 @@ fn camera_power_guidance_section(report: &CapabilityRegistry) -> Option<Vec<Tray
         TrayMenuEntry::Item(info_item(format!(
             "Camera power: {}",
             if toggle.current_value.as_deref() == Some("1") {
-                "on - open Dashboard to change"
+                "on · change in Dashboard"
             } else {
-                "off - open Dashboard to change"
+                "off · change in Dashboard"
             }
         ))),
         TrayMenuEntry::Item(action_item("Camera settings", TrayAction::OpenDashboard)),
@@ -454,9 +454,9 @@ fn usb_charging_guidance_section(report: &CapabilityRegistry) -> Option<Vec<Tray
         TrayMenuEntry::Item(info_item(format!(
             "USB charging: {}",
             if toggle.current_value.as_deref() == Some("1") {
-                "on - open Dashboard to change"
+                "on · change in Dashboard"
             } else {
-                "off - open Dashboard to change"
+                "off · change in Dashboard"
             }
         ))),
         TrayMenuEntry::Item(action_item(
@@ -502,10 +502,13 @@ fn gpu_row(report: &CapabilityRegistry, gpu_pending: Option<&GpuModePending>) ->
     if let Some(pending) = gpu_pending {
         let detail = match pending.previous_mode.as_deref() {
             Some(previous) => format!(
-                "GPU pending: {} (previous {previous}, reboot required)",
+                "GPU: switch to {} pending (was {}) — reboot required",
+                pending.requested_mode, previous
+            ),
+            None => format!(
+                "GPU: switch to {} pending — reboot required",
                 pending.requested_mode
             ),
-            None => format!("GPU pending: {} (reboot required)", pending.requested_mode),
         };
         return Some(detail);
     }
@@ -514,7 +517,7 @@ fn gpu_row(report: &CapabilityRegistry, gpu_pending: Option<&GpuModePending>) ->
         .gpu
         .as_ref()
         .and_then(|gpu| gpu.mode.as_deref())
-        .map(|mode| format!("GPU mode: {mode}"))
+        .map(|mode| format!("GPU: {mode}"))
 }
 
 #[cfg(test)]
@@ -655,23 +658,23 @@ mod tests {
             [
                 "82WM Legion Pro 5 16ARX8",
                 "Power mode: Balanced",
-                "Charging mode: Standard",
+                "Charge type: Standard",
                 "Battery: 79% / Charging / Good",
                 "Logo LED: on",
                 "Fn-lock: off",
                 "Camera power: on",
                 "USB charging: off",
                 "Fan: CPU Fan 2410 RPM",
-                "GPU pending: hybrid (previous nvidia, reboot required)",
-                "Missing: gpu",
+                "GPU: switch to hybrid pending (was nvidia) — reboot required",
+                "Unavailable: gpu",
                 "Power mode",
                 "Battery charging",
                 "Logo light",
                 "Turn on",
                 "Fn-lock",
                 "Turn off",
-                "Camera power: on - open Dashboard to change",
-                "USB charging: off - open Dashboard to change",
+                "Camera power: on · change in Dashboard",
+                "USB charging: off · change in Dashboard",
             ]
         );
         assert_eq!(
@@ -731,7 +734,7 @@ mod tests {
             .any(|label| label.starts_with("Battery:")));
         assert!(!menu_labels(&menu)
             .iter()
-            .any(|label| label.starts_with("GPU pending:")));
+            .any(|label| label.starts_with("GPU:")));
         assert!(!menu_labels(&menu)
             .iter()
             .any(|label| label.starts_with("Saved fan curve:")));

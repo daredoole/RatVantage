@@ -75,19 +75,22 @@ impl TraySummary {
             .as_ref()
             .and_then(|profile| profile.current.clone());
         summary.fan_rpm = fan_rpm_label(&report.telemetry.sensors);
-        summary.gpu_pending_reboot = gpu_pending.map(|pending| {
-            let previous = pending.previous_mode.as_deref().unwrap_or("unknown");
-            format!(
-                "{} previous={} reboot_required={}",
-                pending.requested_mode, previous, pending.reboot_required
-            )
-        });
+        summary.gpu_pending_reboot =
+            gpu_pending.map(|pending| match pending.previous_mode.as_deref() {
+                Some(prev) if pending.reboot_required => format!(
+                    "{} pending (was {}); reboot required",
+                    pending.requested_mode, prev
+                ),
+                Some(prev) => format!("{} pending (was {})", pending.requested_mode, prev),
+                None if pending.reboot_required => {
+                    format!("{} pending; reboot required", pending.requested_mode)
+                }
+                None => format!("{} pending", pending.requested_mode),
+            });
         summary.fan_curve_snapshot = fan_snapshot.map(|snapshot| {
-            format!(
-                "{} values from {}",
-                snapshot.points.len(),
-                snapshot.curve_id
-            )
+            let n = snapshot.points.len();
+            let unit = if n == 1 { "point" } else { "points" };
+            format!("{n} {unit} on {}", snapshot.curve_id)
         });
         summary.tooltip = capability_tooltip(
             &status.hardware.product_name,
@@ -142,16 +145,16 @@ fn capability_tooltip(
 ) -> String {
     let mut telemetry = Vec::new();
     if let Some(profile) = telemetry_state.platform_profile {
-        telemetry.push(format!("profile {profile}"));
+        telemetry.push(format!("Profile: {profile}"));
     }
     if let Some(fan_rpm) = telemetry_state.fan_rpm {
-        telemetry.push(format!("fan {fan_rpm}"));
+        telemetry.push(format!("Fans: {fan_rpm}"));
     }
     if let Some(gpu_pending_reboot) = telemetry_state.gpu_pending_reboot {
-        telemetry.push(format!("pending reboot {gpu_pending_reboot}"));
+        telemetry.push(format!("GPU: {gpu_pending_reboot}"));
     }
     if let Some(fan_curve_snapshot) = telemetry_state.fan_curve_snapshot {
-        telemetry.push(format!("saved fan curve {fan_curve_snapshot}"));
+        telemetry.push(format!("Saved curve: {fan_curve_snapshot}"));
     }
     let telemetry = if telemetry.is_empty() {
         String::new()
@@ -304,7 +307,7 @@ mod tests {
 
         assert_eq!(
             summary.tooltip,
-            "82WM Legion Pro 5 16ARX8: profile balanced, fan 2410 RPM, 1 available capabilities, 1 missing"
+            "82WM Legion Pro 5 16ARX8: Profile: balanced, Fans: 2410 RPM, 1 available capabilities, 1 missing"
         );
         assert_eq!(summary.platform_profile.as_deref(), Some("balanced"));
         assert_eq!(summary.fan_rpm.as_deref(), Some("2410 RPM"));
@@ -361,16 +364,16 @@ mod tests {
 
         assert!(summary
             .tooltip
-            .contains("pending reboot hybrid previous=nvidia reboot_required=true"));
+            .contains("GPU: hybrid pending (was nvidia); reboot required"));
         assert!(summary
             .tooltip
-            .contains("saved fan curve 1 values from legion_hwmon"));
+            .contains("Saved curve: 1 point on legion_hwmon"));
         assert!(summary.render_lines().contains(
-            &"gpu_pending_reboot=hybrid previous=nvidia reboot_required=true".to_owned()
+            &"gpu_pending_reboot=hybrid pending (was nvidia); reboot required".to_owned()
         ));
         assert!(summary
             .render_lines()
-            .contains(&"last_known_good_fan_curve=1 values from legion_hwmon".to_owned()));
+            .contains(&"last_known_good_fan_curve=1 point on legion_hwmon".to_owned()));
     }
 
     fn capability(id: &str, label: &str) -> Capability {

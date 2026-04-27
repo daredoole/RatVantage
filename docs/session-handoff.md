@@ -37,7 +37,8 @@
 - Completed slice: Fans manual scratchpad action row tooltips (load live/saved, clear, validate, preview, copy preview, copy JSON/TOML) for hover and screen-reader context; `./scripts/validate-packaging.sh` re-checked clean.
 - Completed slice: Fans manual scratchpad actions split into two horizontal rows (load/saved/clear/validate vs preview/copy-preview/JSON/TOML) inside one vertical strip for narrow-window readability.
 - Completed slice: GTK screenshot smoke in `./scripts/ci-local.sh` and GitHub Actions now includes **`gpu`** and **`fans`** (`--pages status,battery,gpu,fans`); `docs/gtk-smoke-testing.md` notes the CI subset.
-- Next recommended roadmap slice: optional polish (e.g. tray menu copy or notification text) while keeping `ApplyFanPreset` / `RestoreAutoFan` gated until execute-mode validation evidence exists.
+- Completed slice: tray/menu and notification copy polish (clearer status rows, tooltip telemetry labels, desktop notification titles/bodies, write-result wording); `ApplyFanPreset` / `RestoreAutoFan` remain gated.
+- Next recommended roadmap slice: further UX or documentation only if needed; fan preset execution still waits on execute-mode validation evidence.
 - If the KDE Wayland/NVIDIA black-window bug returns, treat it as a compositor/frontend issue and keep the private-session launcher plus `--gdk-backend x11` fallback available while continuing tray/CLI validation.
 
 ## Implemented

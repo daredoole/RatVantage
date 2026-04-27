@@ -18,7 +18,7 @@ fn status_cli_prints_tray_summary_over_private_bus() {
     let stdout = String::from_utf8(output.stdout).unwrap();
     assert!(stdout.contains("Legion Control tray status"));
     assert!(stdout.contains(
-        "tooltip=82WM Legion Pro 5 16ARX8: profile balanced, fan 2410 RPM, 7 available capabilities, 1 missing"
+        "tooltip=82WM Legion Pro 5 16ARX8: Profile: balanced, Fans: 2410 RPM, 7 available capabilities, 1 missing"
     ));
     assert!(stdout.contains("capability_count=8"));
     assert!(stdout.contains("available_capability_count=7"));
@@ -41,7 +41,7 @@ fn tooltip_cli_prints_single_line_over_private_bus() {
     assert!(output.status.success());
     assert_eq!(
         String::from_utf8(output.stdout).unwrap(),
-        "82WM Legion Pro 5 16ARX8: profile balanced, fan 2410 RPM, 7 available capabilities, 1 missing\n"
+        "82WM Legion Pro 5 16ARX8: Profile: balanced, Fans: 2410 RPM, 7 available capabilities, 1 missing\n"
     );
 }
 
@@ -79,14 +79,14 @@ value = "42000"
     assert!(stdout.contains("Legion Control tray menu"));
     assert!(stdout.contains("label=82WM Legion Pro 5 16ARX8"));
     assert!(stdout.contains("label=Power mode: Balanced"));
-    assert!(stdout.contains("label=Charging mode: Standard"));
+    assert!(stdout.contains("label=Charge type: Standard"));
     assert!(stdout.contains("label=Battery: 79% / Charging / Good"));
     assert!(stdout.contains("label=Logo LED: on"));
     assert!(stdout.contains("label=Fn-lock: off"));
     assert!(stdout.contains("label=Camera power: on"));
     assert!(stdout.contains("label=Fan: CPU Fan 2410 RPM"));
-    assert!(stdout.contains("label=GPU pending: hybrid (previous nvidia, reboot required)"));
-    assert!(stdout.contains("label=Missing: gpu"));
+    assert!(stdout.contains("label=GPU: switch to hybrid pending (was nvidia) — reboot required"));
+    assert!(stdout.contains("label=Unavailable: gpu"));
     assert!(!stdout.contains("label=Available profiles:"));
     assert!(!stdout.contains("label=Available charging modes:"));
     assert!(!stdout.contains("label=Saved fan curve:"));
@@ -102,7 +102,7 @@ value = "42000"
     assert!(stdout.contains("enabled action=set_led_state:platform::ylogo:off label=Turn off"));
     assert!(stdout.contains("label=Fn-lock"));
     assert!(stdout.contains("enabled action=set_ideapad_toggle:fn_lock:on label=Turn on"));
-    assert!(stdout.contains("label=Camera power: on - open Dashboard to change"));
+    assert!(stdout.contains("label=Camera power: on · change in Dashboard"));
     assert!(stdout.contains("enabled action=open_dashboard label=Camera settings"));
     assert!(stdout.contains("enabled action=open_dashboard label=Dashboard"));
     assert!(stdout.contains("enabled action=refresh_status label=Refresh"));
@@ -202,10 +202,10 @@ value = "42000"
 
     assert!(output.status.success());
     let stdout = String::from_utf8(output.stdout).unwrap();
-    assert!(stdout.contains("pending reboot hybrid previous=nvidia reboot_required=true"));
-    assert!(stdout.contains("saved fan curve 1 values from legion_hwmon"));
-    assert!(stdout.contains("gpu_pending_reboot=hybrid previous=nvidia reboot_required=true"));
-    assert!(stdout.contains("last_known_good_fan_curve=1 values from legion_hwmon"));
+    assert!(stdout.contains("GPU: hybrid pending (was nvidia); reboot required"));
+    assert!(stdout.contains("Saved curve: 1 point on legion_hwmon"));
+    assert!(stdout.contains("gpu_pending_reboot=hybrid pending (was nvidia); reboot required"));
+    assert!(stdout.contains("last_known_good_fan_curve=1 point on legion_hwmon"));
 
     let _ = fs::remove_file(state_path);
 }
