@@ -10,8 +10,9 @@ Capture a validation bundle for the currently implemented reversible write surfa
 Default mode is plan-only:
 - starts a private session bus and read-mostly daemon
 - captures status, overview, diagnostics, tray/menu evidence, and write plans
-- also captures dry-run plans for fan preset apply and restore-to-auto (read-only;
-  fan execution is never driven by this script, even in --execute mode)
+- also captures dry-run plans for fan preset apply, restore-to-auto, and GPU mode
+  when EnvyControl exposes a switchable mode (read-only; fan and GPU execution are
+  never driven by this script, even in --execute mode)
 - never attempts hardware-changing writes
 
 Execute mode is explicit and requires an already-running privileged daemon:
@@ -459,6 +460,36 @@ for toggle_id, label, note, paired_led_required in [
         "manual_check": note,
     })
 
+gpu = raw.get("gpu") or {}
+gpu_provider = (gpu.get("provider") or "").strip()
+gpu_status = (gpu.get("status") or "").strip()
+gpu_mode = (gpu.get("mode") or "").strip()
+gpu_choices = ["integrated", "hybrid", "nvidia"]
+gpu_requested = None
+if gpu_provider == "envycontrol" and gpu_status == "probe_only" and gpu_mode in gpu_choices:
+    for candidate in gpu_choices:
+        if candidate != gpu_mode:
+            gpu_requested = candidate
+            break
+
+gpu_available = gpu_requested is not None
+controls.append({
+    "id": "gpu_mode",
+    "label": "GPU mode (dry-run plan)",
+    "kind": "gpu_mode",
+    "available": gpu_available,
+    "current": gpu_mode or "unknown",
+    "requested": gpu_requested or "unknown",
+    "set_spec": gpu_requested or "",
+    "revert_spec": gpu_mode or "",
+    "reason": "" if gpu_available else (
+        "GPU mode planning unavailable (missing EnvyControl probe, non-probe status, or unknown current mode)."
+    ),
+    "manual_check": (
+        "Inspect plan JSON only; SetGpuMode is not exposed for execution and is not run by this harness."
+    ),
+})
+
 fan_curves = raw.get("fan_curves") or []
 fan_planning_ok = bool(fan_curves)
 controls.append({
@@ -537,6 +568,9 @@ while IFS=$'\t' read -r control_id label kind available current requested manual
         ;;
       restore_auto_fan)
         run_ui_capture "$plan_file" --plan-restore-auto-fan || true
+        ;;
+      gpu_mode)
+        run_ui_capture "$plan_file" --plan-gpu-mode "$set_spec" || true
         ;;
     esac
     plan_exit="$(cat "${plan_file}.exit")"

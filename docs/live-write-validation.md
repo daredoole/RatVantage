@@ -11,9 +11,10 @@ currently implemented reversible write surface:
 - `usb_charging`
 - **Fan preset dry-run** (`--plan-fan-preset balanced-daily`) when the probe reports fan curves
 - **Fan restore-to-auto dry-run** (`--plan-restore-auto-fan`) under the same condition
+- **GPU mode dry-run** (`--plan-gpu-mode <mode>`) when the probe reports EnvyControl with `status: probe_only` and a known current mode (`integrated` / `hybrid` / `nvidia`) so an alternate mode exists
 
-Fan rows are **plan capture only**: even with `--execute`, the harness never
-calls `ApplyFanPreset` or `RestoreAutoFan` (those remain policy-gated). The
+Fan and GPU plan rows are **plan capture only**: even with `--execute`, the harness never
+calls `ApplyFanPreset`, `RestoreAutoFan`, or GPU execution (those remain absent or policy-gated). The
 primary `tests/fixtures/sysfs-82wm-confirmed` tree includes a full 10-point
 `pwm1_auto_point{1..10}_{temp,pwm}` set so packaged preset dry-run planning
 matches CI expectations; slimmer local trees may still show `plan-failed` until
@@ -99,6 +100,7 @@ time.
   expect apply execution from this harness.
 - `restore_auto_fan`: read the plan JSON only; do not expect restore execution
   from this harness.
+- `gpu_mode`: read the plan JSON only; `SetGpuMode` is not an executable D-Bus method in RatVantage.
 
 ## Bundle contents
 
