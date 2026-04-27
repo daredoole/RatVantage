@@ -34,7 +34,8 @@
 - Validation for the latest slices passed with `cargo fmt --all`, `xvfb-run -a cargo test -p legion-control-ui --features gtk-ui --test gtk_shell`, and `./scripts/ci-local.sh`.
 - Current user-visible GTK surface now includes `Status`, `Profiles`, `Battery`, `GPU`, `Fans`, `Appearance`, and `Diagnostics`.
 - Direct GPU-mode execution is still disabled in the dashboard; the GTK GPU tab is planning-only and app-state-only, matching the daemon safety policy.
-- Next recommended roadmap slice: optional polish (packaging/docs pass, or Fans UX micro-tweaks) while keeping `ApplyFanPreset` / `RestoreAutoFan` gated until execute-mode validation evidence exists.
+- Completed slice: Fans manual scratchpad action row tooltips (load live/saved, clear, validate, preview, copy preview, copy JSON/TOML) for hover and screen-reader context; `./scripts/validate-packaging.sh` re-checked clean.
+- Next recommended roadmap slice: optional polish (split crowded scratchpad toolbar on narrow widths, or capture screenshot smoke for Fans) while keeping `ApplyFanPreset` / `RestoreAutoFan` gated until execute-mode validation evidence exists.
 - If the KDE Wayland/NVIDIA black-window bug returns, treat it as a compositor/frontend issue and keep the private-session launcher plus `--gdk-backend x11` fallback available while continuing tray/CLI validation.
 
 ## Implemented

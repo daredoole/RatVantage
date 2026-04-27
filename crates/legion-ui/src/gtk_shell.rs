@@ -1832,6 +1832,30 @@ fn append_manual_fan_curve_scratchpad(page: &gtk4::Box, curve: &FanCurveCapabili
     let copy_toml = gtk4::Button::with_label("Copy scratchpad TOML");
     let preview_sysfs = gtk4::Button::with_label("Preview sysfs targets");
     let copy_sysfs_preview = gtk4::Button::with_label("Copy sysfs preview");
+    load_live.set_tooltip_text(Some(
+        "Reload scratchpad rows from live sysfs readings via the daemon (read-only D-Bus).",
+    ));
+    load_saved.set_tooltip_text(Some(
+        "Reload scratchpad rows from the saved last-known-good snapshot (read-only D-Bus).",
+    ));
+    clear_btn.set_tooltip_text(Some(
+        "Clear all scratchpad cells to empty (local only; does not change hardware).",
+    ));
+    validate_btn.set_tooltip_text(Some(
+        "Check monotonic temp and pwm rules on the current row integers (local; no D-Bus).",
+    ));
+    preview_sysfs.set_tooltip_text(Some(
+        "Build the sysfs path listing in the preview pane from parsed rows (local; no D-Bus).",
+    ));
+    copy_sysfs_preview.set_tooltip_text(Some(
+        "Copy the preview pane text to the clipboard (placeholder text is not copied).",
+    ));
+    copy_json.set_tooltip_text(Some(
+        "Copy scratchpad rows as JSON to the clipboard (paths plus raw entry text).",
+    ));
+    copy_toml.set_tooltip_text(Some(
+        "Copy rows as ratvantage_fan_scratchpad_v1 TOML when every cell holds a valid integer.",
+    ));
     actions.append(&load_live);
     actions.append(&load_saved);
     actions.append(&clear_btn);
