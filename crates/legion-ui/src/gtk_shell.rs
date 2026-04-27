@@ -1831,11 +1831,13 @@ fn append_manual_fan_curve_scratchpad(page: &gtk4::Box, curve: &FanCurveCapabili
     let copy_json = gtk4::Button::with_label("Copy JSON");
     let copy_toml = gtk4::Button::with_label("Copy scratchpad TOML");
     let preview_sysfs = gtk4::Button::with_label("Preview sysfs targets");
+    let copy_sysfs_preview = gtk4::Button::with_label("Copy sysfs preview");
     actions.append(&load_live);
     actions.append(&load_saved);
     actions.append(&clear_btn);
     actions.append(&validate_btn);
     actions.append(&preview_sysfs);
+    actions.append(&copy_sysfs_preview);
     actions.append(&copy_json);
     actions.append(&copy_toml);
     page.append(&actions);
@@ -1896,7 +1898,7 @@ fn append_manual_fan_curve_scratchpad(page: &gtk4::Box, curve: &FanCurveCapabili
     page.append(&sysfs_preview_title);
 
     let sysfs_preview_hint = gtk4::Label::new(Some(
-        "Requires every row to parse as integers and to pass the same monotonic rules as Validate pairs. Purely local text — no D-Bus call.",
+        "Requires every row to parse as integers and to pass the same monotonic rules as Validate pairs. Purely local text — no D-Bus call. Copy sysfs preview copies whatever is currently shown in the pane.",
     ));
     sysfs_preview_hint.add_css_class("dim-label");
     sysfs_preview_hint.set_wrap(true);
@@ -2111,6 +2113,26 @@ fn append_manual_fan_curve_scratchpad(page: &gtk4::Box, curve: &FanCurveCapabili
                 );
             }
         }
+    });
+
+    let sysfs_preview_buffer_for_clip = sysfs_preview_view.buffer();
+    let status_for_copy_sysfs_preview = status.clone();
+    copy_sysfs_preview.connect_clicked(move |_| {
+        let start = sysfs_preview_buffer_for_clip.start_iter();
+        let end = sysfs_preview_buffer_for_clip.end_iter();
+        let text = sysfs_preview_buffer_for_clip.text(&start, &end, false);
+        let trimmed = text.trim();
+        if trimmed.is_empty() || trimmed.starts_with("Click Preview sysfs targets") {
+            status_for_copy_sysfs_preview
+                .set_text("Nothing to copy — click Preview sysfs targets to fill the pane first.");
+            return;
+        }
+        if let Some(display) = gtk4::gdk::Display::default() {
+            display.clipboard().set_text(trimmed);
+        }
+        status_for_copy_sysfs_preview.set_text(
+            "Copied sysfs preview text from the pane to the clipboard (read-only snippet).",
+        );
     });
 
     let entries_for_copy = entries.clone();

@@ -316,6 +316,7 @@ fn dashboard_pages_render_quick_apply_and_gpu_controls() {
     assert!(fans_text.iter().any(|text| text == "Load from live"));
     assert!(fans_text.iter().any(|text| text == "Validate pairs"));
     assert!(fans_text.iter().any(|text| text == "Preview sysfs targets"));
+    assert!(fans_text.iter().any(|text| text == "Copy sysfs preview"));
     assert!(fans_text
         .iter()
         .any(|text| text == "Sysfs target preview (scratchpad)"));
