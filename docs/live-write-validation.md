@@ -85,6 +85,10 @@ scripts/capture-write-validation-report.sh \
 Execute mode expects an already-running privileged daemon. The harness does not
 start a root-capable daemon for you.
 
+With `--execute`, the script **fails fast** if `before/diagnostics.json` is not
+valid JSON with a `raw_probe_report` object (for example a one-line
+`ServiceUnknown` error), so you do not get an empty `steps/` directory by mistake.
+
 ### From a git checkout (no `legion-control-daemon.service` yet)
 
 If `systemctl status legion-control-daemon.service` says **Unit could not be found**,
@@ -223,6 +227,13 @@ From the repo root (requires `jq`):
 
 ```bash
 scripts/review-write-validation-bundle.sh target/validation/<your-bundle-dir>
+```
+
+To produce a single shareable archive (requires `zip` only; default name is
+`<bundle-name>.zip` beside the bundle directory):
+
+```bash
+scripts/archive-validation-bundle.sh target/validation/<your-bundle-dir>
 ```
 
 ## Bundle contents

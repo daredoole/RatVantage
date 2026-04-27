@@ -368,6 +368,77 @@ fi
 run_ui_capture "$output/before/status.txt" --status || true
 run_ui_capture "$output/before/overview.txt" --overview || true
 run_ui_capture "$output/before/diagnostics.json" --diagnostics || true
+
+if (( execute_writes )); then
+  _diag="$output/before/diagnostics.json"
+  python3 - "$_diag" <<'PY' || exit 1
+import json
+import pathlib
+import sys
+
+path = pathlib.Path(sys.argv[1])
+text = path.read_text(errors="replace")
+stripped = text.lstrip()
+
+if not stripped:
+    print(
+        "error: execute mode requires a working diagnostics capture from the UI client, "
+        "but before/diagnostics.json is empty.\n"
+        "Ensure a privileged legion-control-daemon is running and reachable on the bus "
+        "you selected (--system-bus or --bus-address <address>).\n"
+        "See scripts/install-dev-system-integration.sh and the daemon invocation examples "
+        "in the project docs (manual: sudo ./target/release/legion-control-daemon ...).",
+        file=sys.stderr,
+    )
+    sys.exit(1)
+
+if stripped.startswith("Error:"):
+    print(
+        "error: diagnostics capture looks like a D-Bus/client failure (e.g. ServiceUnknown), "
+        "not valid daemon JSON.\n"
+        "Execute mode needs a running daemon on the chosen bus (--system-bus or --bus-address).\n"
+        "See scripts/install-dev-system-integration.sh and the daemon docs "
+        "(sudo ./target/release/legion-control-daemon ...).",
+        file=sys.stderr,
+    )
+    sys.exit(1)
+
+if not stripped.startswith("{"):
+    print(
+        "error: execute mode expects JSON object diagnostics from the daemon; "
+        "before/diagnostics.json does not start with '{'.\n"
+        "Ensure the daemon is running and reachable on the selected bus.\n"
+        "See scripts/install-dev-system-integration.sh and the project docs for "
+        "sudo ./target/release/legion-control-daemon ...",
+        file=sys.stderr,
+    )
+    sys.exit(1)
+
+try:
+    doc = json.loads(text)
+except json.JSONDecodeError as exc:
+    print(
+        "error: before/diagnostics.json is not valid JSON; execute mode cannot proceed.\n"
+        f"Parse error: {exc}\n"
+        "Ensure a running legion-control-daemon is reachable on --system-bus or --bus-address.\n"
+        "See scripts/install-dev-system-integration.sh and the daemon examples in the docs.",
+        file=sys.stderr,
+    )
+    sys.exit(1)
+
+if not isinstance(doc, dict) or "raw_probe_report" not in doc:
+    print(
+        "error: diagnostics JSON is missing the top-level 'raw_probe_report' key "
+        "(daemon not serving expected interface / stale or wrong bus).\n"
+        "Execute mode requires a live daemon on the chosen bus.\n"
+        "See scripts/install-dev-system-integration.sh and "
+        "sudo ./target/release/legion-control-daemon ... in the docs.",
+        file=sys.stderr,
+    )
+    sys.exit(1)
+PY
+fi
+
 run_tray_capture "$output/before/tray-status.txt" --status || true
 run_tray_capture "$output/before/tray-tooltip.txt" --tooltip || true
 run_tray_capture "$output/before/tray-menu-check.txt" --menu-check || true

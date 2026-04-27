@@ -2,5 +2,8 @@
 /.cache/
 *.tmp
 
+# Local evidence zips often created at repo root after validation review
+/*.zip
+
 # Claude Code user-local settings (project settings.json is committed; local overrides are not)
 .claude/settings.local.json

@@ -79,7 +79,7 @@ jq -r '.controls[] | select(.control_id == "platform_profile") |
 echo
 
 base="$(basename "$BUNDLE")"
-echo "To archive (works from any cwd — uses absolute path):"
+echo "To archive:"
+echo "  scripts/archive-validation-bundle.sh \"$BUNDLE\""
+echo "Or manually:"
 echo "  zip -r \"${base}.zip\" \"$BUNDLE\""
-echo "Or from the bundle's parent directory:"
-echo "  (cd \"$(dirname "$BUNDLE")\" && zip -r \"${base}.zip\" \"$base\")"
