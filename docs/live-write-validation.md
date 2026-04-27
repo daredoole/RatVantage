@@ -13,10 +13,11 @@ currently implemented reversible write surface:
 - **Fan restore-to-auto dry-run** (`--plan-restore-auto-fan`) under the same condition
 
 Fan rows are **plan capture only**: even with `--execute`, the harness never
-calls `ApplyFanPreset` or `RestoreAutoFan` (those remain policy-gated). On slim
-fixtures the preset plan may show `plan-failed` (for example incomplete curve
-shape vs packaged preset requirements) while restore-to-auto planning can
-still succeed.
+calls `ApplyFanPreset` or `RestoreAutoFan` (those remain policy-gated). The
+primary `tests/fixtures/sysfs-82wm-confirmed` tree includes a full 10-point
+`pwm1_auto_point{1..10}_{temp,pwm}` set so packaged preset dry-run planning
+matches CI expectations; slimmer local trees may still show `plan-failed` until
+they expose the same shape.
 
 This harness does not bypass existing safety constraints. It only drives the
 validated D-Bus surface that already exists in the daemon and records evidence

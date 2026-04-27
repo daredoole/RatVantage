@@ -119,6 +119,7 @@ Suggested labels:
   - Max safe [implemented as TOML asset and dry-run input]
 - Surface packaged preset labels in the tray menu without enabling writes. [implemented]
 - Apply full validated curve only. [implemented as dry-run validation only]
+- Confirmed sysfs fixture exposes a **10-point** `pwm1_auto_point{1..10}_{temp,pwm}` curve under `legion-hwmon` so CI and `capture-write-validation-report.sh` get successful packaged-preset dry-run plans. [implemented]
 - Restore safe/default action. [implemented as dry-run planning only]
 - Store last-known-good fan curve. [implemented as app-state-only capture]
 

@@ -271,7 +271,13 @@ fn daemon_builds_dry_run_plans_without_other_dbus_write_methods() {
         .plan_ideapad_toggle_write("fan_mode", false)
         .is_err());
     assert!(service.plan_gpu_mode_write("hybrid").is_err());
-    assert!(service.plan_fan_preset_write("balanced-daily").is_err());
+
+    let fan_plan = service.plan_fan_preset_write("balanced-daily").unwrap();
+    assert_eq!(fan_plan.method, "ApplyFanPreset");
+    assert_eq!(fan_plan.capability_id, "fan_curves");
+    assert_eq!(fan_plan.requested_value, "balanced-daily");
+    assert_eq!(fan_plan.previous_value, "current fan curve snapshot");
+    assert!(fan_plan.readback_required);
 
     let restore_plan = service.plan_restore_auto_fan_write().unwrap();
     assert_eq!(restore_plan.method, "RestoreAutoFan");

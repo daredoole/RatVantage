@@ -498,6 +498,7 @@ mod tests {
         }));
         assert!(registry.fan_curves.iter().any(|fan_curve| {
             fan_curve.id == "legion-hwmon"
+                && fan_curve.point_paths.len() >= 20
                 && fan_curve
                     .point_paths
                     .iter()

@@ -41,7 +41,8 @@
 - Completed slice: `legion-common` helpers `format_gpu_mode_pending_summary` and `format_fan_curve_snapshot_summary` shared by `--overview`, tray status lines, GTK pending-reboot rows, and runtime refresh notices (same human-readable text everywhere).
 - Completed slice: `--overview` now prints `fan_preset_by_platform_profile` (sorted `profile=preset_id` pairs, or `none`) and `fan_preset_reapply_after_resume`, matching durable daemon state already exposed in `--diagnostics` JSON.
 - Completed slice: write-validation harness captures **fan preset** and **restore-to-auto** dry-run plan artifacts (`--plan-fan-preset`, `--plan-restore-auto-fan`); `--execute` remains whitelisted to reversible non-fan controls only.
-- Next recommended roadmap slice: on supported Legion hardware, run execute-mode validation for fan methods only after daemon policy enables them and operators attach evidence bundles; until then optional fixture/preset alignment if preset plans should succeed on CI fixtures.
+- Completed slice: `tests/fixtures/sysfs-82wm-confirmed` hwmon fan curve now exposes **pwm1_auto_point1..10** temp/pwm nodes so packaged **balanced-daily** dry-run planning succeeds on the default fixture (daemon dbus contract + validation harness report show `planned` for fan preset).
+- Next recommended roadmap slice: on supported Legion hardware, run execute-mode validation for fan methods only after daemon policy enables them and operators attach evidence bundles.
 - If the KDE Wayland/NVIDIA black-window bug returns, treat it as a compositor/frontend issue and keep the private-session launcher plus `--gdk-backend x11` fallback available while continuing tray/CLI validation.
 
 ## Implemented
