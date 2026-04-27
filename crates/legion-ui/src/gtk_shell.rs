@@ -2085,16 +2085,31 @@ fn append_manual_fan_curve_scratchpad(page: &gtk4::Box, curve: &FanCurveCapabili
 
     let pairs_for_sysfs_preview = pairs_for_ui.clone();
     let entries_for_sysfs_preview = entries.clone();
+    let status_for_sysfs_preview = status.clone();
     let sysfs_preview_buffer = sysfs_preview_view.buffer();
     preview_sysfs.connect_clicked(move |_| {
         let Some(parsed) = scratchpad_pairs_parsed(&entries_for_sysfs_preview) else {
-            sysfs_preview_buffer
-                .set_text(&scratchpad_first_parse_blocker(&entries_for_sysfs_preview));
+            let blocker = scratchpad_first_parse_blocker(&entries_for_sysfs_preview);
+            sysfs_preview_buffer.set_text(&blocker);
+            status_for_sysfs_preview.set_text(
+                "Sysfs preview: rows are not ready to plot — see the preview pane for the first issue.",
+            );
             return;
         };
         match format_manual_fan_scratchpad_sysfs_preview(&pairs_for_sysfs_preview, &parsed) {
-            Ok(text) => sysfs_preview_buffer.set_text(&text),
-            Err(err) => sysfs_preview_buffer.set_text(&format!("{err:?}")),
+            Ok(text) => {
+                sysfs_preview_buffer.set_text(&text);
+                status_for_sysfs_preview.set_text(&format!(
+                    "Sysfs preview: listed {} hwmon path pair(s) in the pane (read-only; not sent to the daemon).",
+                    parsed.len()
+                ));
+            }
+            Err(err) => {
+                sysfs_preview_buffer.set_text(&format!("{err:?}"));
+                status_for_sysfs_preview.set_text(
+                    "Sysfs preview: monotonic or layout checks failed — see the preview pane.",
+                );
+            }
         }
     });
 

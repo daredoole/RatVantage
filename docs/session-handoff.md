@@ -29,10 +29,11 @@
 - Completed slice: Fans manual scratchpad chart supports click-to-select, orange highlight on the selected point, arrow-key nudging (Shift = coarse temp/PWM steps), focusable chart with tooltip, first-row parse error text when the curve cannot plot, and selection cleared whenever scratchpad rows are repopulated.
 - Completed slice: scratchpad temp/pwm `Entry` rows use `EventControllerFocus::enter` so keyboard/tab focus on a row syncs the chart selection highlight with the same `ScratchpadChartSelection` used for click and arrow nudges.
 - Completed slice: GTK Fans scratchpad **Preview sysfs targets**: `format_manual_fan_scratchpad_sysfs_preview` in `legion-common` builds read-only per-path text from parsed rows after the same monotonic validation as **Validate pairs**; parse failures reuse scratchpad chart error copy; no D-Bus or polkit from this control.
+- Completed slice: **Preview sysfs targets** also mirrors a short outcome line into the scratchpad status label (parse block, validation failure, or success with pair count).
 - Validation for the latest slices passed with `cargo fmt --all`, `xvfb-run -a cargo test -p legion-control-ui --features gtk-ui --test gtk_shell`, and `./scripts/ci-local.sh`.
 - Current user-visible GTK surface now includes `Status`, `Profiles`, `Battery`, `GPU`, `Fans`, `Appearance`, and `Diagnostics`.
 - Direct GPU-mode execution is still disabled in the dashboard; the GTK GPU tab is planning-only and app-state-only, matching the daemon safety policy.
-- Next recommended roadmap slice: optional GTK Fans polish (e.g. mirror scratchpad preview into status line on success, or document-only packaging notes) while keeping `ApplyFanPreset` / `RestoreAutoFan` gated until execute-mode validation evidence exists.
+- Next recommended roadmap slice: optional GTK Fans polish (e.g. **Copy sysfs preview** clipboard button, or document-only packaging notes) while keeping `ApplyFanPreset` / `RestoreAutoFan` gated until execute-mode validation evidence exists.
 - If the KDE Wayland/NVIDIA black-window bug returns, treat it as a compositor/frontend issue and keep the private-session launcher plus `--gdk-backend x11` fallback available while continuing tray/CLI validation.
 
 ## Implemented
