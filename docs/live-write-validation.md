@@ -94,27 +94,38 @@ With `--execute`, the script **fails fast** if `before/diagnostics.json` is not
 valid JSON with a `raw_probe_report` object (for example a one-line
 `ServiceUnknown` error), so you do not get an empty `steps/` directory by mistake.
 
-### From a git checkout (no `legion-control-daemon.service` yet)
+### From a git checkout (no packaged `legion-control-daemon.service` yet)
 
 If `systemctl status legion-control-daemon.service` says **Unit could not be found**,
-you have not installed the **RPM** (or copied the unit into systemd). That is
-normal for pure source trees.
+you have not installed the **RPM** or registered a **dev** unit. That is normal for
+a pure source tree until you install one of those paths.
 
 `cargo run … --diagnostics` talks to the **system** bus by default. Without a
 running root daemon **and** the system D-Bus policy, you get:
 
 `ServiceUnknown: The name is not activatable`.
 
-**One-time system integration from the repo** (D-Bus policy + polkit actions;
-still no systemd unit):
+**One-time system integration from the repo** (D-Bus policy + polkit actions):
 
 ```bash
 cd /path/to/RatVantage
 sudo ./scripts/install-dev-system-integration.sh
 ```
 
-**Build and run the daemon in a spare terminal** (leave it running; adjust flags
-to match the control family you are capturing):
+**Option A — dev systemd + D-Bus activation (recommended for `systemctl`):**
+
+```bash
+cargo build --release -p legion-control-daemon
+sudo ./scripts/install-dev-systemd-ratvantage.sh ./target/release/legion-control-daemon -- --enable-platform-profile-write
+sudo systemctl enable --now legion-control-daemon.service
+```
+
+Re-run `install-dev-systemd-ratvantage.sh` with different `-- …` flags when you
+narrow writes per family; it refuses if any RPM matching **`^legion-control`**
+is installed. Per-control copy-paste flows: **[live-validation-evidence-runbook.md](live-validation-evidence-runbook.md)**.
+
+**Option B — foreground daemon** (spare terminal; adjust flags to match the
+control family you are capturing):
 
 ```bash
 cargo build --release -p legion-control-daemon
@@ -137,9 +148,10 @@ scripts/capture-write-validation-report.sh \
   --execute --execute-only platform_profile --system-bus
 ```
 
-Stop the foreground daemon with **Ctrl+C** when finished. When you later install
-the proper RPM/COPR package, prefer the packaged **systemd** unit instead of a
-manual `sudo ./target/...` process.
+Stop a **foreground** daemon with **Ctrl+C** when finished. For **systemd**,
+use `sudo systemctl stop legion-control-daemon.service`. When you later install
+the proper RPM/COPR package, prefer the **packaged** unit instead of the dev
+installer.
 
 ### Execute-only (one write family per bundle)
 
@@ -170,11 +182,12 @@ Valid `control_id` values (must match exactly):
 | `camera_power` | `--enable-camera-power-write` |
 | `usb_charging` | `--enable-usb-charging-write` |
 
-Example: edit the systemd unit drop-in or ExecStart so **only** the flag for the
-family under test is enabled, reload, restart the daemon, run the harness, then
-turn flags off again.
+Example: reinstall **`install-dev-systemd-ratvantage.sh`** with only the flag for
+the family under test, or edit the unit drop-in / `ExecStart` the same way, then
+reload, restart the daemon, run the harness, then turn flags off again.
 
-Reference dry-run / plan-only daemon flags (from `docs/session-handoff.md`):
+Reference **combined** flags for a broad dry-run daemon (not recommended for first
+live execute tests — prefer one flag at a time):
 
 ```text
 cargo run -p legion-control-daemon -- --enable-platform-profile-write --enable-battery-charge-type-write --enable-led-state-write --enable-ideapad-toggle-write --enable-camera-power-write

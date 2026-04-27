@@ -34,6 +34,12 @@ scripts/run-local-session-app.sh --frontend status       # daemon status via pri
 
 Primary fixture: `tests/fixtures/sysfs-82wm-confirmed/`
 
+## Live hardware (execute bundles)
+
+`scripts/install-dev-system-integration.sh`, then `scripts/install-dev-systemd-ratvantage.sh`
+or a foreground daemon; step-by-step: [docs/live-validation-evidence-runbook.md](docs/live-validation-evidence-runbook.md).
+Policy: [docs/fan-gpu-execution-policy.md](docs/fan-gpu-execution-policy.md).
+
 ## Non-Negotiable Safety Rules
 
 - GUI never runs as root

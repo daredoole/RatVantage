@@ -40,6 +40,9 @@ cargo run -p legion-probe -- --json --sysfs-root tests/fixtures/sysfs-82wm-confi
 scripts/run-local-session-app.sh --frontend menu-check
 ```
 
+Live execute captures on real hardware: `docs/live-validation-evidence-runbook.md`
+(after `install-dev-system-integration.sh` and optional `install-dev-systemd-ratvantage.sh`).
+
 ## Non-negotiable safety rules
 
 1. **GUI never runs as root** — all sysfs writes go through the polkit-gated daemon only

@@ -52,6 +52,16 @@ scripts/run-local-session-app.sh --frontend ui --gsk-renderer cairo
 cargo run -p legion-control-tray -- --menu-check --bus-address <address>
 ```
 
+## Live hardware (execute bundles)
+
+Wire system D-Bus + polkit once: `scripts/install-dev-system-integration.sh`. Then
+either install a dev unit: `scripts/install-dev-systemd-ratvantage.sh` (see
+`--help`), or run `sudo ./target/release/legion-control-daemon` with the matching
+`--enable-*-write` flags. Per-control capture commands:
+[docs/live-validation-evidence-runbook.md](docs/live-validation-evidence-runbook.md).
+Harness details and `control_id` table: [docs/live-write-validation.md](docs/live-write-validation.md).
+Fan/GPU execution policy: [docs/fan-gpu-execution-policy.md](docs/fan-gpu-execution-policy.md).
+
 ## Coding Style
 
 - Rust edition 2021, `rustfmt` defaults, Clippy clean (`-D warnings`).

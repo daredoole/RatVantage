@@ -177,6 +177,11 @@ The default run is plan-only and starts its own private session-bus daemon. The
 explicit `--execute` mode expects a real privileged daemon target; pass
 `--execute-only <control_id>` so each bundle applies and reverts **one** write
 family (see [docs/live-write-validation.md](docs/live-write-validation.md)).
+For real hardware, use **`scripts/install-dev-system-integration.sh`** then
+**`scripts/install-dev-systemd-ratvantage.sh`** (or a foreground daemon) and
+follow [docs/live-validation-evidence-runbook.md](docs/live-validation-evidence-runbook.md).
+Fan/GPU rows stay plan-only until policy changes
+([docs/fan-gpu-execution-policy.md](docs/fan-gpu-execution-policy.md)).
 
 For local frontend development without installing a system-bus daemon, use:
 
