@@ -41,6 +41,7 @@ RatVantage/
 │   ├── research-summary.md
 │   ├── safety-model.md
 │   ├── session-handoff.md
+│   ├── session-handoff-archive.md
 │   └── write-contracts.md
 ├── prompts/
 │   └── codex-build-kickoff.md
@@ -90,7 +91,8 @@ RatVantage/
 │   ├── implementation-plan.md
 │   ├── research-summary.md
 │   ├── safety-model.md
-│   └── session-handoff.md
+│   ├── session-handoff.md
+│   └── session-handoff-archive.md
 ├── prompts/
 │   └── codex-build-kickoff.md
 ├── scripts/

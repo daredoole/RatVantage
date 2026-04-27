@@ -1,7 +1,8 @@
 # Repository Guidelines
 
 This file is read automatically by Codex CLI, Claude Code, Cursor, and other AI coding agents.
-For the single-page quick-start used by Claude Code specifically, see [CLAUDE.md](CLAUDE.md).
+**Single source of truth for repo rules:** keep substantive guidance here only.
+[CLAUDE.md](CLAUDE.md) and [`.cursor/rules/ratvantage.mdc`](.cursor/rules/ratvantage.mdc) are **thin stubs** that link back here so agents are not loaded with duplicate prose.
 
 ## Project Status
 
@@ -108,9 +109,10 @@ These rules are not optional. An agent that violates them should stop and ask:
 
 For long or multi-session tasks:
 
-- Start from `docs/session-handoff.md` — it records the latest commits, current milestone,
-  next roadmap slice, and exact validation commands.
-- After completing work, update `docs/session-handoff.md` with the new state before ending
-  the session so the next agent/developer can pick up cleanly.
+- Start from **`docs/session-handoff.md`** (short: next tasks, prompt, safety). Open
+  **`docs/session-handoff-archive.md`** only when you need the long completed-slice log,
+  full implemented inventory, or extended CLI reference.
+- After completing work, update **`docs/session-handoff.md`** (and roadmap docs as needed).
+  Optionally append one line to the archive **Completed slice log** for a durable audit trail.
 - Run `./scripts/ci-local.sh` as the final check before committing.
 - Commit formatting fixes separately from logic changes when possible.

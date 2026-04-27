@@ -57,7 +57,7 @@ Fixture-backed rollback tests and tray/GTK smoke do not count as live-device wri
 
 On some KDE Wayland/NVIDIA setups, the GTK window can still render black even when the daemon, CLI, tray, and taskbar thumbnail all show real data. In that case, use the private-session launcher plus tray/CLI validation first, and treat GTK as a compositor-specific local-dev issue rather than a daemon failure.
 
-For continuation work, start from [docs/session-handoff.md](docs/session-handoff.md). It records the latest commits, next roadmap slice, safety constraints, validation commands, and the expected orchestrator/agent workflow for new Codex sessions.
+For continuation work, start from [docs/session-handoff.md](docs/session-handoff.md) (short next tasks + session prompt). Long completed-slice log and extended command inventory: [docs/session-handoff-archive.md](docs/session-handoff-archive.md). Repo rules: [AGENTS.md](AGENTS.md).
 
 ## Supported Hardware
 

@@ -1,52 +1,12 @@
 ---
-description: RatVantage project rules — Fedora Legion hardware control in Rust
+description: RatVantage — points to AGENTS.md (canonical); Cursor-only reminder
 alwaysApply: true
 ---
 
-# RatVantage
+# RatVantage (Cursor)
 
-Fedora-native Lenovo Legion hardware control — daemon + GTK4 dashboard + StatusNotifier tray.
-Full project guide: see **AGENTS.md**. This file covers Cursor-specific behaviour.
+**Do not duplicate long rules here.** Read **[AGENTS.md](../../AGENTS.md)** for crate layout, `cargo` / `./scripts/ci-local.sh`, safety constraints, and PR workflow.
 
-## Crate layout
+**Continuation:** [docs/session-handoff.md](../../docs/session-handoff.md) — short next tasks; [docs/session-handoff-archive.md](../../docs/session-handoff-archive.md) only for deep history or full CLI inventory.
 
-| Crate | Path | Role |
-|---|---|---|
-| `legion-common` | `crates/legion-common/` | Shared types, no side effects |
-| `legion-probe` | `crates/legion-probe/` | Read-only sysfs/hwmon discovery |
-| `legion-control-daemon` | `crates/legion-daemon/` | Root daemon, D-Bus, polkit gate |
-| `legion-control-ui` | `crates/legion-ui/` | GTK4 dashboard (`gtk-ui` feature) |
-| `legion-control-tray` | `crates/legion-tray/` | StatusNotifier tray |
-| `ratvantage-test-support` | `crates/test-support/` | D-Bus fixture helpers |
-
-## Required before every commit
-
-```bash
-cargo fmt --all                                              # CI rejects any formatting diff
-cargo test --workspace                                       # all tests must pass
-cargo clippy --all-targets --all-features -- -D warnings    # zero warnings
-```
-
-CI runs all three. A formatting diff is the most common cause of CI failure — always run
-`cargo fmt --all` last, right before committing.
-
-## Testing without real hardware
-
-All tests use sysfs fixture trees. Primary fixture:
-`tests/fixtures/sysfs-82wm-confirmed/`
-
-```bash
-cargo run -p legion-probe -- --json --sysfs-root tests/fixtures/sysfs-82wm-confirmed
-scripts/run-local-session-app.sh --frontend menu-check
-```
-
-Live execute captures on real hardware: `docs/live-validation-evidence-runbook.md`
-(after `install-dev-system-integration.sh` and optional `install-dev-systemd-ratvantage.sh`).
-
-## Non-negotiable safety rules
-
-1. **GUI never runs as root** — all sysfs writes go through the polkit-gated daemon only
-2. **No hardcoded `hwmonN` paths** — use dynamic discovery via the capability registry
-3. **No raw sysfs writes** from UI or tray code
-4. **Default to read-only** — write paths need validators + rollback before enabling
-5. **No raw WMI/EC writes** or overclocking controls
+**Cursor reminder:** this rule loads in addition to `AGENTS.md`; keep edits minimal and match existing style.
