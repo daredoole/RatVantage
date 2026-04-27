@@ -7,11 +7,11 @@ use anyhow::{anyhow, Result};
 use legion_common::{
     decode_fan_scratchpad_toml_v1, encode_fan_scratchpad_toml_v1, fan_curve_hwmon_point_pairs,
     fan_curve_snapshot_chart_pairs, fan_preset_points_as_sysfs_raw, format_fan_curve_live_vs_saved,
-    format_manual_fan_scratchpad_sysfs_preview, parse_fan_preset_toml,
-    validate_fan_preset_document, validate_manual_fan_curve_pairs, BatteryChargeTypeCapability,
-    FanCurveCapability, FanCurveHwmonPointPair, FanCurveSnapshot, GpuCapability, GpuModePending,
-    IdeapadToggleCapability, LedCapability, PlatformProfileCapability, WriteDryRunPlan,
-    WriteExecutionResult, WriteExecutionStatus,
+    format_gpu_mode_pending_summary, format_manual_fan_scratchpad_sysfs_preview,
+    parse_fan_preset_toml, validate_fan_preset_document, validate_manual_fan_curve_pairs,
+    BatteryChargeTypeCapability, FanCurveCapability, FanCurveHwmonPointPair, FanCurveSnapshot,
+    GpuCapability, GpuModePending, IdeapadToggleCapability, LedCapability,
+    PlatformProfileCapability, WriteDryRunPlan, WriteExecutionResult, WriteExecutionStatus,
 };
 use std::path::Path;
 use std::thread_local;
@@ -2533,14 +2533,7 @@ fn runtime_snapshot_fan_snapshot(
 
 fn render_gpu_pending_row(pending: Result<Option<GpuModePending>>) -> String {
     match pending {
-        Ok(Some(pending)) => {
-            let previous = pending.previous_mode.as_deref().unwrap_or("unknown");
-            format!(
-                "{} - previous {} - reboot required {}",
-                pending.requested_mode, previous, pending.reboot_required
-            )
-        }
-        Ok(None) => "none".to_owned(),
+        Ok(opt) => format_gpu_mode_pending_summary(opt.as_ref()),
         Err(error) => format!("state unavailable - {error}"),
     }
 }

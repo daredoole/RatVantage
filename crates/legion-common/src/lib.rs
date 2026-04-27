@@ -63,6 +63,38 @@ pub struct FanCurvePointSnapshot {
     pub value: String,
 }
 
+/// Human-readable value for `gpu_pending_reboot=` in `--overview`, tray status lines, and tooltips.
+/// Returns `"none"` when there is no pending switch.
+pub fn format_gpu_mode_pending_summary(pending: Option<&GpuModePending>) -> String {
+    match pending {
+        None => "none".to_owned(),
+        Some(pending) => match pending.previous_mode.as_deref() {
+            Some(prev) if pending.reboot_required => format!(
+                "{} pending (was {}); reboot required",
+                pending.requested_mode, prev
+            ),
+            Some(prev) => format!("{} pending (was {})", pending.requested_mode, prev),
+            None if pending.reboot_required => {
+                format!("{} pending; reboot required", pending.requested_mode)
+            }
+            None => format!("{} pending", pending.requested_mode),
+        },
+    }
+}
+
+/// Human-readable value for `last_known_good_fan_curve=` in `--overview`, tray status lines, and tooltips.
+/// Returns `"none"` when no snapshot is stored.
+pub fn format_fan_curve_snapshot_summary(snapshot: Option<&FanCurveSnapshot>) -> String {
+    match snapshot {
+        None => "none".to_owned(),
+        Some(snapshot) => {
+            let n = snapshot.points.len();
+            let unit = if n == 1 { "point" } else { "points" };
+            format!("{n} {unit} on {}", snapshot.curve_id)
+        }
+    }
+}
+
 /// Read-only comparison of two fan curve sysfs snapshots (for example live readings vs last-known-good).
 pub fn format_fan_curve_live_vs_saved(live: &FanCurveSnapshot, saved: &FanCurveSnapshot) -> String {
     use std::collections::BTreeMap;
@@ -1525,6 +1557,55 @@ mod tests {
     use super::*;
 
     const DBUS_ACTION_PREFIX: &str = "org.ratvantage.LegionControl1.";
+
+    #[test]
+    fn format_gpu_mode_pending_summary_none_and_hybrid_case() {
+        assert_eq!(format_gpu_mode_pending_summary(None), "none");
+        let pending = GpuModePending {
+            requested_mode: "hybrid".to_owned(),
+            previous_mode: Some("nvidia".to_owned()),
+            reboot_required: true,
+        };
+        assert_eq!(
+            format_gpu_mode_pending_summary(Some(&pending)),
+            "hybrid pending (was nvidia); reboot required"
+        );
+    }
+
+    #[test]
+    fn format_fan_curve_snapshot_summary_none_and_plural() {
+        assert_eq!(format_fan_curve_snapshot_summary(None), "none");
+        let one = FanCurveSnapshot {
+            curve_id: "legion_hwmon".to_owned(),
+            path: None,
+            points: vec![FanCurvePointSnapshot {
+                path: "/p".to_owned(),
+                value: "1".to_owned(),
+            }],
+        };
+        assert_eq!(
+            format_fan_curve_snapshot_summary(Some(&one)),
+            "1 point on legion_hwmon"
+        );
+        let two = FanCurveSnapshot {
+            curve_id: "legion_hwmon".to_owned(),
+            path: None,
+            points: vec![
+                FanCurvePointSnapshot {
+                    path: "/a".to_owned(),
+                    value: "1".to_owned(),
+                },
+                FanCurvePointSnapshot {
+                    path: "/b".to_owned(),
+                    value: "2".to_owned(),
+                },
+            ],
+        };
+        assert_eq!(
+            format_fan_curve_snapshot_summary(Some(&two)),
+            "2 points on legion_hwmon"
+        );
+    }
 
     #[test]
     fn write_contracts_are_drafted_but_disabled() {

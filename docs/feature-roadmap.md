@@ -32,7 +32,7 @@ Current pre-alpha code provides the safe read-only base:
 - Current 82WM read-only validation evidence for DMI, platform profiles, charge choices, sensors, LEDs, firmware toggles, and EnvyControl.
 - Read-only battery telemetry for capacity, status, and health where `BAT0` exposes it.
 - Read-only EnvyControl GPU mode query when `envycontrol --query` is available.
-- Read-only UI `--overview` summary for platform profile, battery mode, fan RPM, temperatures, GPU mode, battery telemetry, LED brightness, and firmware toggle values.
+- Read-only UI `--overview` summary for platform profile, battery mode, fan RPM, temperatures, GPU mode, battery telemetry, LED brightness, and firmware toggle values; durable GPU-pending and saved fan-curve snapshot lines use the same `legion-common` formatters as the tray.
 - UI overview includes app-state-only GPU pending-reboot status and saved fan curve snapshots when recorded by the daemon.
 - Tray/status output and GTK pages surface app-state-only GPU pending-reboot state and saved fan curve snapshots.
 - Read-only UI `--diagnostics` JSON bundle with hardware summary, compact counts, kernel version, detected sysfs paths, recent daemon log excerpts, and raw probe report.

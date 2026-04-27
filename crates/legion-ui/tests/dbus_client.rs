@@ -408,8 +408,8 @@ value = "42000"
     assert!(output.status.success());
     assert!(output.stderr.is_empty());
     let stdout = String::from_utf8(output.stdout).unwrap();
-    assert!(stdout.contains("gpu_pending_reboot=hybrid previous=nvidia reboot_required=true"));
-    assert!(stdout.contains("last_known_good_fan_curve=1 values from legion_hwmon"));
+    assert!(stdout.contains("gpu_pending_reboot=hybrid pending (was nvidia); reboot required"));
+    assert!(stdout.contains("last_known_good_fan_curve=1 point on legion_hwmon"));
     let _ = std::fs::remove_file(state_path);
 }
 

@@ -38,6 +38,7 @@
 - Completed slice: Fans manual scratchpad actions split into two horizontal rows (load/saved/clear/validate vs preview/copy-preview/JSON/TOML) inside one vertical strip for narrow-window readability.
 - Completed slice: GTK screenshot smoke in `./scripts/ci-local.sh` and GitHub Actions now includes **`gpu`** and **`fans`** (`--pages status,battery,gpu,fans`); `docs/gtk-smoke-testing.md` notes the CI subset.
 - Completed slice: tray/menu and notification copy polish (clearer status rows, tooltip telemetry labels, desktop notification titles/bodies, write-result wording); `ApplyFanPreset` / `RestoreAutoFan` remain gated.
+- Completed slice: `legion-common` helpers `format_gpu_mode_pending_summary` and `format_fan_curve_snapshot_summary` shared by `--overview`, tray status lines, GTK pending-reboot rows, and runtime refresh notices (same human-readable text everywhere).
 - Next recommended roadmap slice: further UX or documentation only if needed; fan preset execution still waits on execute-mode validation evidence.
 - If the KDE Wayland/NVIDIA black-window bug returns, treat it as a compositor/frontend issue and keep the private-session launcher plus `--gdk-backend x11` fallback available while continuing tray/CLI validation.
 

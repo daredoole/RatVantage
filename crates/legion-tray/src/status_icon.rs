@@ -75,23 +75,10 @@ impl TraySummary {
             .as_ref()
             .and_then(|profile| profile.current.clone());
         summary.fan_rpm = fan_rpm_label(&report.telemetry.sensors);
-        summary.gpu_pending_reboot =
-            gpu_pending.map(|pending| match pending.previous_mode.as_deref() {
-                Some(prev) if pending.reboot_required => format!(
-                    "{} pending (was {}); reboot required",
-                    pending.requested_mode, prev
-                ),
-                Some(prev) => format!("{} pending (was {})", pending.requested_mode, prev),
-                None if pending.reboot_required => {
-                    format!("{} pending; reboot required", pending.requested_mode)
-                }
-                None => format!("{} pending", pending.requested_mode),
-            });
-        summary.fan_curve_snapshot = fan_snapshot.map(|snapshot| {
-            let n = snapshot.points.len();
-            let unit = if n == 1 { "point" } else { "points" };
-            format!("{n} {unit} on {}", snapshot.curve_id)
-        });
+        summary.gpu_pending_reboot = gpu_pending
+            .map(|pending| legion_common::format_gpu_mode_pending_summary(Some(pending)));
+        summary.fan_curve_snapshot = fan_snapshot
+            .map(|snapshot| legion_common::format_fan_curve_snapshot_summary(Some(snapshot)));
         summary.tooltip = capability_tooltip(
             &status.hardware.product_name,
             &status.hardware.product_version,

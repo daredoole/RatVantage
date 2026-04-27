@@ -3,8 +3,9 @@ use std::process::Command;
 
 use anyhow::Result;
 use legion_common::{
-    Capability, CapabilityRegistry, CapabilityStatus, FanCurveSnapshot, GpuModePending,
-    HardwareSummary, RiskLevel, TelemetrySnapshot, WriteDryRunPlan, WriteExecutionResult,
+    format_fan_curve_snapshot_summary, format_gpu_mode_pending_summary, Capability,
+    CapabilityRegistry, CapabilityStatus, FanCurveSnapshot, GpuModePending, HardwareSummary,
+    RiskLevel, TelemetrySnapshot, WriteDryRunPlan, WriteExecutionResult,
 };
 use serde::{de::DeserializeOwned, Serialize};
 use zbus::blocking::{Connection, ConnectionBuilder, Proxy};
@@ -279,10 +280,13 @@ pub fn render_overview_lines_with_pending(
                 .and_then(|gpu| gpu.mode.as_deref())
                 .unwrap_or("unknown")
         ),
-        format!("gpu_pending_reboot={}", render_gpu_pending(pending)),
+        format!(
+            "gpu_pending_reboot={}",
+            format_gpu_mode_pending_summary(pending)
+        ),
         format!(
             "last_known_good_fan_curve={}",
-            render_fan_curve_snapshot(fan_snapshot)
+            format_fan_curve_snapshot_summary(fan_snapshot)
         ),
         format!(
             "battery_capacity_percent={}",
@@ -319,30 +323,6 @@ pub fn render_overview_lines_with_pending(
         render_ideapad_toggle_values(report)
     ));
     lines
-}
-
-fn render_gpu_pending(pending: Option<&GpuModePending>) -> String {
-    match pending {
-        Some(pending) => {
-            let previous = pending.previous_mode.as_deref().unwrap_or("unknown");
-            format!(
-                "{} previous={} reboot_required={}",
-                pending.requested_mode, previous, pending.reboot_required
-            )
-        }
-        None => "none".to_owned(),
-    }
-}
-
-fn render_fan_curve_snapshot(snapshot: Option<&FanCurveSnapshot>) -> String {
-    match snapshot {
-        Some(snapshot) => format!(
-            "{} values from {}",
-            snapshot.points.len(),
-            snapshot.curve_id
-        ),
-        None => "none".to_owned(),
-    }
 }
 
 fn render_sensor_values(sensors: &[legion_common::HwmonSensor], kind: &str) -> String {
@@ -479,30 +459,16 @@ pub fn runtime_refresh_notice(
             ));
         }
 
-        let previous_snapshot =
-            previous
-                .diagnostics
-                .last_known_good_fan_curve
-                .as_ref()
-                .map(|snapshot| {
-                    format!(
-                        "{} values from {}",
-                        snapshot.points.len(),
-                        snapshot.curve_id
-                    )
-                });
-        let current_snapshot =
-            current
-                .diagnostics
-                .last_known_good_fan_curve
-                .as_ref()
-                .map(|snapshot| {
-                    format!(
-                        "{} values from {}",
-                        snapshot.points.len(),
-                        snapshot.curve_id
-                    )
-                });
+        let previous_snapshot = previous
+            .diagnostics
+            .last_known_good_fan_curve
+            .as_ref()
+            .map(|snapshot| format_fan_curve_snapshot_summary(Some(snapshot)));
+        let current_snapshot = current
+            .diagnostics
+            .last_known_good_fan_curve
+            .as_ref()
+            .map(|snapshot| format_fan_curve_snapshot_summary(Some(snapshot)));
         if previous_snapshot != current_snapshot {
             match (previous_snapshot, current_snapshot) {
                 (Some(previous_snapshot), Some(current_snapshot)) => messages.push(format!(
@@ -609,7 +575,7 @@ mod tests {
         ));
         assert!(notice
             .message
-            .contains("Saved fan-curve snapshot changed from 1 values from a to 1 values from b"));
+            .contains("Saved fan-curve snapshot changed from 1 point on a to 1 point on b"));
     }
 
     #[test]
