@@ -3,7 +3,7 @@ Type=Application
 Name=Legion Control
 GenericName=RatVantage
 Comment=Probe Lenovo Legion hardware capabilities on Fedora (RatVantage)
-Exec=env GSK_RENDERER=gl legion-control-ui
+Exec=env GSK_RENDERER=cairo legion-control-ui
 Icon=org.ratvantage.LegionControl
 Terminal=false
 Categories=Settings;HardwareSettings;

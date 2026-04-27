@@ -1192,7 +1192,7 @@ fn nearest_temp_pwm_point_index(
         .iter()
         .enumerate()
         .map(|(i, (x, y))| (i, (px - x).hypot(py - y)))
-        .min_by(|(_, d1), (_, d2)| d1.partial_cmp(d2).unwrap())?;
+        .min_by(|(_, d1), (_, d2)| d1.partial_cmp(d2).unwrap_or(std::cmp::Ordering::Equal))?;
     if best_d <= SCRATCHPAD_CHART_DRAG_PICK_PX {
         Some(best_i)
     } else {
