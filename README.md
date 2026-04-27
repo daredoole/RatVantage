@@ -137,6 +137,22 @@ scripts/capture-write-validation-report.sh --output target/validation/<machine-l
 scripts/capture-write-validation-report.sh --output target/validation/<machine-label>-live --execute --system-bus
 ```
 
+### Verify GPU mode probe (live system)
+
+GPU mode in RatVantage comes from **EnvyControl** (`envycontrol --query`) when
+the probe uses the real sysfs root (`/`). Any run with `--sysfs-root` pointing
+at a **fixture tree** skips GPU probing on purpose so CI and offline bundles stay
+deterministic.
+
+```bash
+envycontrol --query
+cargo run -p legion-probe -- --json | jq '.gpu'
+```
+
+When EnvyControl is installed and on `PATH` for the process running
+`legion-probe` or the daemon, expect `provider: "envycontrol"`,
+`status: "probe_only"`, and `mode` as `integrated`, `hybrid`, or `nvidia`.
+
 To collect a read-only fixture from another Legion machine, use
 `scripts/capture-sysfs-fixture.sh`. See [docs/fixture-capture.md](docs/fixture-capture.md).
 
