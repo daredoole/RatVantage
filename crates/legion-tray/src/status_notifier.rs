@@ -436,7 +436,7 @@ fn profile_change_notification(
         key: "platform_profile",
         title: "Platform profile".to_owned(),
         body: format!(
-            "{} — performance mode is now {}.",
+            "{} — platform profile is now {}.",
             notification_machine_label(current),
             humanize_profile(current_profile),
         ),
@@ -945,7 +945,7 @@ mod tests {
             &[DesktopNotification {
                 key: "platform_profile",
                 title: "Platform profile".to_owned(),
-                body: "82WM Legion Pro 5 16ARX8 — performance mode is now Performance.".to_owned(),
+                body: "82WM Legion Pro 5 16ARX8 — platform profile is now Performance.".to_owned(),
             }]
         );
         let tooltip = tray.tool_tip().description;

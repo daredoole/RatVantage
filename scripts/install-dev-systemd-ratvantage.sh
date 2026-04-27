@@ -70,6 +70,8 @@ fi
 inst_bin=/usr/local/libexec/ratvantage/legion-control-daemon
 install -d /usr/local/libexec/ratvantage
 install -m0755 "$bin_src" "$inst_bin"
+# ReadWritePaths in the unit requires these paths to exist before systemd sets up mount namespaces.
+install -d -m0755 /etc/legion-control
 
 exec_cmd=("$inst_bin")
 exec_cmd+=("${extra[@]}")
