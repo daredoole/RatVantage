@@ -85,6 +85,53 @@ scripts/capture-write-validation-report.sh \
 Execute mode expects an already-running privileged daemon. The harness does not
 start a root-capable daemon for you.
 
+### From a git checkout (no `legion-control-daemon.service` yet)
+
+If `systemctl status legion-control-daemon.service` says **Unit could not be found**,
+you have not installed the **RPM** (or copied the unit into systemd). That is
+normal for pure source trees.
+
+`cargo run … --diagnostics` talks to the **system** bus by default. Without a
+running root daemon **and** the system D-Bus policy, you get:
+
+`ServiceUnknown: The name is not activatable`.
+
+**One-time system integration from the repo** (D-Bus policy + polkit actions;
+still no systemd unit):
+
+```bash
+cd /path/to/RatVantage
+sudo ./scripts/install-dev-system-integration.sh
+```
+
+**Build and run the daemon in a spare terminal** (leave it running; adjust flags
+to match the control family you are capturing):
+
+```bash
+cargo build --release -p legion-control-daemon
+sudo mkdir -p /var/lib/legion-control
+sudo ./target/release/legion-control-daemon --enable-platform-profile-write
+```
+
+**Verify from another terminal** (should print JSON, not `ServiceUnknown`):
+
+```bash
+cargo run -q -p legion-control-ui -- --diagnostics | head -40
+busctl --system list | grep -i ratvantage || true
+```
+
+**Then capture** (example):
+
+```bash
+scripts/capture-write-validation-report.sh \
+  --output target/validation/82wm-live-platform_profile \
+  --execute --execute-only platform_profile --system-bus
+```
+
+Stop the foreground daemon with **Ctrl+C** when finished. When you later install
+the proper RPM/COPR package, prefer the packaged **systemd** unit instead of a
+manual `sudo ./target/...` process.
+
 ### Execute-only (one write family per bundle)
 
 For PRs and release notes, **prefer** a separate output directory per control
