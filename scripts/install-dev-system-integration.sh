@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
 # One-time install of system D-Bus + polkit files from the repo so a locally
 # built legion-control-daemon can own org.ratvantage.LegionControl1 on the
-# system bus. Does NOT install the systemd unit (use an RPM or run the binary
-# manually in a terminal — see docs/live-write-validation.md).
+# system bus. For a dev systemd unit + D-Bus activation, see
+# scripts/install-dev-systemd-ratvantage.sh (or use an RPM / foreground binary;
+# docs/live-write-validation.md).
 set -euo pipefail
 
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -17,7 +18,14 @@ Copies (from this repo):
 
 Then reloads D-Bus config and polkit so writes take effect.
 
-After this, run the daemon (example — platform profile writes only):
+After this, either:
+
+  sudo ./scripts/install-dev-systemd-ratvantage.sh ./target/release/legion-control-daemon -- --enable-platform-profile-write
+  sudo systemctl daemon-reload
+  sudo systemctl enable --now legion-control-daemon.service
+
+or run the daemon in the foreground (example — platform profile writes only):
+
   sudo mkdir -p /var/lib/legion-control
   sudo ./target/release/legion-control-daemon --enable-platform-profile-write
 
@@ -58,7 +66,8 @@ fi
 echo
 echo "Installed. Next:"
 echo "  cargo build --release -p legion-control-daemon"
-echo "  sudo mkdir -p /var/lib/legion-control"
-echo "  sudo ./target/release/legion-control-daemon --enable-platform-profile-write"
+echo "  sudo ./scripts/install-dev-systemd-ratvantage.sh ./target/release/legion-control-daemon -- --enable-platform-profile-write"
+echo "  sudo systemctl daemon-reload && sudo systemctl enable --now legion-control-daemon.service"
+echo "  # or foreground: sudo mkdir -p /var/lib/legion-control && sudo ./target/release/legion-control-daemon --enable-platform-profile-write"
 echo "  # other terminal:"
 echo "  cargo run -q -p legion-control-ui -- --diagnostics | head"

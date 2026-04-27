@@ -1,5 +1,10 @@
 # Live Write Validation
 
+Related docs:
+
+- [live-validation-evidence-runbook.md](live-validation-evidence-runbook.md) — copy-paste blocks per control family on real hardware.
+- [fan-gpu-execution-policy.md](fan-gpu-execution-policy.md) — why fan/GPU execution stays off until explicitly shipped.
+
 Use `scripts/capture-write-validation-report.sh` to capture evidence for the
 currently implemented reversible write surface:
 
