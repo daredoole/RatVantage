@@ -9,6 +9,14 @@ currently implemented reversible write surface:
 - `fn_lock`
 - `camera_power`
 - `usb_charging`
+- **Fan preset dry-run** (`--plan-fan-preset balanced-daily`) when the probe reports fan curves
+- **Fan restore-to-auto dry-run** (`--plan-restore-auto-fan`) under the same condition
+
+Fan rows are **plan capture only**: even with `--execute`, the harness never
+calls `ApplyFanPreset` or `RestoreAutoFan` (those remain policy-gated). On slim
+fixtures the preset plan may show `plan-failed` (for example incomplete curve
+shape vs packaged preset requirements) while restore-to-auto planning can
+still succeed.
 
 This harness does not bypass existing safety constraints. It only drives the
 validated D-Bus surface that already exists in the daemon and records evidence
@@ -86,6 +94,10 @@ time.
   if needed.
 - `usb_charging`: confirm sysfs read-back first; treat off-state charging
   behavior as a separate slower manual check.
+- `fan_preset_balanced_daily`: read the plan JSON / stderr artifact only; do not
+  expect apply execution from this harness.
+- `restore_auto_fan`: read the plan JSON only; do not expect restore execution
+  from this harness.
 
 ## Bundle contents
 

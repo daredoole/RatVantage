@@ -17,7 +17,7 @@ Current pre-alpha code provides the safe read-only base:
 - Packaging metadata validation in local and GitHub CI.
 - Read-only sysfs fixture capture workflow for adding real hardware reports.
 - Read-only compatibility bundle workflow for external hardware submissions, including generated summary files and PR body text.
-- Live write-validation harness with plan-only bundle capture by default and explicit execute-mode evidence capture for the current reversible controls.
+- Live write-validation harness with plan-only bundle capture by default and explicit execute-mode evidence capture for the current reversible controls, plus fan preset and restore-to-auto **dry-run plan** capture (fan execution is never invoked by the harness).
 - Local private-session frontend launcher for `status`, `overview`, `menu-check`, tray, and GTK smoke against the same temporary daemon.
 - StatusNotifier tray smoke script and manual checklist.
 - GTK screenshot smoke/report workflow under Xvfb.

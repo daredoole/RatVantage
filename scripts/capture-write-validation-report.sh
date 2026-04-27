@@ -10,6 +10,8 @@ Capture a validation bundle for the currently implemented reversible write surfa
 Default mode is plan-only:
 - starts a private session bus and read-mostly daemon
 - captures status, overview, diagnostics, tray/menu evidence, and write plans
+- also captures dry-run plans for fan preset apply and restore-to-auto (read-only;
+  fan execution is never driven by this script, even in --execute mode)
 - never attempts hardware-changing writes
 
 Execute mode is explicit and requires an already-running privileged daemon:
@@ -457,6 +459,39 @@ for toggle_id, label, note, paired_led_required in [
         "manual_check": note,
     })
 
+fan_curves = raw.get("fan_curves") or []
+fan_planning_ok = bool(fan_curves)
+controls.append({
+    "id": "fan_preset_balanced_daily",
+    "label": "Fan preset apply (dry-run plan)",
+    "kind": "fan_preset",
+    "available": fan_planning_ok,
+    "current": "n/a",
+    "requested": "balanced-daily",
+    "set_spec": "balanced-daily",
+    "revert_spec": "",
+    "reason": "" if fan_planning_ok else "No fan curve capability rows in probe report.",
+    "manual_check": (
+        "Inspect plan JSON only; ApplyFanPreset is not executed by this harness "
+        "(daemon policy / safety gate)."
+    ),
+})
+controls.append({
+    "id": "restore_auto_fan",
+    "label": "Fan restore auto (dry-run plan)",
+    "kind": "restore_auto_fan",
+    "available": fan_planning_ok,
+    "current": "n/a",
+    "requested": "n/a",
+    "set_spec": "",
+    "revert_spec": "",
+    "reason": "" if fan_planning_ok else "No fan curve capability rows in probe report.",
+    "manual_check": (
+        "Inspect plan JSON only; RestoreAutoFan is not executed by this harness "
+        "(daemon policy / safety gate)."
+    ),
+})
+
 pathlib.Path(controls_path).write_text(json.dumps(controls, indent=2) + "\n")
 PY
 
@@ -497,10 +532,16 @@ while IFS=$'\t' read -r control_id label kind available current requested manual
       ideapad_toggle)
         run_ui_capture "$plan_file" --plan-ideapad-toggle "$set_spec" || true
         ;;
+      fan_preset)
+        run_ui_capture "$plan_file" --plan-fan-preset "$set_spec" || true
+        ;;
+      restore_auto_fan)
+        run_ui_capture "$plan_file" --plan-restore-auto-fan || true
+        ;;
     esac
     plan_exit="$(cat "${plan_file}.exit")"
 
-    if (( execute_writes )) && [[ "$plan_exit" == "0" ]]; then
+    if (( execute_writes )) && [[ "$plan_exit" == "0" ]] && [[ "$kind" == "platform_profile" || "$kind" == "battery_charge_type" || "$kind" == "led_state" || "$kind" == "ideapad_toggle" ]]; then
       before_overview_file="$output/steps/${prefix}-${safe_id}-before-overview.txt"
       run_ui_capture "$before_overview_file" --overview || true
 
