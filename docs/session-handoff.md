@@ -11,7 +11,7 @@
 
 ## Milestone (compact)
 
-Pre-alpha: Rust workspace builds with CI green; polkit-gated daemon + GTK + StatusNotifier tray; reversible writes for platform profile, battery charge type, ylogo LED, ideapad toggles (`fn_lock`, `camera_power`, `usb_charging`); fan and GPU surfaces remain **plan / preview only** (see [fan-gpu-execution-policy.md](fan-gpu-execution-policy.md)). Live execute evidence: [live-validation-evidence-runbook.md](live-validation-evidence-runbook.md), [live-write-validation.md](live-write-validation.md).
+Pre-alpha: Rust workspace builds with CI green; polkit-gated daemon + GTK + StatusNotifier tray; reversible writes for platform profile, battery charge type, ylogo LED, ideapad toggles (`fn_lock`, `camera_power`, `usb_charging`); fan and GPU surfaces remain **plan / preview only** (see [fan-gpu-execution-policy.md](fan-gpu-execution-policy.md)). GTK UI refactored into modular subpages. Live execute evidence: [live-validation-evidence-runbook.md](live-validation-evidence-runbook.md), [live-write-validation.md](live-write-validation.md).
 
 ## Next tasks
 
