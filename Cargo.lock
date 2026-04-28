@@ -977,6 +977,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "clap",
+ "futures-channel",
  "gtk4",
  "legion-common",
  "legion-control-daemon",

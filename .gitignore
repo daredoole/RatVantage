@@ -1,6 +1,8 @@
 /target/
 /.cache/
 *.tmp
+/out_smoke/
+/overhaul_final/
 
 # Local evidence zips often created at repo root after validation review
 /*.zip

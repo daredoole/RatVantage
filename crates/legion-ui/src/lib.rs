@@ -13,6 +13,8 @@ use zbus::blocking::{Connection, ConnectionBuilder, Proxy};
 
 #[cfg(feature = "gtk-ui")]
 pub mod gtk_shell;
+#[cfg(feature = "gtk-ui")]
+pub mod ui;
 
 pub const DBUS_INTERFACE: &str = "org.ratvantage.LegionControl1";
 pub const DBUS_PATH: &str = "/org/ratvantage/LegionControl1";
