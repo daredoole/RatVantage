@@ -1,11 +1,11 @@
-use crate::{DiagnosticsBundle, LegionControlClient};
+use crate::DiagnosticsBundle;
 use adw::prelude::*;
 use anyhow::Result;
 use legion_common::BatteryChargeTypeCapability;
 
 use super::shared::{
-    append_error, build_write_controls, build_write_feedback_group, info_row,
-    request_dashboard_refresh, spawn_dbus_call,
+    append_error, build_write_controls, build_write_feedback_group, info_row, make_client,
+    request_dashboard_refresh, section_note, spawn_dbus_call,
 };
 
 pub fn battery_page(diagnostics: Result<DiagnosticsBundle>) -> adw::PreferencesPage {
@@ -21,7 +21,10 @@ pub fn battery_page(diagnostics: Result<DiagnosticsBundle>) -> adw::PreferencesP
 
 fn append_battery(page: &adw::PreferencesPage, bundle: &DiagnosticsBundle) {
     let charge_type = adw::PreferencesGroup::new();
-    charge_type.set_title("Charge Type");
+    charge_type.set_title("Battery Charging");
+    charge_type.add(&section_note(
+        "Charge mode changes are applied through the daemon and verified by read-back.",
+    ));
     if let Some(charge_type_capability) = &bundle.raw_probe_report.battery_charge_type {
         let current = info_row(
             "Current",
@@ -32,13 +35,8 @@ fn append_battery(page: &adw::PreferencesPage, bundle: &DiagnosticsBundle) {
         );
         charge_type.add(&current);
         charge_type.add(&info_row(
-            "Choices",
+            "Modes",
             &charge_type_capability.choices.join(", "),
-        ));
-        charge_type.add(&info_row("Status path", &charge_type_capability.path));
-        charge_type.add(&info_row(
-            "Choices path",
-            &charge_type_capability.choices_path,
         ));
         page.add(&charge_type);
 
@@ -55,8 +53,7 @@ fn append_battery(page: &adw::PreferencesPage, bundle: &DiagnosticsBundle) {
         page.add(&controls);
     }
 
-    let feedback = build_write_feedback_group("Battery charge type");
-    page.add(&feedback);
+    page.add(&build_write_feedback_group("Battery charge type"));
 
     let telemetry = adw::PreferencesGroup::new();
     telemetry.set_title("Telemetry");
@@ -77,7 +74,6 @@ fn append_battery(page: &adw::PreferencesPage, bundle: &DiagnosticsBundle) {
             "Health",
             battery.health.as_deref().unwrap_or("unknown"),
         ));
-        telemetry.add(&info_row("Path", &battery.path));
     } else {
         telemetry.add(&info_row("Battery telemetry", "unavailable"));
     }
@@ -89,16 +85,13 @@ fn build_battery_charge_type_controls(
     current_row: Option<adw::ActionRow>,
 ) -> adw::PreferencesGroup {
     build_write_controls(
-        "Battery charge type quick apply",
+        "Charge Control",
         capability.map(|capability| capability.current.as_deref().unwrap_or("unknown")),
         capability.map(|capability| capability.choices.as_slice()),
         "Requested charge type",
         "Apply charge type",
         "Battery charge type",
-        |requested| {
-            LegionControlClient::system()
-                .and_then(|client| client.set_battery_charge_type(requested))
-        },
+        |requested| make_client().and_then(|client| client.set_battery_charge_type(requested)),
         move |_| {
             if !request_dashboard_refresh() {
                 if let Some(row) = &current_row {
@@ -112,7 +105,7 @@ fn build_battery_charge_type_controls(
 fn refresh_battery_charge_type_row(row: &adw::ActionRow) {
     let row = row.clone();
     spawn_dbus_call(
-        || LegionControlClient::system().and_then(|client| client.refresh_runtime_snapshot()),
+        || make_client().and_then(|client| client.refresh_runtime_snapshot()),
         move |result| {
             if let Ok(snapshot) = result {
                 if let Some(charge_type) = snapshot.diagnostics.raw_probe_report.battery_charge_type

@@ -1,11 +1,11 @@
-use crate::{capability_status_label, DiagnosticsBundle, LegionControlClient};
+use crate::{capability_status_label, DiagnosticsBundle};
 use adw::prelude::*;
 use anyhow::Result;
 use legion_common::PlatformProfileCapability;
 
 use super::shared::{
-    append_error, build_write_controls, build_write_feedback_group, info_row,
-    request_dashboard_refresh, spawn_dbus_call,
+    append_error, build_write_controls, build_write_feedback_group, info_row, make_client,
+    request_dashboard_refresh, section_note, spawn_dbus_call,
 };
 
 pub fn profiles_page(diagnostics: Result<DiagnosticsBundle>) -> adw::PreferencesPage {
@@ -21,13 +21,27 @@ pub fn profiles_page(diagnostics: Result<DiagnosticsBundle>) -> adw::Preferences
 
 fn append_profiles(page: &adw::PreferencesPage, bundle: &DiagnosticsBundle) {
     let group = adw::PreferencesGroup::new();
-    group.set_title("Platform Profile");
+    group.set_title("Power Profiles");
+    group.add(&section_note(
+        "Platform is firmware. Fedora power is the desktop profile. RatVantage writes one path and reads both back.",
+    ));
     if let Some(profile) = &bundle.raw_probe_report.platform_profile {
-        let current = info_row("Current", profile.current.as_deref().unwrap_or("unknown"));
+        let current = info_row(
+            "Platform profile",
+            profile.current.as_deref().unwrap_or("unknown"),
+        );
         group.add(&current);
+        if let Some(power_profile) = bundle
+            .raw_probe_report
+            .power_profiles
+            .as_ref()
+            .and_then(|profile| profile.active_profile.as_deref())
+        {
+            group.add(&info_row("Plasma/Fedora power profile", power_profile));
+        } else {
+            group.add(&info_row("Plasma/Fedora power profile", "unavailable"));
+        }
         group.add(&info_row("Choices", &profile.choices.join(", ")));
-        group.add(&info_row("Profile path", &profile.path));
-        group.add(&info_row("Choices path", &profile.choices_path));
         page.add(&group);
 
         let controls = build_platform_profile_controls(
@@ -43,17 +57,12 @@ fn append_profiles(page: &adw::PreferencesPage, bundle: &DiagnosticsBundle) {
         page.add(&controls);
     }
 
-    let feedback = build_write_feedback_group("Platform profile");
-    page.add(&feedback);
+    page.add(&build_write_feedback_group("Platform profile"));
 
     if let Some(pp) = &bundle.raw_probe_report.power_profiles {
         let desktop = adw::PreferencesGroup::new();
-        desktop.set_title("Desktop PowerProfiles");
-        desktop.set_description(Some(
-            "Session D-Bus `org.freedesktop.UPower.PowerProfiles` (often power-profiles-daemon).",
-        ));
+        desktop.set_title("Desktop Profile Detail");
         desktop.add(&info_row("Bus", &pp.bus));
-        desktop.add(&info_row("Well-known name", &pp.well_known_name));
         if let Some(owner) = &pp.unique_owner {
             desktop.add(&info_row("Unique owner", owner));
             desktop.add(&info_row(
@@ -78,15 +87,13 @@ fn build_platform_profile_controls(
     current_row: Option<adw::ActionRow>,
 ) -> adw::PreferencesGroup {
     build_write_controls(
-        "Platform profile quick apply",
+        "Platform Control",
         capability.map(|capability| capability.current.as_deref().unwrap_or("unknown")),
         capability.map(|capability| capability.choices.as_slice()),
         "Requested profile",
         "Apply profile",
         "Platform profile",
-        |requested| {
-            LegionControlClient::system().and_then(|client| client.set_platform_profile(requested))
-        },
+        |requested| make_client().and_then(|client| client.set_platform_profile(requested)),
         move |_| {
             if !request_dashboard_refresh() {
                 if let Some(row) = &current_row {
@@ -100,7 +107,7 @@ fn build_platform_profile_controls(
 fn refresh_platform_profile_row(row: &adw::ActionRow) {
     let row = row.clone();
     spawn_dbus_call(
-        || LegionControlClient::system().and_then(|client| client.refresh_runtime_snapshot()),
+        || make_client().and_then(|client| client.refresh_runtime_snapshot()),
         move |result| {
             if let Ok(snapshot) = result {
                 if let Some(profile) = snapshot.diagnostics.raw_probe_report.platform_profile {

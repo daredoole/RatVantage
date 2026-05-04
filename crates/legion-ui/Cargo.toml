@@ -6,7 +6,7 @@ license.workspace = true
 repository.workspace = true
 
 [dependencies]
-adw = { package = "libadwaita", version = "0.9.1", optional = true }
+adw = { package = "libadwaita", version = "0.9.1", features = ["v1_7"], optional = true }
 anyhow.workspace = true
 clap.workspace = true
 gtk4 = { version = "0.11.2", optional = true }

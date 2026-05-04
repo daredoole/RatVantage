@@ -1,4 +1,4 @@
-use crate::{DiagnosticsBundle, LegionControlClient};
+use crate::DiagnosticsBundle;
 use adw::prelude::*;
 use anyhow::{anyhow, Result};
 use legion_common::{
@@ -14,7 +14,7 @@ use std::path::Path;
 use std::rc::Rc;
 
 use super::shared::{
-    append_error, clone_result, info_row, render_dry_run_plan_summary,
+    append_error, clone_result, info_row, make_client, render_dry_run_plan_summary,
     render_dry_run_recovery_summary, request_dashboard_refresh, selected_dropdown_value,
     spawn_dbus_call,
 };
@@ -52,7 +52,7 @@ fn append_fans(
     fan_snapshot: Result<Option<FanCurveSnapshot>>,
 ) {
     let telemetry = adw::PreferencesGroup::new();
-    telemetry.set_title("Telemetry");
+    telemetry.set_title("Fan Telemetry");
     let fan_sensors = bundle
         .raw_probe_report
         .telemetry
@@ -80,10 +80,9 @@ fn append_fans(
         curves.add(&info_row("Fan curves", "unavailable"));
     } else {
         for curve in &bundle.raw_probe_report.fan_curves {
-            let path = curve.path.as_deref().unwrap_or("unknown");
             curves.add(&info_row(
                 &curve.id,
-                &format!("{} point files - {path}", curve.point_paths.len()),
+                &format!("{} point files", curve.point_paths.len()),
             ));
         }
     }
@@ -219,7 +218,7 @@ fn append_saved_lkg_curve_detail(
         let points_for_refresh = points_for_refresh.clone();
         let last_known_for_refresh = last_known_for_refresh.clone();
         spawn_dbus_call(
-            || LegionControlClient::system().and_then(|client| client.last_known_good_fan_curve()),
+            || make_client().and_then(|client| client.last_known_good_fan_curve()),
             move |result| match result {
                 Ok(maybe) => {
                     repopulate_saved_lkg_points_column(&points_for_refresh, &Ok(maybe.clone()));
@@ -303,7 +302,7 @@ fn append_fan_live_curve_readings(page: &adw::PreferencesPage) {
         let text_for_refresh = text_for_refresh.clone();
         let points_for_refresh = points_for_refresh.clone();
         spawn_dbus_call(
-            || LegionControlClient::system().and_then(|client| client.live_fan_curve_readings()),
+            || make_client().and_then(|client| client.live_fan_curve_readings()),
             move |result| match result {
                 Ok(snapshot) => {
                     repopulate_live_points_column(&points_for_refresh, &snapshot);
@@ -359,7 +358,7 @@ fn append_fan_live_vs_saved_compare(page: &adw::PreferencesPage) {
         let text_for_compare = text_for_compare.clone();
         spawn_dbus_call(
             || {
-                let client = LegionControlClient::system()?;
+                let client = make_client()?;
                 let live = client.live_fan_curve_readings()?;
                 let saved = client.last_known_good_fan_curve()?;
                 Ok((live, saved))
@@ -962,7 +961,7 @@ fn append_fan_preset_per_profile_section(page: &adw::PreferencesPage, bundle: &D
     let group = adw::PreferencesGroup::new();
     group.set_title("Fan preset per platform profile");
     group.set_description(Some(
-        "Daemon app state only: preferred packaged fan preset per detected platform profile. Save writes durable state. Resume re-apply uses systemd-logind and currently performs probe refresh plus dry-run fan preset planning (no sysfs writes).",
+        "App-state only: Save stores a preferred packaged fan preset for each platform profile. Resume re-apply logs a dry-run plan only; no fan sysfs writes run from RatVantage.",
     ));
 
     let map_state: BTreeMap<String, String> = bundle.fan_preset_by_platform_profile.clone();
@@ -978,7 +977,7 @@ fn append_fan_preset_per_profile_section(page: &adw::PreferencesPage, bundle: &D
     for profile in &platform_cap.choices {
         let row = adw::ActionRow::builder()
             .title(profile.as_str())
-            .subtitle("Packaged fan preset for this platform profile")
+            .subtitle("Interactive: click this row or the dropdown to choose an app-state preset mapping.")
             .selectable(false)
             .build();
 
@@ -996,19 +995,23 @@ fn append_fan_preset_per_profile_section(page: &adw::PreferencesPage, bundle: &D
         };
         dropdown.set_selected(selected);
 
-        let save = gtk4::Button::with_label("Save");
+        let save = gtk4::Button::with_label("Save app-state mapping");
         row.add_suffix(&dropdown);
         row.add_suffix(&save);
+        row.set_activatable_widget(Some(&dropdown));
 
         let profile_for_save = profile.clone();
         let status_for_save = map_status.clone();
         save.connect_clicked(move |_| {
+            status_for_save.set_text(
+                "Saving fan preset mapping in daemon app state only; no fan sysfs write will run...",
+            );
             let sel = dropdown.selected() as usize;
             let result = if sel == 0 {
-                LegionControlClient::system()
+                make_client()
                     .and_then(|client| client.remove_fan_preset_profile_map_entry(&profile_for_save))
             } else if let Some(preset_id) = FAN_PRESET_IDS.get(sel.saturating_sub(1)) {
-                LegionControlClient::system().and_then(|client| {
+                make_client().and_then(|client| {
                     client.set_fan_preset_profile_map_entry(&profile_for_save, preset_id)
                 })
             } else {
@@ -1024,7 +1027,7 @@ fn append_fan_preset_per_profile_section(page: &adw::PreferencesPage, bundle: &D
                     } else {
                         let preset_id = FAN_PRESET_IDS[sel - 1];
                         status_for_save.set_text(&format!(
-                            "Saved `{profile_for_save}` → `{preset_id}` (dashboard refresh requested)."
+                            "Saved app-state mapping `{profile_for_save}` -> `{preset_id}` (dashboard refresh requested; no fan sysfs write ran)."
                         ));
                     }
                     let _ = request_dashboard_refresh();
@@ -1048,6 +1051,7 @@ fn append_fan_preset_per_profile_section(page: &adw::PreferencesPage, bundle: &D
         .active(bundle.fan_preset_reapply_after_resume)
         .build();
     resume_row.add_suffix(&resume_switch);
+    resume_row.set_activatable_widget(Some(&resume_switch));
     let skip_resume_notify = Rc::new(Cell::new(true));
     let skip_resume_for_connect = skip_resume_notify.clone();
     let map_status_for_resume = map_status.clone();
@@ -1057,13 +1061,13 @@ fn append_fan_preset_per_profile_section(page: &adw::PreferencesPage, bundle: &D
             return;
         }
         let on = switch.is_active();
-        match LegionControlClient::system()
+        match make_client()
             .and_then(|client| client.set_fan_preset_reapply_after_resume(on))
         {
             Ok(confirmed) => {
                 switch.set_active(confirmed);
                 map_status_for_resume
-                    .set_text("Resume fan re-apply policy updated (dashboard refresh requested).");
+                    .set_text("Resume fan re-apply policy updated (dry-run planning only; dashboard refresh requested).");
                 let _ = request_dashboard_refresh();
             }
             Err(error) => {
@@ -1081,14 +1085,14 @@ fn append_fan_preset_per_profile_section(page: &adw::PreferencesPage, bundle: &D
         .selectable(false)
         .build();
     bulk_row.add_suffix(&clear_all);
+    bulk_row.set_activatable_widget(Some(&clear_all));
     group.add(&bulk_row);
 
     let status_for_clear = map_status.clone();
     clear_all.connect_clicked(move |_| {
-        match LegionControlClient::system().and_then(|client| client.clear_fan_preset_profile_map())
-        {
+        match make_client().and_then(|client| client.clear_fan_preset_profile_map()) {
             Ok(_) => {
-                status_for_clear.set_text("Cleared every profile→preset mapping.");
+                status_for_clear.set_text("Cleared every profile->preset app-state mapping.");
                 let _ = request_dashboard_refresh();
             }
             Err(error) => {
@@ -1164,7 +1168,7 @@ fn append_manual_fan_curve_scratchpad(page: &adw::PreferencesPage, curve: &FanCu
     let group = adw::PreferencesGroup::new();
     group.set_title("Manual curve scratchpad");
     group.set_description(Some(
-        "Edit raw sysfs integers per paired pwm*_auto_pointN node. Validate checks monotonic temp/pwm rules only — no daemon write or apply.",
+        "Edit raw sysfs integers per paired pwm*_auto_pointN node. Local validation and previews only; there is no Apply button and no daemon write.",
     ));
 
     let actions_column = gtk4::Box::new(gtk4::Orientation::Vertical, 6);
@@ -1172,13 +1176,13 @@ fn append_manual_fan_curve_scratchpad(page: &adw::PreferencesPage, curve: &FanCu
     actions_row_load.set_spacing(8);
     let actions_row_export = gtk4::Box::new(gtk4::Orientation::Horizontal, 8);
     actions_row_export.set_spacing(8);
-    let load_live = gtk4::Button::with_label("Load from live");
-    let load_saved = gtk4::Button::with_label("Load from saved");
+    let load_live = gtk4::Button::with_label("Load live readings");
+    let load_saved = gtk4::Button::with_label("Load saved snapshot");
     let clear_btn = gtk4::Button::with_label("Clear");
     let validate_btn = gtk4::Button::with_label("Validate pairs");
     let copy_json = gtk4::Button::with_label("Copy JSON");
     let copy_toml = gtk4::Button::with_label("Copy scratchpad TOML");
-    let preview_sysfs = gtk4::Button::with_label("Preview sysfs targets");
+    let preview_sysfs = gtk4::Button::with_label("Preview sysfs text");
     let copy_sysfs_preview = gtk4::Button::with_label("Copy sysfs preview");
     load_live.set_tooltip_text(Some(
         "Reload scratchpad rows from live sysfs readings via the daemon (read-only D-Bus).",
@@ -1362,7 +1366,7 @@ fn append_manual_fan_curve_scratchpad(page: &adw::PreferencesPage, curve: &FanCu
         let sel_for_live = sel_for_live.clone();
         let status_for_live = status_for_live.clone();
         spawn_dbus_call(
-            || LegionControlClient::system().and_then(|client| client.live_fan_curve_readings()),
+            || make_client().and_then(|client| client.live_fan_curve_readings()),
             move |result| match result {
                 Ok(snapshot) => {
                     repopulate_manual_fan_scratchpad_rows(
@@ -1396,7 +1400,7 @@ fn append_manual_fan_curve_scratchpad(page: &adw::PreferencesPage, curve: &FanCu
         let sel_for_saved = sel_for_saved.clone();
         let status_for_saved = status_for_saved.clone();
         spawn_dbus_call(
-            || LegionControlClient::system().and_then(|client| client.last_known_good_fan_curve()),
+            || make_client().and_then(|client| client.last_known_good_fan_curve()),
             move |result| match result {
                 Ok(Some(snapshot)) => {
                     repopulate_manual_fan_scratchpad_rows(
@@ -1521,7 +1525,7 @@ fn append_manual_fan_curve_scratchpad(page: &adw::PreferencesPage, curve: &FanCu
         let trimmed = text.trim();
         if trimmed.is_empty() || trimmed.starts_with("Click Preview sysfs targets") {
             status_for_copy_sysfs_preview
-                .set_text("Nothing to copy — click Preview sysfs targets to fill the pane first.");
+                .set_text("Nothing to copy - click Preview sysfs text to fill the pane first.");
             return;
         }
         if let Some(display) = gtk4::gdk::Display::default() {
@@ -1731,6 +1735,9 @@ fn build_fan_planning_controls(
 ) -> adw::PreferencesGroup {
     let group = adw::PreferencesGroup::new();
     group.set_title("Guided fan planning");
+    group.set_description(Some(
+        "Fan actions here are dry-run planning, rollback reference capture, or app-state updates. They do not apply fan curves to hardware.",
+    ));
 
     if fan_curves.is_empty() {
         group.add(&info_row(
@@ -1746,19 +1753,20 @@ fn build_fan_planning_controls(
     chooser.set_selected(1.min(FAN_PRESET_IDS.len().saturating_sub(1)) as u32);
     chooser.set_sensitive(!FAN_PRESET_IDS.is_empty());
 
-    let preview_preset = gtk4::Button::with_label("Preview plan");
-    let preview_restore = gtk4::Button::with_label("Preview restore plan");
+    let preview_preset = gtk4::Button::with_label("Preview dry-run plan");
+    let preview_restore = gtk4::Button::with_label("Preview restore dry-run");
     let capture = gtk4::Button::with_label("Capture snapshot");
 
     let chooser_row = adw::ActionRow::builder()
         .title("Packaged preset")
         .subtitle(
-            "Dry-run preview only. ApplyFanPreset execution stays disabled until live validation evidence exists.",
+            "Interactive: click this row or the dropdown to choose a preset. Dry-run preview only; there is no dashboard ApplyFanPreset execution until live validation evidence exists.",
         )
         .selectable(false)
         .build();
     chooser_row.add_suffix(&chooser);
     chooser_row.add_suffix(&preview_preset);
+    chooser_row.set_activatable_widget(Some(&chooser));
     group.add(&chooser_row);
 
     let preset_plan_row = adw::ActionRow::builder()
@@ -1785,6 +1793,7 @@ fn build_fan_planning_controls(
         .selectable(false)
         .build();
     restore_row.add_suffix(&preview_restore);
+    restore_row.set_activatable_widget(Some(&preview_restore));
     group.add(&restore_row);
 
     let restore_plan_row = adw::ActionRow::builder()
@@ -1809,6 +1818,7 @@ fn build_fan_planning_controls(
         .selectable(false)
         .build();
     capture_row.add_suffix(&capture);
+    capture_row.set_activatable_widget(Some(&capture));
     group.add(&capture_row);
 
     let chooser_for_preset = chooser.clone();
@@ -1826,8 +1836,16 @@ fn build_fan_planning_controls(
 
         let preset_plan_for_preset = preset_plan_for_preset.clone();
         let preset_recovery_for_preset = preset_recovery_for_preset.clone();
+        preset_plan_for_preset.set_title("Preset plan preview requested");
+        preset_plan_for_preset.set_subtitle(
+            "Request sent to the daemon for dry-run planning; no fan sysfs write will run.",
+        );
+        preset_recovery_for_preset.set_subtitle("Waiting for rollback guidance from the daemon...");
         spawn_dbus_call(
-            move || LegionControlClient::system().and_then(|client| client.plan_fan_preset_write(&requested)),
+            move || {
+                make_client()
+                    .and_then(|client| client.plan_fan_preset_write(&requested))
+            },
             move |result| match result {
                 Ok(plan) => {
                     preset_plan_for_preset.set_title("Preset plan preview ready");
@@ -1852,11 +1870,14 @@ fn build_fan_planning_controls(
     preview_restore.connect_clicked(move |_| {
         let restore_plan_for_restore = restore_plan_for_restore.clone();
         let restore_recovery_for_restore = restore_recovery_for_restore.clone();
+        restore_plan_for_restore.set_title("Restore plan preview requested");
+        restore_plan_for_restore.set_subtitle(
+            "Request sent to the daemon for dry-run planning; no fan sysfs write will run.",
+        );
+        restore_recovery_for_restore
+            .set_subtitle("Waiting for rollback guidance from the daemon...");
         spawn_dbus_call(
-            || {
-                LegionControlClient::system()
-                    .and_then(|client| client.plan_restore_auto_fan_write())
-            },
+            || make_client().and_then(|client| client.plan_restore_auto_fan_write()),
             move |result| match result {
                 Ok(plan) => {
                     restore_plan_for_restore.set_title("Restore plan preview ready");
@@ -1881,11 +1902,11 @@ fn build_fan_planning_controls(
     capture.connect_clicked(move |_| {
         let last_known_for_capture = last_known_for_capture.clone();
         let lkg_points_for_capture = lkg_points_for_capture.clone();
+        last_known_for_capture.set_subtitle(
+            "Capture requested; reading current fan curve values into app state only...",
+        );
         spawn_dbus_call(
-            || {
-                LegionControlClient::system()
-                    .and_then(|client| client.capture_last_known_good_fan_curve())
-            },
+            || make_client().and_then(|client| client.capture_last_known_good_fan_curve()),
             move |result| match result {
                 Ok(snapshot) => {
                     last_known_for_capture.set_subtitle(&format_fan_snapshot_display(&snapshot));

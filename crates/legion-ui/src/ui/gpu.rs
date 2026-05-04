@@ -1,11 +1,12 @@
-use crate::{capability_status_label, DiagnosticsBundle, GpuModePending, LegionControlClient};
+use crate::{capability_status_label, DiagnosticsBundle, GpuModePending};
 use adw::prelude::*;
 use anyhow::Result;
 use legion_common::{format_gpu_mode_pending_summary, GpuCapability};
 
 use super::shared::{
-    append_error, info_row, render_dry_run_plan_summary, render_dry_run_recovery_summary,
-    request_dashboard_refresh, selected_dropdown_value, spawn_dbus_call,
+    append_error, info_row, make_client, render_dry_run_plan_summary,
+    render_dry_run_recovery_summary, request_dashboard_refresh, section_note,
+    selected_dropdown_value, spawn_dbus_call,
 };
 
 const GPU_MODE_CHOICES: &[&str] = &["integrated", "hybrid", "nvidia"];
@@ -30,7 +31,10 @@ fn append_gpu(
     gpu_pending: Result<Option<GpuModePending>>,
 ) {
     let mode = adw::PreferencesGroup::new();
-    mode.set_title("GPU Mode");
+    mode.set_title("GPU");
+    mode.add(&section_note(
+        "Mode execution stays outside RatVantage until live validation is complete.",
+    ));
     if let Some(gpu) = &bundle.raw_probe_report.gpu {
         mode.add(&info_row("Provider", &gpu.provider));
         mode.add(&info_row(
@@ -66,13 +70,13 @@ fn build_gpu_mode_controls(
     pending_row: adw::ActionRow,
 ) -> adw::PreferencesGroup {
     let group = adw::PreferencesGroup::new();
-    group.set_title("Guided GPU switch planning");
+    group.set_title("Switch Planning");
 
     let Some(capability) = capability.filter(|capability| capability.provider == "envycontrol")
     else {
         group.add(&info_row(
             "GPU mode planning",
-            "unavailable - envycontrol was not detected",
+            "Unavailable: envycontrol was not detected, so GPU switch planning is disabled.",
         ));
         return group;
     };
@@ -89,25 +93,22 @@ fn build_gpu_mode_controls(
     chooser.set_sensitive(!GPU_MODE_CHOICES.is_empty());
 
     let preview = gtk4::Button::with_label("Preview plan");
-    let record_pending = gtk4::Button::with_label("Record pending");
-    let clear_pending = gtk4::Button::with_label("Clear pending");
+    let record_pending = gtk4::Button::with_label("Record pending state");
+    let clear_pending = gtk4::Button::with_label("Clear pending state");
 
     let chooser_row = adw::ActionRow::builder()
         .title("Target mode")
-        .subtitle(
-            "Preview the validated EnvyControl plan first. Dashboard execution stays disabled until live validation evidence exists.",
-        )
+        .subtitle("Preview only. No hardware mode execution here.")
         .selectable(false)
         .build();
     chooser_row.add_suffix(&chooser);
     chooser_row.add_suffix(&preview);
+    chooser_row.set_activatable_widget(Some(&chooser));
     group.add(&chooser_row);
 
     let pending_controls = adw::ActionRow::builder()
         .title("Pending reboot state")
-        .subtitle(
-            "Record the requested mode after an external switch starts requiring a reboot, or clear it after reboot and verification.",
-        )
+        .subtitle("Track an external switch that needs reboot verification.")
         .selectable(false)
         .build();
     pending_controls.add_suffix(&record_pending);
@@ -145,11 +146,13 @@ fn build_gpu_mode_controls(
 
         let plan_row_for_preview = plan_row_for_preview.clone();
         let recovery_row_for_preview = recovery_row_for_preview.clone();
+        plan_row_for_preview.set_title("Plan preview requested");
+        plan_row_for_preview.set_subtitle(
+            "Request sent to the daemon for dry-run planning; no hardware write will run.",
+        );
+        recovery_row_for_preview.set_subtitle("Waiting for rollback guidance from the daemon...");
         spawn_dbus_call(
-            move || {
-                LegionControlClient::system()
-                    .and_then(|client| client.plan_gpu_mode_write(&requested))
-            },
+            move || make_client().and_then(|client| client.plan_gpu_mode_write(&requested)),
             move |result| match result {
                 Ok(plan) => {
                     plan_row_for_preview.set_title("Plan preview ready");
@@ -182,8 +185,16 @@ fn build_gpu_mode_controls(
         let pending_row_for_record = pending_row_for_record.clone();
         let plan_row_for_record = plan_row_for_record.clone();
         let recovery_row_for_record = recovery_row_for_record.clone();
+        plan_row_for_record.set_title("Recording pending reboot state");
+        plan_row_for_record.set_subtitle(
+            "Updating RatVantage app state only; this does not perform the GPU switch.",
+        );
+        recovery_row_for_record.set_subtitle("Waiting for daemon app-state update...");
         spawn_dbus_call(
-            move || LegionControlClient::system().and_then(|client| client.set_gpu_mode_pending(&requested)),
+            move || {
+                make_client()
+                    .and_then(|client| client.set_gpu_mode_pending(&requested))
+            },
             move |result| match result {
                 Ok(pending) => {
                     pending_row_for_record
@@ -212,8 +223,12 @@ fn build_gpu_mode_controls(
         let pending_row_for_clear = pending_row_for_clear.clone();
         let plan_row_for_clear = plan_row_for_clear.clone();
         let recovery_row_for_clear = recovery_row_for_clear.clone();
+        plan_row_for_clear.set_title("Clearing pending reboot state");
+        plan_row_for_clear
+            .set_subtitle("Clearing RatVantage app state only; no hardware write will run.");
+        recovery_row_for_clear.set_subtitle("Waiting for daemon app-state update...");
         spawn_dbus_call(
-            || LegionControlClient::system().and_then(|client| client.clear_gpu_mode_pending()),
+            || make_client().and_then(|client| client.clear_gpu_mode_pending()),
             move |result| match result {
                 Ok(previous) => {
                     pending_row_for_clear.set_subtitle("none");

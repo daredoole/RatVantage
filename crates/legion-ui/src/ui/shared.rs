@@ -1,9 +1,32 @@
+use crate::LegionControlClient;
 use adw::prelude::*;
 use anyhow::{anyhow, Result};
 use legion_common::{WriteDryRunPlan, WriteExecutionResult, WriteExecutionStatus};
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::rc::Rc;
+use std::sync::OnceLock;
+
+static BUS_ADDRESS: OnceLock<String> = OnceLock::new();
+
+pub(crate) fn install_bus_address(address: &str) {
+    let _ = BUS_ADDRESS.set(address.to_owned());
+}
+
+pub(crate) fn make_client() -> Result<LegionControlClient> {
+    match BUS_ADDRESS.get() {
+        Some(address) => LegionControlClient::address(address),
+        None => LegionControlClient::system(),
+    }
+}
+
+#[derive(Debug, Clone, Copy)]
+pub(crate) enum PillTone {
+    Neutral,
+    Good,
+    Warning,
+    Error,
+}
 
 thread_local! {
     pub(crate) static DASHBOARD_REFRESH_HOOK: RefCell<Option<Rc<dyn Fn()>>> = RefCell::new(None);
@@ -20,7 +43,9 @@ pub(crate) struct WriteFeedbackState {
 pub(crate) fn default_write_feedback_state() -> WriteFeedbackState {
     WriteFeedbackState {
         title: "Apply result".to_owned(),
-        subtitle: "No write attempted yet.".to_owned(),
+        subtitle:
+            "No write attempted yet. If a request is blocked, the daemon will report why here."
+                .to_owned(),
     }
 }
 
@@ -65,23 +90,42 @@ pub(crate) fn request_dashboard_refresh() -> bool {
 pub fn write_feedback_title(result: Option<&WriteExecutionResult>) -> &'static str {
     match result.map(|result| result.status) {
         None => "Apply result",
-        Some(WriteExecutionStatus::Applied) => "Apply succeeded",
+        Some(WriteExecutionStatus::Applied) => "Applied and verified",
         Some(WriteExecutionStatus::BlockedByPolicy) => "Apply blocked by policy",
         Some(WriteExecutionStatus::BlockedByAuthorization) => "Apply blocked by authorization",
-        Some(WriteExecutionStatus::Failed) => "Apply failed",
+        Some(WriteExecutionStatus::Failed) => "Apply failed readback",
     }
 }
 
 pub fn write_feedback_subtitle(result: Option<&WriteExecutionResult>) -> String {
     match result {
-        None => "No write attempted yet.".to_owned(),
+        None => "No write attempted yet. If a request is blocked, the daemon will report why here."
+            .to_owned(),
         Some(result) => {
             let readback = result
                 .readback_value
                 .as_deref()
                 .map(|value| format!(" Read-back: {value}."))
                 .unwrap_or_default();
-            format!("{}{}", result.message, readback)
+            let guidance = match result.status {
+                WriteExecutionStatus::Applied => {
+                    " The daemon wrote the value and verified it with read-back."
+                }
+                WriteExecutionStatus::BlockedByPolicy => {
+                    " The daemon is running without the matching --enable-*-write flag."
+                }
+                WriteExecutionStatus::BlockedByAuthorization => {
+                    " Polkit denied the request or no authorization agent approved it."
+                }
+                WriteExecutionStatus::Failed => {
+                    if result.message.contains("restored previous value") {
+                        " The daemon restored the previous value because read-back did not match the request."
+                    } else {
+                        " The daemon did not confirm the requested value; check the message before retrying."
+                    }
+                }
+            };
+            format!("{}{}{}", result.message, readback, guidance)
         }
     }
 }
@@ -97,10 +141,10 @@ pub(crate) fn write_feedback_row(capability_label: &'static str) -> adw::ActionR
 
 pub(crate) fn build_write_feedback_group(capability_label: &str) -> adw::PreferencesGroup {
     let group = adw::PreferencesGroup::new();
-    group.set_title("Write feedback");
+    group.set_title("Last write");
     group.add(&info_row(
         capability_label,
-        "Quick apply uses polkit-gated daemon writes and reports the last result inline.",
+        "Policy, authorization, and read-back results appear inline.",
     ));
     group
 }
@@ -118,6 +162,69 @@ pub(crate) fn info_row(title: &str, value: &str) -> adw::ActionRow {
         .subtitle(value)
         .selectable(false)
         .build()
+}
+
+pub(crate) fn section_note(text: &str) -> gtk4::Label {
+    let label = gtk4::Label::new(Some(text));
+    label.set_wrap(true);
+    label.set_xalign(0.0);
+    label.set_halign(gtk4::Align::Fill);
+    label.set_margin_top(4);
+    label.set_margin_bottom(6);
+    label.set_margin_start(12);
+    label.set_margin_end(12);
+    label.add_css_class("dim-label");
+    label
+}
+
+pub(crate) fn status_pill(label: &str, tone: PillTone) -> gtk4::Label {
+    let pill = gtk4::Label::new(Some(label));
+    pill.set_halign(gtk4::Align::Start);
+    pill.set_valign(gtk4::Align::Center);
+    pill.add_css_class("caption");
+    pill.add_css_class("pill");
+    match tone {
+        PillTone::Neutral => pill.add_css_class("dim-label"),
+        PillTone::Good => pill.add_css_class("success"),
+        PillTone::Warning => pill.add_css_class("warning"),
+        PillTone::Error => pill.add_css_class("error"),
+    }
+    pill
+}
+
+pub(crate) fn state_tile(title: &str, value: &str, detail: &str, tone: PillTone) -> gtk4::Box {
+    let tile = gtk4::Box::new(gtk4::Orientation::Vertical, 6);
+    tile.set_hexpand(true);
+    tile.set_margin_top(6);
+    tile.set_margin_bottom(6);
+    tile.set_margin_start(6);
+    tile.set_margin_end(6);
+    tile.add_css_class("card");
+
+    let title_label = gtk4::Label::new(Some(title));
+    title_label.set_xalign(0.0);
+    title_label.set_margin_top(12);
+    title_label.set_margin_start(12);
+    title_label.set_margin_end(12);
+    title_label.add_css_class("caption");
+    title_label.add_css_class("dim-label");
+    tile.append(&title_label);
+
+    let value_label = gtk4::Label::new(Some(value));
+    value_label.set_xalign(0.0);
+    value_label.set_wrap(true);
+    value_label.set_margin_start(12);
+    value_label.set_margin_end(12);
+    value_label.add_css_class("title-3");
+    tile.append(&value_label);
+
+    let detail_label = status_pill(detail, tone);
+    detail_label.set_margin_start(12);
+    detail_label.set_margin_end(12);
+    detail_label.set_margin_bottom(12);
+    tile.append(&detail_label);
+
+    tile
 }
 
 pub(crate) fn append_error(page: &adw::PreferencesPage, error: &anyhow::Error) {
@@ -214,7 +321,7 @@ where
     let Some(choices) = choices else {
         group.add(&info_row(
             capability_label,
-            "unavailable - quick apply disabled",
+            "Unavailable: this hardware capability was not detected, so quick apply is disabled.",
         ));
         return group;
     };
@@ -237,14 +344,15 @@ where
     let row = adw::ActionRow::builder()
         .title(chooser_title)
         .subtitle(if can_apply {
-            "Choose a detected runtime value to request from the daemon."
+            "Choose a value, then apply. The daemon verifies read-back."
         } else {
-            "No detected runtime values are available."
+            "No runtime choices detected."
         })
         .selectable(false)
         .build();
     row.add_suffix(&chooser);
     row.add_suffix(&apply);
+    row.set_activatable_widget(Some(&chooser));
     group.add(&row);
 
     let feedback_row = write_feedback_row(capability_label);
@@ -272,8 +380,9 @@ where
         };
 
         let requested = selected.string().to_string();
-        feedback_row_for_click.set_title("Apply result");
-        feedback_row_for_click.set_subtitle("Applying write request (waiting for daemon)...");
+        feedback_row_for_click.set_title("Apply in progress");
+        feedback_row_for_click
+            .set_subtitle("Request sent to the daemon; waiting for policy/auth/write result...");
 
         apply_for_click.set_sensitive(false);
         chooser_for_click.set_sensitive(false);
@@ -314,7 +423,14 @@ where
                 }
                 Err(_) => {
                     feedback_row_for_recv.set_title("Apply error");
-                    feedback_row_for_recv.set_subtitle("Failed - background task was cancelled.");
+                    feedback_row_for_recv.set_subtitle(
+                        "Failed - background task was cancelled before the daemon returned.",
+                    );
+                    store_write_feedback_state(
+                        capability_label,
+                        "Apply error",
+                        "Failed - background task was cancelled before the daemon returned.",
+                    );
                     let _ = request_dashboard_refresh();
                 }
             }

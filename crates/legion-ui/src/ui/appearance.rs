@@ -1,4 +1,4 @@
-use crate::{DiagnosticsBundle, LegionControlClient};
+use crate::DiagnosticsBundle;
 use adw::prelude::*;
 use anyhow::Result;
 use legion_common::{IdeapadToggleCapability, LedCapability};
@@ -6,8 +6,9 @@ use std::cell::RefCell;
 use std::rc::Rc;
 
 use super::shared::{
-    append_error, build_write_feedback_group, info_row, request_dashboard_refresh, spawn_dbus_call,
-    store_write_feedback_state, write_feedback_row, write_feedback_subtitle, write_feedback_title,
+    append_error, build_write_feedback_group, info_row, make_client, request_dashboard_refresh,
+    spawn_dbus_call, status_pill, store_write_feedback_state, write_feedback_row,
+    write_feedback_subtitle, write_feedback_title, PillTone,
 };
 
 pub fn appearance_page(diagnostics: Result<DiagnosticsBundle>) -> adw::PreferencesPage {
@@ -97,21 +98,22 @@ fn build_led_state_controls(
     current_row: Option<adw::ActionRow>,
 ) -> adw::PreferencesGroup {
     let group = adw::PreferencesGroup::new();
-    group.set_title("LED quick apply");
+    group.set_title("Logo LED");
 
     let Some(led) = led else {
         group.add(&info_row(
             "Y-logo LED",
-            "unavailable - quick apply disabled",
+            "Unavailable: writable platform::ylogo LED was not detected, so quick apply is disabled.",
         ));
         return group;
     };
 
     let row = adw::ActionRow::builder()
         .title("Y-logo LED")
-        .subtitle("Apply a reversible on/off change to the detected ylogo LED.")
+        .subtitle("Guarded write; rollback if read-back disagrees.")
         .selectable(false)
         .build();
+    row.add_suffix(&status_pill("guarded", PillTone::Warning));
 
     let off = gtk4::Button::with_label("Turn off");
     let on = gtk4::Button::with_label("Turn on");
@@ -163,21 +165,22 @@ fn build_ideapad_toggle_controls(
     current_row: Option<adw::ActionRow>,
 ) -> adw::PreferencesGroup {
     let group = adw::PreferencesGroup::new();
-    group.set_title("Fn-lock quick apply");
+    group.set_title("Keyboard");
 
     let Some(toggle) = toggle else {
         group.add(&info_row(
             "Functional Fn-lock",
-            "unavailable - quick apply disabled",
+            "Unavailable: writable fn_lock toggle was not detected, so quick apply is disabled.",
         ));
         return group;
     };
 
     let row = adw::ActionRow::builder()
         .title("Functional Fn-lock")
-        .subtitle("Apply a reversible on/off change to the detected fn_lock ideapad toggle.")
+        .subtitle("Verified with the Fn-lock indicator LED.")
         .selectable(false)
         .build();
+    row.add_suffix(&status_pill("verified", PillTone::Good));
 
     let off = gtk4::Button::with_label("Turn off");
     let on = gtk4::Button::with_label("Turn on");
@@ -228,21 +231,22 @@ fn build_camera_power_controls(
     current_row: Option<adw::ActionRow>,
 ) -> adw::PreferencesGroup {
     let group = adw::PreferencesGroup::new();
-    group.set_title("Camera privacy quick apply");
+    group.set_title("Camera");
 
     let Some(toggle) = toggle else {
         group.add(&info_row(
             "Camera power",
-            "unavailable - quick apply disabled",
+            "Unavailable: writable camera_power toggle was not detected, so quick apply is disabled.",
         ));
         return group;
     };
 
     let row = adw::ActionRow::builder()
         .title("Camera power")
-        .subtitle("Changes require confirmation because active camera apps can lose the device.")
+        .subtitle("Guarded write; rollback if read-back disagrees.")
         .selectable(false)
         .build();
+    row.add_suffix(&status_pill("guarded", PillTone::Warning));
 
     let request_off = gtk4::Button::with_label("Request off");
     let request_on = gtk4::Button::with_label("Request on");
@@ -274,6 +278,7 @@ fn build_camera_power_controls(
     let confirm_for_off = confirm.clone();
     let cancel_for_off = cancel.clone();
     let pending_for_off = Rc::clone(&pending_enabled);
+    let feedback_for_off = feedback_row.clone();
     request_off.connect_clicked(move |_| {
         *pending_for_off.borrow_mut() = Some(false);
         confirm_row_for_off.set_title("Confirm camera power change");
@@ -283,12 +288,17 @@ fn build_camera_power_controls(
         confirm_for_off.set_label("Confirm off");
         confirm_for_off.set_sensitive(true);
         cancel_for_off.set_sensitive(true);
+        feedback_for_off.set_title("Confirmation pending");
+        feedback_for_off.set_subtitle(
+            "Camera power off requested locally. Click Confirm off to send the daemon write.",
+        );
     });
 
     let confirm_row_for_on = confirm_row.clone();
     let confirm_for_on = confirm.clone();
     let cancel_for_on = cancel.clone();
     let pending_for_on = Rc::clone(&pending_enabled);
+    let feedback_for_on = feedback_row.clone();
     request_on.connect_clicked(move |_| {
         *pending_for_on.borrow_mut() = Some(true);
         confirm_row_for_on.set_title("Confirm camera power change");
@@ -298,12 +308,17 @@ fn build_camera_power_controls(
         confirm_for_on.set_label("Confirm on");
         confirm_for_on.set_sensitive(true);
         cancel_for_on.set_sensitive(true);
+        feedback_for_on.set_title("Confirmation pending");
+        feedback_for_on.set_subtitle(
+            "Camera power on requested locally. Click Confirm on to send the daemon write.",
+        );
     });
 
     let confirm_row_for_cancel = confirm_row.clone();
     let confirm_for_cancel = confirm.clone();
     let cancel_for_cancel = cancel.clone();
     let pending_for_cancel = Rc::clone(&pending_enabled);
+    let feedback_for_cancel = feedback_row.clone();
     cancel.connect_clicked(move |_| {
         *pending_for_cancel.borrow_mut() = None;
         confirm_row_for_cancel.set_title("Confirmation required");
@@ -311,6 +326,9 @@ fn build_camera_power_controls(
         confirm_for_cancel.set_label("Confirm");
         confirm_for_cancel.set_sensitive(false);
         cancel_for_cancel.set_sensitive(false);
+        feedback_for_cancel.set_title("Apply result");
+        feedback_for_cancel
+            .set_subtitle("Camera power request cancelled locally; no daemon write was sent.");
     });
 
     let feedback_row_for_confirm = feedback_row.clone();
@@ -349,23 +367,22 @@ fn build_usb_charging_controls(
     current_row: Option<adw::ActionRow>,
 ) -> adw::PreferencesGroup {
     let group = adw::PreferencesGroup::new();
-    group.set_title("USB charging quick apply");
+    group.set_title("USB Power");
 
     let Some(toggle) = toggle else {
         group.add(&info_row(
             "USB charging",
-            "unavailable - quick apply disabled",
+            "Unavailable: writable usb_charging toggle was not detected, so quick apply is disabled.",
         ));
         return group;
     };
 
     let row = adw::ActionRow::builder()
         .title("USB charging")
-        .subtitle(
-            "Changes require confirmation because enabling always-on USB charging can drain the laptop battery while it is shut down.",
-        )
+        .subtitle("Always-on USB charging; confirmation required.")
         .selectable(false)
         .build();
+    row.add_suffix(&status_pill("verified", PillTone::Good));
 
     let request_off = gtk4::Button::with_label("Request off");
     let request_on = gtk4::Button::with_label("Request on");
@@ -397,6 +414,7 @@ fn build_usb_charging_controls(
     let confirm_for_off = confirm.clone();
     let cancel_for_off = cancel.clone();
     let pending_for_off = Rc::clone(&pending_enabled);
+    let feedback_for_off = feedback_row.clone();
     request_off.connect_clicked(move |_| {
         *pending_for_off.borrow_mut() = Some(false);
         confirm_row_for_off.set_title("Confirm USB charging change");
@@ -406,12 +424,17 @@ fn build_usb_charging_controls(
         confirm_for_off.set_label("Confirm off");
         confirm_for_off.set_sensitive(true);
         cancel_for_off.set_sensitive(true);
+        feedback_for_off.set_title("Confirmation pending");
+        feedback_for_off.set_subtitle(
+            "USB charging off requested locally. Click Confirm off to send the daemon write.",
+        );
     });
 
     let confirm_row_for_on = confirm_row.clone();
     let confirm_for_on = confirm.clone();
     let cancel_for_on = cancel.clone();
     let pending_for_on = Rc::clone(&pending_enabled);
+    let feedback_for_on = feedback_row.clone();
     request_on.connect_clicked(move |_| {
         *pending_for_on.borrow_mut() = Some(true);
         confirm_row_for_on.set_title("Confirm USB charging change");
@@ -421,12 +444,17 @@ fn build_usb_charging_controls(
         confirm_for_on.set_label("Confirm on");
         confirm_for_on.set_sensitive(true);
         cancel_for_on.set_sensitive(true);
+        feedback_for_on.set_title("Confirmation pending");
+        feedback_for_on.set_subtitle(
+            "USB charging on requested locally. Click Confirm on to send the daemon write.",
+        );
     });
 
     let confirm_row_for_cancel = confirm_row.clone();
     let confirm_for_cancel = confirm.clone();
     let cancel_for_cancel = cancel.clone();
     let pending_for_cancel = Rc::clone(&pending_enabled);
+    let feedback_for_cancel = feedback_row.clone();
     cancel.connect_clicked(move |_| {
         *pending_for_cancel.borrow_mut() = None;
         confirm_row_for_cancel.set_title("Confirmation required");
@@ -434,6 +462,9 @@ fn build_usb_charging_controls(
         confirm_for_cancel.set_label("Confirm");
         confirm_for_cancel.set_sensitive(false);
         cancel_for_cancel.set_sensitive(false);
+        feedback_for_cancel.set_title("Apply result");
+        feedback_for_cancel
+            .set_subtitle("USB charging request cancelled locally; no daemon write was sent.");
     });
 
     let feedback_row_for_confirm = feedback_row.clone();
@@ -480,15 +511,13 @@ fn handle_led_button_click(
     let led_id = led_id.to_owned();
     let path = path.to_owned();
 
-    feedback_row.set_title("Apply result");
-    feedback_row.set_subtitle("Applying write request...");
+    feedback_row.set_title("Apply in progress");
+    feedback_row
+        .set_subtitle("Request sent to the daemon; waiting for policy/auth/write result...");
 
     let led_id_for_call = led_id.clone();
     spawn_dbus_call(
-        move || {
-            LegionControlClient::system()
-                .and_then(|client| client.set_led_state(&led_id_for_call, enabled))
-        },
+        move || make_client().and_then(|client| client.set_led_state(&led_id_for_call, enabled)),
         move |result| match result {
             Ok(result) => {
                 let title = write_feedback_title(Some(&result));
@@ -526,14 +555,14 @@ fn handle_ideapad_toggle_button_click(
     let toggle_id = toggle_id.to_owned();
     let path = path.to_owned();
 
-    feedback_row.set_title("Apply result");
-    feedback_row.set_subtitle("Applying write request...");
+    feedback_row.set_title("Apply in progress");
+    feedback_row
+        .set_subtitle("Request sent to the daemon; waiting for policy/auth/write result...");
 
     let toggle_id_for_call = toggle_id.clone();
     spawn_dbus_call(
         move || {
-            LegionControlClient::system()
-                .and_then(|client| client.set_ideapad_toggle(&toggle_id_for_call, enabled))
+            make_client().and_then(|client| client.set_ideapad_toggle(&toggle_id_for_call, enabled))
         },
         move |result| match result {
             Ok(result) => {
@@ -572,7 +601,7 @@ fn refresh_led_row(
     let result = result.clone();
 
     spawn_dbus_call(
-        || LegionControlClient::system().and_then(|client| client.refresh_runtime_snapshot()),
+        || make_client().and_then(|client| client.refresh_runtime_snapshot()),
         move |res| {
             if let Ok(snapshot) = res {
                 if let Some(led) = snapshot
@@ -609,7 +638,7 @@ fn refresh_ideapad_toggle_row(
     let result = result.clone();
 
     spawn_dbus_call(
-        || LegionControlClient::system().and_then(|client| client.refresh_runtime_snapshot()),
+        || make_client().and_then(|client| client.refresh_runtime_snapshot()),
         move |res| {
             if let Ok(snapshot) = res {
                 if let Some(toggle) = snapshot

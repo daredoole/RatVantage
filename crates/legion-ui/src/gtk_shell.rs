@@ -8,12 +8,17 @@ use std::thread_local;
 use std::{
     cell::RefCell,
     rc::Rc,
+    sync::mpsc,
+    thread,
     time::{Duration, Instant},
 };
+use zbus::blocking::{Connection as ZbusConnection, MessageIterator};
+use zbus::MatchRule;
 
 const AUTO_REFRESH_INTERVAL: Duration = Duration::from_secs(30);
 const RESUME_REFRESH_GAP: Duration = Duration::from_secs(90);
 const DEFAULT_DASHBOARD_PAGE: &str = "status";
+const POWER_PROFILES_PATH: &str = "/org/freedesktop/UPower/PowerProfiles";
 
 type SnapshotLoader = Rc<dyn Fn() -> Result<RuntimeSnapshot>>;
 
@@ -38,6 +43,10 @@ pub fn run(
         );
     }
 
+    if let Some(ref addr) = bus_address {
+        crate::ui::shared::install_bus_address(addr);
+    }
+
     let app = adw::Application::builder()
         .application_id("org.ratvantage.LegionControl")
         .build();
@@ -47,15 +56,18 @@ pub fn run(
     app.connect_activate(move |app| {
         let window = adw::ApplicationWindow::builder()
             .application(app)
-            .title("Legion Control")
-            .default_width(720)
-            .default_height(480)
+            .title("RatVantage")
+            .default_width(960)
+            .default_height(680)
             .build();
 
         let root = gtk4::Box::new(gtk4::Orientation::Vertical, 0);
         root.set_hexpand(true);
         root.set_vexpand(true);
-        root.append(&adw::HeaderBar::new());
+        let header = adw::HeaderBar::new();
+        let title = adw::WindowTitle::new("RatVantage", "Legion hardware control");
+        header.set_title_widget(Some(&title));
+        root.append(&header);
         let bus_address = Rc::clone(&bus_address);
         let initial_page = Rc::clone(&initial_page);
         let runtime = DashboardRuntime::new(
@@ -74,6 +86,7 @@ pub fn run(
             Rc::new(move || runtime.borrow_mut().refresh_now())
         });
         install_runtime_refresh(&window, Rc::clone(&runtime));
+        install_power_profiles_refresh(Rc::clone(&runtime));
         window.set_content(Some(&root));
         runtime.borrow_mut().refresh_now();
         window.present();
@@ -105,47 +118,75 @@ pub fn dashboard_page(
     fan_snapshot: Result<Option<FanCurveSnapshot>>,
     initial_page: Rc<RefCell<String>>,
 ) -> gtk4::Widget {
-    let stack = gtk4::Stack::new();
+    let stack = adw::ViewStack::new();
     stack.set_hexpand(true);
     stack.set_vexpand(true);
-    stack.add_titled(
-        &crate::ui::status::status_page(status, crate::ui::shared::clone_result(&gpu_pending)),
-        Some("status"),
-        "Status",
-    );
-    stack.add_titled(
-        &crate::ui::profiles::profiles_page(crate::ui::shared::clone_result(&diagnostics)),
-        Some("profiles"),
-        "Profiles",
-    );
-    stack.add_titled(
-        &crate::ui::battery::battery_page(crate::ui::shared::clone_result(&diagnostics)),
-        Some("battery"),
-        "Battery",
-    );
-    stack.add_titled(
-        &crate::ui::gpu::gpu_page(
-            crate::ui::shared::clone_result(&diagnostics),
-            crate::ui::shared::clone_result(&gpu_pending),
-        ),
-        Some("gpu"),
-        "GPU",
-    );
-    stack.add_titled(
-        &crate::ui::fans::fans_page(crate::ui::shared::clone_result(&diagnostics), fan_snapshot),
-        Some("fans"),
-        "Fans",
-    );
-    stack.add_titled(
-        &crate::ui::appearance::appearance_page(crate::ui::shared::clone_result(&diagnostics)),
-        Some("appearance"),
-        "Appearance",
-    );
-    stack.add_titled(
-        &crate::ui::diagnostics::diagnostics_page(diagnostics),
-        Some("diagnostics"),
-        "Diagnostics",
-    );
+    {
+        let p = stack.add_titled(
+            &crate::ui::status::status_page(
+                status,
+                crate::ui::shared::clone_result(&diagnostics),
+                crate::ui::shared::clone_result(&gpu_pending),
+            ),
+            Some("status"),
+            "Overview",
+        );
+        p.set_icon_name(Some("system-run-symbolic"));
+    }
+    {
+        let p = stack.add_titled(
+            &crate::ui::profiles::profiles_page(crate::ui::shared::clone_result(&diagnostics)),
+            Some("profiles"),
+            "Power",
+        );
+        p.set_icon_name(Some("power-profile-balanced-symbolic"));
+    }
+    {
+        let p = stack.add_titled(
+            &crate::ui::battery::battery_page(crate::ui::shared::clone_result(&diagnostics)),
+            Some("battery"),
+            "Battery",
+        );
+        p.set_icon_name(Some("battery-good-symbolic"));
+    }
+    {
+        let p = stack.add_titled(
+            &crate::ui::gpu::gpu_page(
+                crate::ui::shared::clone_result(&diagnostics),
+                crate::ui::shared::clone_result(&gpu_pending),
+            ),
+            Some("gpu"),
+            "GPU",
+        );
+        p.set_icon_name(Some("video-display-symbolic"));
+    }
+    {
+        let p = stack.add_titled(
+            &crate::ui::fans::fans_page(
+                crate::ui::shared::clone_result(&diagnostics),
+                fan_snapshot,
+            ),
+            Some("fans"),
+            "Fans",
+        );
+        p.set_icon_name(Some("temperature-symbolic"));
+    }
+    {
+        let p = stack.add_titled(
+            &crate::ui::appearance::appearance_page(crate::ui::shared::clone_result(&diagnostics)),
+            Some("appearance"),
+            "Devices",
+        );
+        p.set_icon_name(Some("input-keyboard-symbolic"));
+    }
+    {
+        let p = stack.add_titled(
+            &crate::ui::diagnostics::diagnostics_page(diagnostics),
+            Some("diagnostics"),
+            "Diagnostics",
+        );
+        p.set_icon_name(Some("utilities-system-monitor-symbolic"));
+    }
 
     let current = initial_page.borrow().clone();
     stack.set_visible_child_name(&current);
@@ -156,17 +197,21 @@ pub fn dashboard_page(
         }
     });
 
-    let switcher = gtk4::StackSwitcher::new();
+    let switcher = adw::ViewSwitcher::new();
     switcher.set_stack(Some(&stack));
-    switcher.set_halign(gtk4::Align::Start);
-    switcher.set_margin_top(12);
-    switcher.set_margin_start(24);
-    switcher.set_margin_end(24);
+    switcher.set_policy(adw::ViewSwitcherPolicy::Wide);
+    switcher.set_hexpand(true);
+
+    let switcher_box = gtk4::Box::new(gtk4::Orientation::Vertical, 0);
+    switcher_box.set_margin_top(4);
+    switcher_box.set_margin_bottom(4);
+    switcher_box.append(&switcher);
+    switcher_box.append(&gtk4::Separator::new(gtk4::Orientation::Horizontal));
 
     let page = gtk4::Box::new(gtk4::Orientation::Vertical, 0);
     page.set_hexpand(true);
     page.set_vexpand(true);
-    page.append(&switcher);
+    page.append(&switcher_box);
     page.append(&stack);
     page.upcast()
 }
@@ -212,6 +257,44 @@ fn install_runtime_refresh(
     });
 }
 
+fn install_power_profiles_refresh(runtime: Rc<RefCell<DashboardRuntime>>) {
+    let (sender, receiver) = mpsc::channel::<()>();
+    gtk4::glib::timeout_add_local(Duration::from_millis(250), move || {
+        let mut should_refresh = false;
+        while receiver.try_recv().is_ok() {
+            should_refresh = true;
+        }
+        if should_refresh {
+            runtime.borrow_mut().refresh_now();
+        }
+        gtk4::glib::ControlFlow::Continue
+    });
+
+    thread::spawn(move || {
+        if let Err(error) = watch_power_profiles_changes(move || {
+            let _ = sender.send(());
+        }) {
+            eprintln!("legion-control-ui: PowerProfiles signal watch unavailable: {error}");
+        }
+    });
+}
+
+fn watch_power_profiles_changes(mut notify: impl FnMut()) -> zbus::Result<()> {
+    let connection = ZbusConnection::system()?;
+    let rule = MatchRule::builder()
+        .msg_type(zbus::message::Type::Signal)
+        .path(POWER_PROFILES_PATH)?
+        .interface("org.freedesktop.DBus.Properties")?
+        .member("PropertiesChanged")?
+        .build();
+    let mut messages = MessageIterator::for_match_rule(rule, &connection, Some(8))?;
+    for message in &mut messages {
+        message?;
+        notify();
+    }
+    Ok(())
+}
+
 pub fn should_auto_refresh(now: Instant, last_refresh: Instant, last_tick: Instant) -> bool {
     now.duration_since(last_refresh) >= AUTO_REFRESH_INTERVAL
         || now.duration_since(last_tick) >= RESUME_REFRESH_GAP
@@ -219,7 +302,7 @@ pub fn should_auto_refresh(now: Instant, last_refresh: Instant, last_tick: Insta
 
 struct DashboardRuntime {
     host: gtk4::Box,
-    banner: gtk4::Label,
+    banner: adw::Banner,
     active_page: Rc<RefCell<String>>,
     loader: SnapshotLoader,
     last_snapshot: Option<RuntimeSnapshot>,
@@ -230,13 +313,8 @@ struct DashboardRuntime {
 
 impl DashboardRuntime {
     fn new(root: &gtk4::Box, initial_page: &str, loader: SnapshotLoader) -> Rc<RefCell<Self>> {
-        let banner = gtk4::Label::new(None);
-        banner.set_xalign(0.0);
-        banner.set_wrap(true);
-        banner.set_margin_top(12);
-        banner.set_margin_start(24);
-        banner.set_margin_end(24);
-        banner.set_visible(false);
+        let banner = adw::Banner::new("");
+        banner.set_revealed(false);
         root.append(&banner);
 
         let host = gtk4::Box::new(gtk4::Orientation::Vertical, 0);
@@ -270,10 +348,10 @@ impl DashboardRuntime {
                 self.last_refresh = Instant::now();
                 self.last_tick = self.last_refresh;
                 if let Some(notice) = notice {
-                    self.banner.set_label(&notice.message);
-                    self.banner.set_visible(true);
+                    self.banner.set_title(&notice.message);
+                    self.banner.set_revealed(true);
                 } else {
-                    self.banner.set_visible(false);
+                    self.banner.set_revealed(false);
                 }
 
                 let active_page = self.active_page.clone();
@@ -282,9 +360,7 @@ impl DashboardRuntime {
             Err(error) => {
                 self.degraded = true;
                 self.last_tick = Instant::now();
-                let message = format!(
-                    "Runtime refresh degraded. Keeping the last known dashboard state until the daemon responds again: {error}"
-                );
+                let message = format!("Daemon connection lost — keeping last known state: {error}");
                 if self.last_snapshot.is_none() {
                     let active_page = self.active_page.clone();
                     self.replace_page(snapshot_page_with_active_sync(
@@ -292,8 +368,8 @@ impl DashboardRuntime {
                         active_page,
                     ));
                 }
-                self.banner.set_label(&message);
-                self.banner.set_visible(self.last_snapshot.is_some());
+                self.banner.set_title(&message);
+                self.banner.set_revealed(self.last_snapshot.is_some());
             }
         }
     }
