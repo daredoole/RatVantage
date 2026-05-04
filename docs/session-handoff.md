@@ -11,16 +11,17 @@
 
 ## Milestone (compact)
 
-Pre-alpha: Rust workspace builds with CI green; polkit-gated daemon + GTK + StatusNotifier tray; reversible writes for platform profile, battery charge type, ylogo LED, ideapad toggles (`fn_lock`, `camera_power`, `usb_charging`); fan and GPU surfaces remain **plan / preview only** (see [fan-gpu-execution-policy.md](fan-gpu-execution-policy.md)). GTK UI refactored into modular subpages. Live execute evidence: [live-validation-evidence-runbook.md](live-validation-evidence-runbook.md), [live-write-validation.md](live-write-validation.md).
+Pre-alpha: Rust workspace builds with CI green; polkit-gated daemon + GTK + StatusNotifier tray; reversible writes for platform profile, battery charge type, ylogo LED, ideapad toggles (`fn_lock`, `camera_power`, `usb_charging`); fan and GPU surfaces remain **plan / preview only** (see [fan-gpu-execution-policy.md](fan-gpu-execution-policy.md)). GTK UI refactored into modular subpages with adw::ViewStack + adw::ViewSwitcher navigation and adw::Banner notifications; all write-button handlers now use `make_client()` (respects dev private bus). 13 GTK integration tests green. Live execute evidence: [live-validation-evidence-runbook.md](live-validation-evidence-runbook.md), [live-write-validation.md](live-write-validation.md).
 
 ## Next tasks
 
 1. Run the live write-validation harness in execute mode on supported Legion hardware, **one control at a time**, before broadening the live write surface again.
-2. If the KDE Wayland/NVIDIA GTK black-window issue recurs, treat it as a frontend/compositor bug: keep tray/CLI validation via `scripts/run-local-session-app.sh` while isolating the renderer path.
-3. Keep tray autostart disabled until GNOME-with-extension smoke exists; KDE smoke is not the blocker.
-4. GTK Fans manual curve work stays **after** planning controls have fixture/live evidence; fan preset execution stays disabled until policy and evidence gates are met.
-5. Keep `docs/feature-roadmap.md` / `docs/implementation-plan.md` aligned when scope changes.
-6. Do not enable higher-risk hardware mutation until validators, polkit, rollback, and manual validation exist.
+2. After reinstalling/restarting the system daemon, verify `legion-control-ui --overview` reports `desktop_power_profiles=bus=system ... active=...` on Fedora/Plasma.
+3. If the KDE Wayland/NVIDIA GTK black-window issue recurs, treat it as a frontend/compositor bug: keep tray/CLI validation via `scripts/run-local-session-app.sh` while isolating the renderer path.
+4. Keep tray autostart disabled until GNOME-with-extension smoke exists; KDE smoke is not the blocker.
+5. GTK Fans manual curve work stays **after** planning controls have fixture/live evidence; fan preset execution stays disabled until policy and evidence gates are met.
+6. Keep `docs/feature-roadmap.md` / `docs/implementation-plan.md` aligned when scope changes.
+7. Do not enable higher-risk hardware mutation until validators, polkit, rollback, and manual validation exist.
 
 ## When you finish a slice
 
