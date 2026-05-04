@@ -13,7 +13,7 @@ pub struct CapabilityRegistry {
     pub firmware_attributes: Vec<FirmwareAttributeCapability>,
     pub ideapad_toggles: Vec<IdeapadToggleCapability>,
     pub gpu: Option<GpuCapability>,
-    /// Session-bus `org.freedesktop.UPower.PowerProfiles` probe when `sysfs_root` is `/` (fixtures use `null`).
+    /// `org.freedesktop.UPower.PowerProfiles` probe when `sysfs_root` is `/` (fixtures use `null`).
     #[serde(default)]
     pub power_profiles: Option<PowerProfilesCapability>,
     pub telemetry: TelemetrySnapshot,
@@ -75,7 +75,7 @@ pub fn format_power_profiles_probe_summary(value: Option<&PowerProfilesCapabilit
         Some(p) if p.unique_owner.is_some() => {
             let owner = p.unique_owner.as_deref().unwrap_or("");
             let active = p.active_profile.as_deref().unwrap_or("unknown");
-            format!("owner={owner} active={active}")
+            format!("bus={} owner={owner} active={active}", p.bus)
         }
         Some(p) => p.detail.clone().unwrap_or_else(|| "unavailable".to_owned()),
     }
@@ -359,7 +359,7 @@ pub struct GpuCapability {
 /// Read-only snapshot of the generic desktop power profile API (power-profiles-daemon or another owner).
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct PowerProfilesCapability {
-    /// Typically `session` (per-user bus where PowerProfiles is advertised).
+    /// Usually `system` on Fedora; older/nonstandard stacks may expose this on `session`.
     pub bus: String,
     pub well_known_name: String,
     pub unique_owner: Option<String>,
@@ -1614,7 +1614,7 @@ mod tests {
         };
         assert_eq!(
             format_power_profiles_probe_summary(Some(&live)),
-            "owner=:1.42 active=balanced"
+            "bus=session owner=:1.42 active=balanced"
         );
         let no_owner = PowerProfilesCapability {
             bus: "session".to_owned(),

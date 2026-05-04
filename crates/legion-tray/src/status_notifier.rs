@@ -13,16 +13,18 @@ use ksni::menu::StandardItem;
 use ksni::{Category, MenuItem, Status, ToolTip, Tray};
 use legion_common::WriteExecutionResult;
 use legion_control_ui::{runtime_refresh_notice, LegionControlClient, RuntimeSnapshot};
-use zbus::blocking::{Connection, Proxy};
+use zbus::blocking::{Connection, MessageIterator, Proxy};
 use zbus::zvariant::OwnedValue;
+use zbus::MatchRule;
 
 use crate::{DesktopSession, TrayAction, TrayMenu, TrayMenuEntry, TrayMenuItem, TraySummary};
 
 const TRAY_ID: &str = "org.ratvantage.LegionControl";
 const ICON_NAME: &str = "applications-system";
-const AUTO_REFRESH_INTERVAL: Duration = Duration::from_secs(1);
+const AUTO_REFRESH_INTERVAL: Duration = Duration::from_secs(30);
 const RESUME_REFRESH_GAP: Duration = Duration::from_secs(90);
 const DESKTOP_NOTIFICATION_REUSE_WINDOW: Duration = Duration::from_secs(6);
+const POWER_PROFILES_PATH: &str = "/org/freedesktop/UPower/PowerProfiles";
 
 pub struct StatusNotifierTray {
     summary: TraySummary,
@@ -184,18 +186,34 @@ impl StatusNotifierTray {
     }
 
     fn execute_write_action(&mut self, action: TrayAction) {
-        let (write_status, mut error) =
+        let (write_status, write_notification, mut error) =
             match (self.action_executor)(self.bus_address.as_deref(), &action) {
-                Ok(result) => (
-                    write_result_status(&result),
-                    if result.applied {
-                        None
+                Ok(result) => {
+                    let write_status = write_result_status(&result);
+                    let write_notification = if matches!(
+                        result.status,
+                        legion_common::WriteExecutionStatus::Applied
+                            | legion_common::WriteExecutionStatus::Failed
+                    ) {
+                        write_status
+                            .as_ref()
+                            .map(|status| write_result_notification(&result, status))
                     } else {
-                        Some(result.message)
-                    },
-                ),
+                        None
+                    };
+                    (
+                        write_status,
+                        write_notification,
+                        if result.applied {
+                            None
+                        } else {
+                            Some(result.message)
+                        },
+                    )
+                }
                 Err(action_error) => (
                     Some(format!("Could not reach the daemon: {action_error}")),
+                    None,
                     Some(format!("failed to execute tray action: {action_error}")),
                 ),
             };
@@ -219,6 +237,30 @@ impl StatusNotifierTray {
         self.last_error = error;
         self.last_notice = None;
         self.last_write_status = write_status;
+        if let Some(notification) = write_notification {
+            let notification_now = Instant::now();
+            let replaces_id = reusable_notification_id(
+                self.last_notification_ids.get(notification.key).copied(),
+                self.last_notification_times.get(notification.key).copied(),
+                notification_now,
+            );
+            match (self.notification_sender)(&notification, replaces_id) {
+                Ok(notification_id) => {
+                    self.last_notification_ids
+                        .insert(notification.key, notification_id);
+                    self.last_notification_times
+                        .insert(notification.key, notification_now);
+                }
+                Err(notification_error) => {
+                    let message =
+                        format!("failed to send desktop notification: {notification_error}");
+                    self.last_error = Some(match self.last_error.take() {
+                        Some(previous) => format!("{previous}; {message}"),
+                        None => message,
+                    });
+                }
+            }
+        }
     }
 
     fn tooltip_description(&self) -> String {
@@ -319,13 +361,17 @@ pub fn run_status_notifier_tray(bus_address: Option<String>) -> Result<()> {
     let handle = tray
         .spawn()
         .context("failed to register StatusNotifier tray item")?;
+    let power_profiles_changed = Arc::new(AtomicBool::new(false));
+    spawn_power_profiles_change_flag(Arc::clone(&power_profiles_changed));
     let mut last_refresh = Instant::now();
     let mut last_tick = last_refresh;
 
     while !shutdown_requested.load(Ordering::Relaxed) && !handle.is_closed() {
         thread::sleep(Duration::from_millis(250));
         let now = Instant::now();
-        if should_auto_refresh(now, last_refresh, last_tick) {
+        if power_profiles_changed.swap(false, Ordering::Relaxed)
+            || should_auto_refresh(now, last_refresh, last_tick)
+        {
             let _ = handle.update(|tray: &mut StatusNotifierTray| tray.refresh_status());
             last_refresh = now;
         }
@@ -333,6 +379,32 @@ pub fn run_status_notifier_tray(bus_address: Option<String>) -> Result<()> {
     }
 
     handle.shutdown().wait();
+    Ok(())
+}
+
+fn spawn_power_profiles_change_flag(changed: Arc<AtomicBool>) {
+    thread::spawn(move || {
+        if let Err(error) = watch_power_profiles_changes(move || {
+            changed.store(true, Ordering::Relaxed);
+        }) {
+            eprintln!("legion-control-tray: PowerProfiles signal watch unavailable: {error}");
+        }
+    });
+}
+
+fn watch_power_profiles_changes(mut notify: impl FnMut()) -> zbus::Result<()> {
+    let connection = Connection::system()?;
+    let rule = MatchRule::builder()
+        .msg_type(zbus::message::Type::Signal)
+        .path(POWER_PROFILES_PATH)?
+        .interface("org.freedesktop.DBus.Properties")?
+        .member("PropertiesChanged")?
+        .build();
+    let mut messages = MessageIterator::for_match_rule(rule, &connection, Some(8))?;
+    for message in &mut messages {
+        message?;
+        notify();
+    }
     Ok(())
 }
 
@@ -589,7 +661,16 @@ fn is_write_action(action: &TrayAction) -> bool {
 
 fn write_result_status(result: &WriteExecutionResult) -> Option<String> {
     match result.status {
-        legion_common::WriteExecutionStatus::Applied => None,
+        legion_common::WriteExecutionStatus::Applied => Some(format!(
+            "Changed {} to {}.",
+            write_target_label(&result.plan.method),
+            humanize_write_value(
+                result
+                    .readback_value
+                    .as_deref()
+                    .unwrap_or(&result.plan.requested_value)
+            )
+        )),
         legion_common::WriteExecutionStatus::BlockedByPolicy => {
             Some("Change blocked: daemon has writes disabled.".to_owned())
         }
@@ -604,6 +685,34 @@ fn write_result_status(result: &WriteExecutionResult) -> Option<String> {
             }
         }
     }
+}
+
+fn write_result_notification(result: &WriteExecutionResult, status: &str) -> DesktopNotification {
+    let title = match result.status {
+        legion_common::WriteExecutionStatus::Applied => write_target_label(&result.plan.method),
+        legion_common::WriteExecutionStatus::Failed => "Write failed readback",
+        legion_common::WriteExecutionStatus::BlockedByPolicy => "Write blocked",
+        legion_common::WriteExecutionStatus::BlockedByAuthorization => "Authorization blocked",
+    };
+    DesktopNotification {
+        key: "write_action",
+        title: title.to_owned(),
+        body: status.to_owned(),
+    }
+}
+
+fn write_target_label(method: &str) -> &'static str {
+    match method {
+        "SetPlatformProfile" => "platform profile",
+        "SetBatteryChargeType" => "battery charging",
+        "SetLedState" => "LED",
+        "SetIdeapadToggle" => "toggle",
+        _ => "setting",
+    }
+}
+
+fn humanize_write_value(value: &str) -> String {
+    humanize_profile(&value.replace('_', "-"))
 }
 
 #[cfg(test)]
@@ -641,7 +750,7 @@ mod tests {
         let menu = tray.menu();
 
         assert!(menu_has_disabled_item(&menu, "82WM Legion Pro 5 16ARX8"));
-        assert!(menu_has_disabled_item(&menu, "Power mode: Balanced"));
+        assert!(menu_has_disabled_item(&menu, "Platform profile: Balanced"));
         assert!(menu_has_disabled_item(&menu, "Charge type: Standard"));
         assert!(menu_has_disabled_item(
             &menu,
@@ -676,13 +785,24 @@ mod tests {
             &menu,
             "Capabilities: 1 available, 1 missing"
         ));
-        assert!(menu_has_disabled_item(&menu, "Power mode"));
-        assert!(menu_has_disabled_item(&menu, "Battery charging"));
-        assert!(menu_has_disabled_item(&menu, "Logo light"));
-        assert!(menu_has_disabled_item(&menu, "Fn-lock"));
         assert!(menu_has_disabled_item(
             &menu,
-            "Camera power: on · change in Dashboard"
+            "Platform profile (current: Balanced)"
+        ));
+        assert!(menu_has_disabled_item(&menu, "Balanced (current)"));
+        assert!(menu_has_disabled_item(
+            &menu,
+            "Battery charging (current: Standard)"
+        ));
+        assert!(menu_has_disabled_item(&menu, "Standard (current)"));
+        assert!(menu_has_disabled_item(
+            &menu,
+            "Logo light (current: on, guarded)"
+        ));
+        assert!(menu_has_disabled_item(&menu, "Fn-lock (current: off)"));
+        assert!(menu_has_disabled_item(
+            &menu,
+            "Camera power: on · guarded change in Dashboard"
         ));
         assert!(menu_has_enabled_item(&menu, "Low Power"));
         assert!(menu_has_enabled_item(&menu, "Performance"));
@@ -729,7 +849,10 @@ mod tests {
         tray.handle_action(TrayAction::SetPlatformProfile("performance".to_owned()));
 
         let menu = tray.menu();
-        assert!(menu_has_disabled_item(&menu, "Power mode: Performance"));
+        assert!(menu_has_disabled_item(
+            &menu,
+            "Platform profile: Performance"
+        ));
         assert!(menu_has_enabled_item(&menu, "Balanced"));
         assert!(tray.last_error.is_none());
     }
@@ -768,6 +891,10 @@ mod tests {
         assert!(menu_has_disabled_item(&menu, "Charge type: Conservation"));
         assert!(menu_has_enabled_item(&menu, "Standard"));
         assert!(tray.last_error.is_none());
+        assert_eq!(
+            tray.last_write_status.as_deref(),
+            Some("Changed battery charging to Conservation.")
+        );
     }
 
     #[test]
@@ -851,6 +978,7 @@ mod tests {
     #[test]
     fn status_notifier_activation_preserves_menu_and_records_error_on_write_failure() {
         let shutdown_requested = Arc::new(AtomicBool::new(false));
+        let notifications = Arc::new(std::sync::Mutex::new(Vec::<DesktopNotification>::new()));
         let state = Arc::new(std::sync::Mutex::new(tray_state_fixture(
             "balanced", "Standard", true, false,
         )));
@@ -868,14 +996,14 @@ mod tests {
                     Some("balanced".to_owned()),
                 ))
             }),
-            noop_notification_sender(),
+            recording_notification_sender(Arc::clone(&notifications)),
         );
         let mut tray = tray;
 
         tray.handle_action(TrayAction::SetPlatformProfile("performance".to_owned()));
 
         let menu = tray.menu();
-        assert!(menu_has_disabled_item(&menu, "Power mode: Balanced"));
+        assert!(menu_has_disabled_item(&menu, "Platform profile: Balanced"));
         assert_eq!(
             tray.last_error.as_deref(),
             Some("platform profile read-back mismatch after write")
@@ -885,6 +1013,14 @@ mod tests {
             &menu,
             "Change failed; see the tray error line for the daemon message."
         ));
+        assert_eq!(
+            notifications.lock().unwrap().as_slice(),
+            [DesktopNotification {
+                key: "write_action",
+                title: "Write failed readback".to_owned(),
+                body: "Change failed; see the tray error line for the daemon message.".to_owned(),
+            }]
+        );
     }
 
     #[test]

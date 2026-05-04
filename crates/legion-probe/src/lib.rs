@@ -177,6 +177,7 @@ fn detect_battery_charge_type(root: &Path) -> Option<BatteryChargeTypeCapability
     let current =
         read_trim(&path).or_else(|| choices_raw.as_deref().and_then(parse_marked_current_choice));
     let choices = choices_raw.map_or_else(Vec::new, |value| parse_choices(&value));
+    let write_path = if path.exists() { &path } else { &choices_path };
 
     if current.is_none() && choices.is_empty() {
         return None;
@@ -185,7 +186,7 @@ fn detect_battery_charge_type(root: &Path) -> Option<BatteryChargeTypeCapability
     Some(BatteryChargeTypeCapability {
         current,
         choices,
-        path: path.display().to_string(),
+        path: write_path.display().to_string(),
         choices_path: choices_path.display().to_string(),
     })
 }
@@ -583,6 +584,12 @@ mod tests {
                 "Long_Life".to_owned()
             ])
         );
+        assert!(registry
+            .battery_charge_type
+            .as_ref()
+            .unwrap()
+            .path
+            .ends_with("sys/class/power_supply/BAT0/charge_types"));
         assert!(registry
             .battery_charge_type
             .as_ref()

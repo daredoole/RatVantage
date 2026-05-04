@@ -1,8 +1,9 @@
-//! Read-only session-bus probe for `org.freedesktop.UPower.PowerProfiles` (generic desktop power profile).
+//! Read-only D-Bus probe for `org.freedesktop.UPower.PowerProfiles` (generic desktop power profile).
 
 use std::path::Path;
 
 use legion_common::{CapabilityStatus, PowerProfilesCapability};
+use zbus::blocking::Connection;
 use zbus::blocking::Proxy;
 
 const WELL_KNOWN: &str = "org.freedesktop.UPower.PowerProfiles";
@@ -15,16 +16,41 @@ pub fn detect_power_profiles(sysfs_root: &Path) -> Option<PowerProfilesCapabilit
         return None;
     }
 
-    let conn = match zbus::blocking::Connection::session() {
+    let system = detect_power_profiles_on_bus("system", Connection::system);
+    if system
+        .as_ref()
+        .and_then(|capability| capability.unique_owner.as_ref())
+        .is_some()
+    {
+        return system;
+    }
+
+    let session = detect_power_profiles_on_bus("session", Connection::session);
+    if session
+        .as_ref()
+        .and_then(|capability| capability.unique_owner.as_ref())
+        .is_some()
+    {
+        return session;
+    }
+
+    system.or(session)
+}
+
+fn detect_power_profiles_on_bus(
+    bus: &str,
+    connect: fn() -> zbus::Result<Connection>,
+) -> Option<PowerProfilesCapability> {
+    let conn = match connect() {
         Ok(c) => c,
         Err(error) => {
             return Some(PowerProfilesCapability {
-                bus: "session".to_owned(),
+                bus: bus.to_owned(),
                 well_known_name: WELL_KNOWN.to_owned(),
                 unique_owner: None,
                 active_profile: None,
                 status: CapabilityStatus::Missing,
-                detail: Some(format!("session_bus_unavailable: {error}")),
+                detail: Some(format!("{bus}_bus_unavailable: {error}")),
             });
         }
     };
@@ -38,7 +64,7 @@ pub fn detect_power_profiles(sysfs_root: &Path) -> Option<PowerProfilesCapabilit
         Ok(p) => p,
         Err(error) => {
             return Some(PowerProfilesCapability {
-                bus: "session".to_owned(),
+                bus: bus.to_owned(),
                 well_known_name: WELL_KNOWN.to_owned(),
                 unique_owner: None,
                 active_profile: None,
@@ -53,7 +79,7 @@ pub fn detect_power_profiles(sysfs_root: &Path) -> Option<PowerProfilesCapabilit
             Ok(s) => s,
             Err(error) => {
                 return Some(PowerProfilesCapability {
-                    bus: "session".to_owned(),
+                    bus: bus.to_owned(),
                     well_known_name: WELL_KNOWN.to_owned(),
                     unique_owner: None,
                     active_profile: None,
@@ -66,7 +92,7 @@ pub fn detect_power_profiles(sysfs_root: &Path) -> Option<PowerProfilesCapabilit
             if name.as_str() == "org.freedesktop.DBus.Error.NameHasNoOwner" =>
         {
             return Some(PowerProfilesCapability {
-                bus: "session".to_owned(),
+                bus: bus.to_owned(),
                 well_known_name: WELL_KNOWN.to_owned(),
                 unique_owner: None,
                 active_profile: None,
@@ -76,7 +102,7 @@ pub fn detect_power_profiles(sysfs_root: &Path) -> Option<PowerProfilesCapabilit
         }
         Err(error) => {
             return Some(PowerProfilesCapability {
-                bus: "session".to_owned(),
+                bus: bus.to_owned(),
                 well_known_name: WELL_KNOWN.to_owned(),
                 unique_owner: None,
                 active_profile: None,
@@ -91,7 +117,7 @@ pub fn detect_power_profiles(sysfs_root: &Path) -> Option<PowerProfilesCapabilit
         .and_then(|proxy| proxy.get_property::<String>("ActiveProfile").ok());
 
     Some(PowerProfilesCapability {
-        bus: "session".to_owned(),
+        bus: bus.to_owned(),
         well_known_name: WELL_KNOWN.to_owned(),
         unique_owner: Some(owner),
         active_profile,

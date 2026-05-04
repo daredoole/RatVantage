@@ -4,8 +4,8 @@ use anyhow::Result;
 use legion_common::PlatformProfileCapability;
 
 use super::shared::{
-    append_error, build_write_controls, build_write_feedback_group, info_row, make_client,
-    request_dashboard_refresh, section_note, spawn_dbus_call,
+    append_error, build_write_controls, info_row, make_client, request_dashboard_refresh,
+    section_note, spawn_dbus_call,
 };
 
 pub fn profiles_page(diagnostics: Result<DiagnosticsBundle>) -> adw::PreferencesPage {
@@ -56,8 +56,6 @@ fn append_profiles(page: &adw::PreferencesPage, bundle: &DiagnosticsBundle) {
         let controls = build_platform_profile_controls(None, None);
         page.add(&controls);
     }
-
-    page.add(&build_write_feedback_group("Platform profile"));
 
     if let Some(pp) = &bundle.raw_probe_report.power_profiles {
         let desktop = adw::PreferencesGroup::new();

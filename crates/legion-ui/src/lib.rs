@@ -454,6 +454,26 @@ pub fn runtime_refresh_notice(
             ));
         }
 
+        let previous_power_profile = previous
+            .diagnostics
+            .raw_probe_report
+            .power_profiles
+            .as_ref()
+            .and_then(|profile| profile.active_profile.as_deref())
+            .unwrap_or("unknown");
+        let current_power_profile = current
+            .diagnostics
+            .raw_probe_report
+            .power_profiles
+            .as_ref()
+            .and_then(|profile| profile.active_profile.as_deref())
+            .unwrap_or("unknown");
+        if previous_power_profile != current_power_profile {
+            messages.push(format!(
+                "Desktop power profile changed from `{previous_power_profile}` to `{current_power_profile}`."
+            ));
+        }
+
         let previous_charge_type = previous
             .diagnostics
             .raw_probe_report
@@ -571,7 +591,7 @@ mod tests {
     use super::*;
     use legion_common::{
         Capability, CapabilityRegistry, CapabilityStatus, FanCurvePointSnapshot, FanCurveSnapshot,
-        HardwareSummary, PlatformProfileCapability, RiskLevel,
+        HardwareSummary, PlatformProfileCapability, PowerProfilesCapability, RiskLevel,
     };
 
     #[test]
@@ -628,6 +648,22 @@ mod tests {
             runtime_refresh_notice(Some(&snapshot), &snapshot, false),
             None
         );
+    }
+
+    #[test]
+    fn runtime_refresh_notice_reports_desktop_power_profile_drift() {
+        let mut previous = sample_runtime_snapshot("balanced", "Standard", 2, 0, None);
+        previous.diagnostics.raw_probe_report.power_profiles =
+            Some(sample_power_profiles("power-saver"));
+        let mut current = sample_runtime_snapshot("balanced", "Standard", 2, 0, None);
+        current.diagnostics.raw_probe_report.power_profiles =
+            Some(sample_power_profiles("balanced"));
+
+        let notice = runtime_refresh_notice(Some(&previous), &current, false).unwrap();
+
+        assert!(notice
+            .message
+            .contains("Desktop power profile changed from `power-saver` to `balanced`"));
     }
 
     fn sample_runtime_snapshot(
@@ -701,6 +737,17 @@ mod tests {
                 path: "/tmp/hwmon/pwm1_auto_point1_temp".to_owned(),
                 value: "42000".to_owned(),
             }],
+        }
+    }
+
+    fn sample_power_profiles(active_profile: &str) -> PowerProfilesCapability {
+        PowerProfilesCapability {
+            bus: "system".to_owned(),
+            well_known_name: "org.freedesktop.UPower.PowerProfiles".to_owned(),
+            unique_owner: Some(":1.42".to_owned()),
+            active_profile: Some(active_profile.to_owned()),
+            status: CapabilityStatus::ProbeOnly,
+            detail: None,
         }
     }
 }

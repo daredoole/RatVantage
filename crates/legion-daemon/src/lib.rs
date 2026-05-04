@@ -327,6 +327,7 @@ impl LegionControl {
                 "platform profile writes are disabled by daemon policy",
             ));
         }
+        let plan = enabled_write_plan(plan);
         if let Err(reason) = self.authorizer.authorize(&plan.polkit_action, sender) {
             return Ok(WriteExecutionResult::blocked_by_authorization(plan, reason));
         }
@@ -391,6 +392,7 @@ impl LegionControl {
                 "battery charge type writes are disabled by daemon policy",
             ));
         }
+        let plan = enabled_write_plan(plan);
         if let Err(reason) = self.authorizer.authorize(&plan.polkit_action, sender) {
             return Ok(WriteExecutionResult::blocked_by_authorization(plan, reason));
         }
@@ -456,6 +458,7 @@ impl LegionControl {
                 "LED writes are disabled by daemon policy",
             ));
         }
+        let plan = enabled_write_plan(plan);
         if let Err(reason) = self.authorizer.authorize(&plan.polkit_action, sender) {
             return Ok(WriteExecutionResult::blocked_by_authorization(plan, reason));
         }
@@ -520,6 +523,7 @@ impl LegionControl {
                 ideapad_toggle_policy_message(toggle_id),
             ));
         }
+        let plan = enabled_write_plan(plan);
         if let Err(reason) = self.authorizer.authorize(&plan.polkit_action, sender) {
             return Ok(WriteExecutionResult::blocked_by_authorization(plan, reason));
         }
@@ -1084,6 +1088,16 @@ fn to_plan_json(result: Result<WriteDryRunPlan, PlanningError>) -> fdo::Result<S
     }
 }
 
+fn enabled_write_plan(mut plan: WriteDryRunPlan) -> WriteDryRunPlan {
+    plan.safety_notes
+        .retain(|note| !note.to_ascii_lowercase().contains("dry-run planning only"));
+    plan.safety_notes.push(
+        "write method enabled by daemon policy; applied writes still require polkit and read-back verification"
+            .to_owned(),
+    );
+    plan
+}
+
 fn planning_to_fdo(error: PlanningError) -> fdo::Error {
     match error {
         PlanningError::RegistryUnavailable => {
@@ -1227,5 +1241,34 @@ mod tests {
                 "SetIdeapadToggle"
             ]
         );
+    }
+
+    #[test]
+    fn enabled_write_plan_replaces_dry_run_safety_note() {
+        let plan = WriteDryRunPlan {
+            method: "SetPlatformProfile".to_owned(),
+            capability_id: "platform_profile".to_owned(),
+            polkit_action: "org.ratvantage.LegionControl1.set-platform-profile".to_owned(),
+            path: "/tmp/platform_profile".to_owned(),
+            previous_value: "quiet".to_owned(),
+            requested_value: "balanced".to_owned(),
+            readback_required: true,
+            rollback_value: "quiet".to_owned(),
+            rollback_instructions: Vec::new(),
+            reboot_required: false,
+            safety_notes: vec!["write method remains disabled; dry-run planning only".to_owned()],
+            steps: Vec::new(),
+        };
+
+        let plan = enabled_write_plan(plan);
+
+        assert!(!plan
+            .safety_notes
+            .iter()
+            .any(|note| note.contains("dry-run planning only")));
+        assert!(plan
+            .safety_notes
+            .iter()
+            .any(|note| note.contains("write method enabled by daemon policy")));
     }
 }

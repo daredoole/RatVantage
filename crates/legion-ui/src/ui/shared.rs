@@ -139,16 +139,6 @@ pub(crate) fn write_feedback_row(capability_label: &'static str) -> adw::ActionR
         .build()
 }
 
-pub(crate) fn build_write_feedback_group(capability_label: &str) -> adw::PreferencesGroup {
-    let group = adw::PreferencesGroup::new();
-    group.set_title("Last write");
-    group.add(&info_row(
-        capability_label,
-        "Policy, authorization, and read-back results appear inline.",
-    ));
-    group
-}
-
 pub(crate) fn clone_result<T: Clone>(result: &Result<T>) -> Result<T> {
     match result {
         Ok(value) => Ok(value.clone()),
@@ -340,6 +330,9 @@ where
 
     let apply = gtk4::Button::with_label(button_label);
     apply.set_sensitive(can_apply);
+    apply.add_css_class("suggested-action");
+    apply.add_css_class("pill");
+    apply.set_valign(gtk4::Align::Center);
 
     let row = adw::ActionRow::builder()
         .title(chooser_title)

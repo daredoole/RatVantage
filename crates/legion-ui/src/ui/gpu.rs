@@ -93,8 +93,15 @@ fn build_gpu_mode_controls(
     chooser.set_sensitive(!GPU_MODE_CHOICES.is_empty());
 
     let preview = gtk4::Button::with_label("Preview plan");
-    let record_pending = gtk4::Button::with_label("Record pending state");
-    let clear_pending = gtk4::Button::with_label("Clear pending state");
+    preview.add_css_class("pill");
+    preview.set_valign(gtk4::Align::Center);
+    let record_pending = gtk4::Button::with_label("Record pending");
+    record_pending.add_css_class("pill");
+    record_pending.set_valign(gtk4::Align::Center);
+    let clear_pending = gtk4::Button::with_label("Clear pending");
+    clear_pending.add_css_class("pill");
+    clear_pending.add_css_class("destructive-action");
+    clear_pending.set_valign(gtk4::Align::Center);
 
     let chooser_row = adw::ActionRow::builder()
         .title("Target mode")

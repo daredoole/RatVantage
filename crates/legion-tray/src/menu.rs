@@ -75,8 +75,19 @@ impl TrayMenu {
             .and_then(|profile| profile.current.as_deref())
         {
             entries.push(TrayMenuEntry::Item(info_item(format!(
-                "Power mode: {}",
+                "Platform profile: {}",
                 humanize_choice(profile)
+            ))));
+        }
+
+        if let Some(power_profile) = report
+            .power_profiles
+            .as_ref()
+            .and_then(|profile| profile.active_profile.as_deref())
+        {
+            entries.push(TrayMenuEntry::Item(info_item(format!(
+                "Desktop power profile: {}",
+                humanize_choice(power_profile)
             ))));
         }
 
@@ -209,7 +220,7 @@ fn append_quick_actions(entries: &mut Vec<TrayMenuEntry>, report: &CapabilityReg
     let mut sections: Vec<Vec<TrayMenuEntry>> = Vec::new();
 
     if let Some(section) = quick_action_section(
-        "Power mode",
+        "Platform profile",
         report
             .platform_profile
             .as_ref()
@@ -281,20 +292,27 @@ where
 {
     let choices = choices?;
     let current = current.flatten();
-    let actionable = choices
-        .iter()
-        .filter(|choice| Some(choice.as_str()) != current)
-        .collect::<Vec<_>>();
-    if actionable.is_empty() {
+    if choices.len() <= 1 {
         return None;
     }
 
-    let mut entries = vec![TrayMenuEntry::Item(info_item(header.to_owned()))];
-    for choice in actionable {
-        entries.push(TrayMenuEntry::Item(action_item(
-            label(choice),
-            action(choice),
-        )));
+    let header = match current {
+        Some(current) => format!("{header} (current: {})", label(current)),
+        None => header.to_owned(),
+    };
+    let mut entries = vec![TrayMenuEntry::Item(info_item(header))];
+    for choice in choices {
+        if Some(choice.as_str()) == current {
+            entries.push(TrayMenuEntry::Item(info_item(format!(
+                "{} (current)",
+                label(choice)
+            ))));
+        } else {
+            entries.push(TrayMenuEntry::Item(action_item(
+                label(choice),
+                action(choice),
+            )));
+        }
     }
     Some(entries)
 }
@@ -309,7 +327,10 @@ fn led_quick_action_section(report: &CapabilityRegistry) -> Option<Vec<TrayMenuE
         return None;
     }
 
-    let mut entries = vec![TrayMenuEntry::Item(info_item("Logo light".to_owned()))];
+    let mut entries = vec![TrayMenuEntry::Item(info_item(format!(
+        "Logo light (current: {}, guarded)",
+        binary_state_label(current).unwrap_or("unknown")
+    )))];
     entries.push(TrayMenuEntry::Item(action_item(
         "Turn off",
         TrayAction::SetLedState(led.name.clone(), false),
@@ -321,10 +342,12 @@ fn led_quick_action_section(report: &CapabilityRegistry) -> Option<Vec<TrayMenuE
     for entry in &mut entries {
         if let TrayMenuEntry::Item(item) = entry {
             if item.label == "Turn off" && current == 0 {
+                item.label = "Turn off (current)".to_owned();
                 item.enabled = false;
                 item.action = TrayAction::NoOp;
             }
             if item.label == "Turn on" && current == 1 {
+                item.label = "Turn on (current)".to_owned();
                 item.enabled = false;
                 item.action = TrayAction::NoOp;
             }
@@ -399,7 +422,10 @@ fn ideapad_toggle_quick_action_section(report: &CapabilityRegistry) -> Option<Ve
     }
     let current = toggle.current_value.as_deref()?;
 
-    let mut entries = vec![TrayMenuEntry::Item(info_item("Fn-lock".to_owned()))];
+    let mut entries = vec![TrayMenuEntry::Item(info_item(format!(
+        "Fn-lock (current: {})",
+        binary_toggle_state_label(current).unwrap_or("unknown")
+    )))];
     entries.push(TrayMenuEntry::Item(action_item(
         "Turn off",
         TrayAction::SetIdeapadToggle(toggle.name.clone(), false),
@@ -411,10 +437,12 @@ fn ideapad_toggle_quick_action_section(report: &CapabilityRegistry) -> Option<Ve
     for entry in &mut entries {
         if let TrayMenuEntry::Item(item) = entry {
             if item.label == "Turn off" && current == "0" {
+                item.label = "Turn off (current)".to_owned();
                 item.enabled = false;
                 item.action = TrayAction::NoOp;
             }
             if item.label == "Turn on" && current == "1" {
+                item.label = "Turn on (current)".to_owned();
                 item.enabled = false;
                 item.action = TrayAction::NoOp;
             }
@@ -434,9 +462,9 @@ fn camera_power_guidance_section(report: &CapabilityRegistry) -> Option<Vec<Tray
         TrayMenuEntry::Item(info_item(format!(
             "Camera power: {}",
             if toggle.current_value.as_deref() == Some("1") {
-                "on · change in Dashboard"
+                "on · guarded change in Dashboard"
             } else {
-                "off · change in Dashboard"
+                "off · guarded change in Dashboard"
             }
         ))),
         TrayMenuEntry::Item(action_item("Camera settings", TrayAction::OpenDashboard)),
@@ -454,9 +482,9 @@ fn usb_charging_guidance_section(report: &CapabilityRegistry) -> Option<Vec<Tray
         TrayMenuEntry::Item(info_item(format!(
             "USB charging: {}",
             if toggle.current_value.as_deref() == Some("1") {
-                "on · change in Dashboard"
+                "on · confirmed change in Dashboard"
             } else {
-                "off · change in Dashboard"
+                "off · confirmed change in Dashboard"
             }
         ))),
         TrayMenuEntry::Item(action_item(
@@ -525,7 +553,8 @@ mod tests {
     use legion_common::{
         BatteryChargeTypeCapability, BatteryTelemetry, Capability, CapabilityRegistry,
         CapabilityStatus, FanCurvePointSnapshot, FanCurveSnapshot, GpuModePending, HardwareSummary,
-        HwmonSensor, IdeapadToggleCapability, LedCapability, PlatformProfileCapability, RiskLevel,
+        HwmonSensor, IdeapadToggleCapability, LedCapability, PlatformProfileCapability,
+        PowerProfilesCapability, RiskLevel,
     };
 
     use super::*;
@@ -557,6 +586,14 @@ mod tests {
                 ],
                 path: "/tmp/platform_profile".to_owned(),
                 choices_path: "/tmp/platform_profile_choices".to_owned(),
+            }),
+            power_profiles: Some(PowerProfilesCapability {
+                bus: "system".to_owned(),
+                well_known_name: "org.freedesktop.UPower.PowerProfiles".to_owned(),
+                unique_owner: Some(":1.42".to_owned()),
+                active_profile: Some("power-saver".to_owned()),
+                status: CapabilityStatus::ProbeOnly,
+                detail: None,
             }),
             battery_charge_type: Some(BatteryChargeTypeCapability {
                 current: Some("Standard".to_owned()),
@@ -657,7 +694,8 @@ mod tests {
             disabled_labels(&menu),
             [
                 "82WM Legion Pro 5 16ARX8",
-                "Power mode: Balanced",
+                "Platform profile: Balanced",
+                "Desktop power profile: Power Saver",
                 "Charge type: Standard",
                 "Battery: 79% / Charging / Good",
                 "Logo LED: on",
@@ -667,14 +705,16 @@ mod tests {
                 "Fan: CPU Fan 2410 RPM",
                 "GPU: switch to hybrid pending (was nvidia) — reboot required",
                 "Unavailable: gpu",
-                "Power mode",
-                "Battery charging",
-                "Logo light",
-                "Turn on",
-                "Fn-lock",
-                "Turn off",
-                "Camera power: on · change in Dashboard",
-                "USB charging: off · change in Dashboard",
+                "Platform profile (current: Balanced)",
+                "Balanced (current)",
+                "Battery charging (current: Standard)",
+                "Standard (current)",
+                "Logo light (current: on, guarded)",
+                "Turn on (current)",
+                "Fn-lock (current: off)",
+                "Turn off (current)",
+                "Camera power: on · guarded change in Dashboard",
+                "USB charging: off · confirmed change in Dashboard",
             ]
         );
         assert_eq!(
@@ -782,7 +822,7 @@ mod tests {
 
         assert!(!menu_labels(&menu)
             .iter()
-            .any(|label| label == &"Power mode"));
+            .any(|label| label == &"Platform profile"));
         assert!(!menu_labels(&menu)
             .iter()
             .any(|label| label == &"Battery charging"));

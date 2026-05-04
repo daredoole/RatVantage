@@ -271,8 +271,8 @@ fn dashboard_pages_render_quick_apply_and_gpu_controls() {
             .is_some()
     );
     assert!(gpu_text.iter().any(|text| text == "Preview plan"));
-    assert!(gpu_text.iter().any(|text| text == "Record pending state"));
-    assert!(gpu_text.iter().any(|text| text == "Clear pending state"));
+    assert!(gpu_text.iter().any(|text| text == "Record pending"));
+    assert!(gpu_text.iter().any(|text| text == "Clear pending"));
     assert!(gpu_text.iter().any(|text| text == "Plan preview"));
     assert!(gpu_text.iter().any(|text| text == "Recovery guidance"));
 

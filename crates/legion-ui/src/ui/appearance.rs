@@ -6,9 +6,9 @@ use std::cell::RefCell;
 use std::rc::Rc;
 
 use super::shared::{
-    append_error, build_write_feedback_group, info_row, make_client, request_dashboard_refresh,
-    spawn_dbus_call, status_pill, store_write_feedback_state, write_feedback_row,
-    write_feedback_subtitle, write_feedback_title, PillTone,
+    append_error, info_row, make_client, request_dashboard_refresh, spawn_dbus_call, status_pill,
+    store_write_feedback_state, write_feedback_row, write_feedback_subtitle, write_feedback_title,
+    PillTone,
 };
 
 pub fn appearance_page(diagnostics: Result<DiagnosticsBundle>) -> adw::PreferencesPage {
@@ -44,7 +44,6 @@ fn append_appearance(page: &adw::PreferencesPage, bundle: &DiagnosticsBundle) {
             ylogo_row,
         ));
     }
-    page.add(&build_write_feedback_group("Y-logo LED"));
 
     let toggles = adw::PreferencesGroup::new();
     toggles.set_title("Firmware Toggles");
@@ -88,9 +87,6 @@ fn append_appearance(page: &adw::PreferencesPage, bundle: &DiagnosticsBundle) {
             usb_charging_row,
         ));
     }
-    page.add(&build_write_feedback_group("Fn-lock"));
-    page.add(&build_write_feedback_group("Camera power"));
-    page.add(&build_write_feedback_group("USB charging"));
 }
 
 fn build_led_state_controls(
@@ -119,6 +115,11 @@ fn build_led_state_controls(
     let on = gtk4::Button::with_label("Turn on");
     off.set_sensitive(led.brightness != Some(0));
     on.set_sensitive(led.brightness != Some(1));
+    off.add_css_class("pill");
+    off.set_valign(gtk4::Align::Center);
+    on.add_css_class("suggested-action");
+    on.add_css_class("pill");
+    on.set_valign(gtk4::Align::Center);
     row.add_suffix(&off);
     row.add_suffix(&on);
     group.add(&row);
@@ -186,6 +187,11 @@ fn build_ideapad_toggle_controls(
     let on = gtk4::Button::with_label("Turn on");
     off.set_sensitive(toggle.current_value.as_deref() != Some("0"));
     on.set_sensitive(toggle.current_value.as_deref() != Some("1"));
+    off.add_css_class("pill");
+    off.set_valign(gtk4::Align::Center);
+    on.add_css_class("suggested-action");
+    on.add_css_class("pill");
+    on.set_valign(gtk4::Align::Center);
     row.add_suffix(&off);
     row.add_suffix(&on);
     group.add(&row);
@@ -252,6 +258,10 @@ fn build_camera_power_controls(
     let request_on = gtk4::Button::with_label("Request on");
     request_off.set_sensitive(toggle.current_value.as_deref() != Some("0"));
     request_on.set_sensitive(toggle.current_value.as_deref() != Some("1"));
+    request_off.add_css_class("pill");
+    request_off.set_valign(gtk4::Align::Center);
+    request_on.add_css_class("pill");
+    request_on.set_valign(gtk4::Align::Center);
     row.add_suffix(&request_off);
     row.add_suffix(&request_on);
     group.add(&row);
@@ -265,6 +275,11 @@ fn build_camera_power_controls(
     let cancel = gtk4::Button::with_label("Cancel");
     confirm.set_sensitive(false);
     cancel.set_sensitive(false);
+    confirm.add_css_class("suggested-action");
+    confirm.add_css_class("pill");
+    confirm.set_valign(gtk4::Align::Center);
+    cancel.add_css_class("pill");
+    cancel.set_valign(gtk4::Align::Center);
     confirm_row.add_suffix(&confirm);
     confirm_row.add_suffix(&cancel);
     group.add(&confirm_row);
@@ -388,6 +403,10 @@ fn build_usb_charging_controls(
     let request_on = gtk4::Button::with_label("Request on");
     request_off.set_sensitive(toggle.current_value.as_deref() != Some("0"));
     request_on.set_sensitive(toggle.current_value.as_deref() != Some("1"));
+    request_off.add_css_class("pill");
+    request_off.set_valign(gtk4::Align::Center);
+    request_on.add_css_class("pill");
+    request_on.set_valign(gtk4::Align::Center);
     row.add_suffix(&request_off);
     row.add_suffix(&request_on);
     group.add(&row);
@@ -401,6 +420,11 @@ fn build_usb_charging_controls(
     let cancel = gtk4::Button::with_label("Cancel");
     confirm.set_sensitive(false);
     cancel.set_sensitive(false);
+    confirm.add_css_class("suggested-action");
+    confirm.add_css_class("pill");
+    confirm.set_valign(gtk4::Align::Center);
+    cancel.add_css_class("pill");
+    cancel.set_valign(gtk4::Align::Center);
     confirm_row.add_suffix(&confirm);
     confirm_row.add_suffix(&cancel);
     group.add(&confirm_row);

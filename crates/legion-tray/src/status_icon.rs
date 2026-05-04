@@ -5,6 +5,7 @@ use legion_control_ui::UiStatus;
 
 struct TooltipTelemetry<'a> {
     platform_profile: Option<&'a str>,
+    desktop_power_profile: Option<&'a str>,
     fan_rpm: Option<&'a str>,
     gpu_pending_reboot: Option<&'a str>,
     fan_curve_snapshot: Option<&'a str>,
@@ -19,6 +20,7 @@ pub struct TraySummary {
     pub missing_capability_count: usize,
     pub capability_ids: Vec<String>,
     pub platform_profile: Option<String>,
+    pub desktop_power_profile: Option<String>,
     pub fan_rpm: Option<String>,
     pub gpu_pending_reboot: Option<String>,
     pub fan_curve_snapshot: Option<String>,
@@ -47,6 +49,7 @@ impl TraySummary {
                 missing_capability_count,
                 TooltipTelemetry {
                     platform_profile: None,
+                    desktop_power_profile: None,
                     fan_rpm: None,
                     gpu_pending_reboot: None,
                     fan_curve_snapshot: None,
@@ -57,6 +60,7 @@ impl TraySummary {
             missing_capability_count,
             capability_ids,
             platform_profile: None,
+            desktop_power_profile: None,
             fan_rpm: None,
             gpu_pending_reboot: None,
             fan_curve_snapshot: None,
@@ -74,6 +78,10 @@ impl TraySummary {
             .platform_profile
             .as_ref()
             .and_then(|profile| profile.current.clone());
+        summary.desktop_power_profile = report
+            .power_profiles
+            .as_ref()
+            .and_then(|profile| profile.active_profile.clone());
         summary.fan_rpm = fan_rpm_label(&report.telemetry.sensors);
         summary.gpu_pending_reboot = gpu_pending
             .map(|pending| legion_common::format_gpu_mode_pending_summary(Some(pending)));
@@ -86,6 +94,7 @@ impl TraySummary {
             summary.missing_capability_count,
             TooltipTelemetry {
                 platform_profile: summary.platform_profile.as_deref(),
+                desktop_power_profile: summary.desktop_power_profile.as_deref(),
                 fan_rpm: summary.fan_rpm.as_deref(),
                 gpu_pending_reboot: summary.gpu_pending_reboot.as_deref(),
                 fan_curve_snapshot: summary.fan_curve_snapshot.as_deref(),
@@ -110,6 +119,9 @@ impl TraySummary {
         if let Some(profile) = &self.platform_profile {
             lines.push(format!("platform_profile={profile}"));
         }
+        if let Some(profile) = &self.desktop_power_profile {
+            lines.push(format!("desktop_power_profile={profile}"));
+        }
         if let Some(fan_rpm) = &self.fan_rpm {
             lines.push(format!("fan_rpm={fan_rpm}"));
         }
@@ -132,7 +144,10 @@ fn capability_tooltip(
 ) -> String {
     let mut telemetry = Vec::new();
     if let Some(profile) = telemetry_state.platform_profile {
-        telemetry.push(format!("Profile: {profile}"));
+        telemetry.push(format!("Platform: {profile}"));
+    }
+    if let Some(profile) = telemetry_state.desktop_power_profile {
+        telemetry.push(format!("Power: {profile}"));
     }
     if let Some(fan_rpm) = telemetry_state.fan_rpm {
         telemetry.push(format!("Fans: {fan_rpm}"));
@@ -179,7 +194,8 @@ fn fan_rpm_label(sensors: &[HwmonSensor]) -> Option<String> {
 mod tests {
     use legion_common::{
         Capability, CapabilityRegistry, CapabilityStatus, FanCurvePointSnapshot, FanCurveSnapshot,
-        GpuModePending, HardwareSummary, HwmonSensor, PlatformProfileCapability, RiskLevel,
+        GpuModePending, HardwareSummary, HwmonSensor, PlatformProfileCapability,
+        PowerProfilesCapability, RiskLevel,
     };
     use legion_control_ui::UiStatus;
 
@@ -277,6 +293,14 @@ mod tests {
                 path: "/sys/firmware/acpi/platform_profile".to_owned(),
                 choices_path: "/sys/firmware/acpi/platform_profile_choices".to_owned(),
             }),
+            power_profiles: Some(PowerProfilesCapability {
+                bus: "system".to_owned(),
+                well_known_name: "org.freedesktop.UPower.PowerProfiles".to_owned(),
+                unique_owner: Some(":1.42".to_owned()),
+                active_profile: Some("power-saver".to_owned()),
+                status: CapabilityStatus::ProbeOnly,
+                detail: None,
+            }),
             telemetry: legion_common::TelemetrySnapshot {
                 sensors: vec![HwmonSensor {
                     hwmon_name: Some("legion".to_owned()),
@@ -294,13 +318,20 @@ mod tests {
 
         assert_eq!(
             summary.tooltip,
-            "82WM Legion Pro 5 16ARX8: Profile: balanced, Fans: 2410 RPM, 1 available capabilities, 1 missing"
+            "82WM Legion Pro 5 16ARX8: Platform: balanced, Power: power-saver, Fans: 2410 RPM, 1 available capabilities, 1 missing"
         );
         assert_eq!(summary.platform_profile.as_deref(), Some("balanced"));
+        assert_eq!(
+            summary.desktop_power_profile.as_deref(),
+            Some("power-saver")
+        );
         assert_eq!(summary.fan_rpm.as_deref(), Some("2410 RPM"));
         assert!(summary
             .render_lines()
             .contains(&"platform_profile=balanced".to_owned()));
+        assert!(summary
+            .render_lines()
+            .contains(&"desktop_power_profile=power-saver".to_owned()));
         assert!(summary
             .render_lines()
             .contains(&"fan_rpm=2410 RPM".to_owned()));

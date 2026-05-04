@@ -4,8 +4,8 @@ use anyhow::Result;
 use legion_common::BatteryChargeTypeCapability;
 
 use super::shared::{
-    append_error, build_write_controls, build_write_feedback_group, info_row, make_client,
-    request_dashboard_refresh, section_note, spawn_dbus_call,
+    append_error, build_write_controls, info_row, make_client, request_dashboard_refresh,
+    section_note, spawn_dbus_call,
 };
 
 pub fn battery_page(diagnostics: Result<DiagnosticsBundle>) -> adw::PreferencesPage {
@@ -52,8 +52,6 @@ fn append_battery(page: &adw::PreferencesPage, bundle: &DiagnosticsBundle) {
         let controls = build_battery_charge_type_controls(None, None);
         page.add(&controls);
     }
-
-    page.add(&build_write_feedback_group("Battery charge type"));
 
     let telemetry = adw::PreferencesGroup::new();
     telemetry.set_title("Telemetry");
