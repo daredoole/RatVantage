@@ -11,7 +11,7 @@
 
 ## Milestone (compact)
 
-Pre-alpha: Rust workspace builds with CI green; polkit-gated daemon + GTK + StatusNotifier tray; reversible writes for platform profile, battery charge type, ylogo LED, ideapad toggles (`fn_lock`, `camera_power`, `usb_charging`); fan and GPU surfaces remain **plan / preview only** (see [fan-gpu-execution-policy.md](fan-gpu-execution-policy.md)). GTK UI refactored into modular subpages with adw::ViewStack + adw::ViewSwitcher navigation and adw::Banner notifications; all write-button handlers now use `make_client()` (respects dev private bus). 13 GTK integration tests green. Live execute evidence: [live-validation-evidence-runbook.md](live-validation-evidence-runbook.md), [live-write-validation.md](live-write-validation.md).
+Pre-alpha: Rust workspace builds with CI green; polkit-gated daemon + GTK + StatusNotifier tray; reversible writes for platform profile, battery charge type, ylogo LED, ideapad toggles (`fn_lock`, `camera_power`, `usb_charging`); fan and GPU surfaces remain **plan / preview only** (see [fan-gpu-execution-policy.md](fan-gpu-execution-policy.md)). GTK UI: modular subpages with adw::ViewStack + adw::ViewSwitcher + adw::Banner; all write-button handlers use `make_client()` (respects dev private bus); action buttons styled with `suggested-action`/`pill` CSS; redundant "Last write" static groups removed. 13 GTK integration tests green. Live execute evidence: [live-validation-evidence-runbook.md](live-validation-evidence-runbook.md), [live-write-validation.md](live-write-validation.md).
 
 ## Next tasks
 
