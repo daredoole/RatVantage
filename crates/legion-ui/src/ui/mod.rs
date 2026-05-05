@@ -1,8 +1,10 @@
 pub mod appearance;
+pub mod automations;
 pub mod battery;
 pub mod diagnostics;
 pub mod fans;
 pub mod gpu;
 pub mod profiles;
+pub mod settings;
 pub mod shared;
 pub mod status;

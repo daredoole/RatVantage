@@ -181,6 +181,22 @@ pub fn dashboard_page(
     }
     {
         let p = stack.add_titled(
+            &crate::ui::automations::automations_page(),
+            Some("automations"),
+            "Automations",
+        );
+        p.set_icon_name(Some("media-playlist-repeat-symbolic"));
+    }
+    {
+        let p = stack.add_titled(
+            &crate::ui::settings::settings_page(crate::ui::shared::clone_result(&diagnostics)),
+            Some("settings"),
+            "Settings",
+        );
+        p.set_icon_name(Some("preferences-system-symbolic"));
+    }
+    {
+        let p = stack.add_titled(
             &crate::ui::diagnostics::diagnostics_page(diagnostics),
             Some("diagnostics"),
             "Diagnostics",
@@ -415,9 +431,10 @@ fn runtime_snapshot_fan_snapshot(
 
 pub fn normalize_dashboard_page_name(page: Option<&str>) -> String {
     match page {
-        Some("status" | "profiles" | "battery" | "gpu" | "fans" | "appearance" | "diagnostics") => {
-            page.unwrap().to_owned()
-        }
+        Some(
+            "status" | "profiles" | "battery" | "gpu" | "fans" | "appearance" | "automations"
+            | "settings" | "diagnostics",
+        ) => page.unwrap().to_owned(),
         _ => DEFAULT_DASHBOARD_PAGE.to_owned(),
     }
 }
