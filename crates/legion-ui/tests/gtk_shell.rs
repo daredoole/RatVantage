@@ -80,26 +80,18 @@ fn status_and_error_pages_build_under_headless_display() {
         Ok(None),
         std::rc::Rc::new(std::cell::RefCell::new("status".to_owned())),
     );
-    let page = page
+    let body = page
         .downcast::<gtk4::Box>()
-        .expect("dashboard page should be a vertical box");
+        .expect("dashboard page should be a horizontal box");
 
-    assert_eq!(page.orientation(), gtk4::Orientation::Vertical);
+    assert_eq!(body.orientation(), gtk4::Orientation::Horizontal);
 
-    // First child is a switcher_box (Box containing ViewSwitcher + Separator)
-    let switcher_box = page
-        .first_child()
-        .expect("dashboard should contain switcher_box")
-        .downcast::<gtk4::Box>()
-        .expect("first child should be a Box containing the switcher");
-
-    let switcher = switcher_box
-        .first_child()
-        .expect("switcher_box should contain a ViewSwitcher")
-        .downcast::<adw::ViewSwitcher>()
-        .expect("first child of switcher_box should be adw::ViewSwitcher");
-
-    let stack = switcher.stack().expect("switcher should have a ViewStack");
+    // Last child is the adw::ViewStack (sidebar | separator | stack)
+    let stack = body
+        .last_child()
+        .expect("body should have children")
+        .downcast::<adw::ViewStack>()
+        .expect("last child should be adw::ViewStack");
 
     let visible_child = stack
         .visible_child()
@@ -577,7 +569,7 @@ fn camera_confirm_flow_buttons_start_insensitive() {
 }
 
 #[gtk4::test]
-fn dashboard_stack_has_all_seven_pages() {
+fn dashboard_stack_has_all_nine_pages() {
     init_gtk();
 
     let page = gtk_shell::dashboard_page(
@@ -587,18 +579,13 @@ fn dashboard_stack_has_all_seven_pages() {
         Ok(None),
         std::rc::Rc::new(std::cell::RefCell::new("status".to_owned())),
     );
-    let outer = page.downcast::<gtk4::Box>().unwrap();
-    let switcher_box = outer
-        .first_child()
+    let body = page.downcast::<gtk4::Box>().unwrap();
+    // Layout: sidebar | separator | stack
+    let stack = body
+        .last_child()
         .unwrap()
-        .downcast::<gtk4::Box>()
+        .downcast::<adw::ViewStack>()
         .unwrap();
-    let switcher = switcher_box
-        .first_child()
-        .unwrap()
-        .downcast::<adw::ViewSwitcher>()
-        .unwrap();
-    let stack = switcher.stack().unwrap();
 
     let expected = [
         "status",
@@ -607,6 +594,8 @@ fn dashboard_stack_has_all_seven_pages() {
         "gpu",
         "fans",
         "appearance",
+        "automations",
+        "settings",
         "diagnostics",
     ];
     for name in expected {

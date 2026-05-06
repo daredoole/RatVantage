@@ -1,7 +1,7 @@
 use crate::LegionControlClient;
 use adw::prelude::*;
 use anyhow::{anyhow, Result};
-use legion_common::{WriteDryRunPlan, WriteExecutionResult, WriteExecutionStatus};
+use legion_common::{RiskLevel, WriteDryRunPlan, WriteExecutionResult, WriteExecutionStatus};
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::rc::Rc;
@@ -215,6 +215,21 @@ pub(crate) fn state_tile(title: &str, value: &str, detail: &str, tone: PillTone)
     tile.append(&detail_label);
 
     tile
+}
+
+pub(crate) fn risk_badge(risk: RiskLevel) -> gtk4::Label {
+    let (label, css_class) = match risk {
+        RiskLevel::ReadOnly => ("Safe", "rv-risk-safe"),
+        RiskLevel::ReversibleWrite => ("Needs confirmation", "rv-risk-confirm"),
+        RiskLevel::ExperimentalWrite => ("Experimental", "rv-risk-experimental"),
+        RiskLevel::Unsupported => ("Unsupported", "rv-risk-unsupported"),
+    };
+    let pill = gtk4::Label::new(Some(label));
+    pill.add_css_class("rv-risk");
+    pill.add_css_class(css_class);
+    pill.set_valign(gtk4::Align::Center);
+    pill.set_halign(gtk4::Align::Start);
+    pill
 }
 
 pub(crate) fn append_error(page: &adw::PreferencesPage, error: &anyhow::Error) {

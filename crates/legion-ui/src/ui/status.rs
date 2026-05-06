@@ -1,6 +1,4 @@
-use crate::{
-    capability_status_label, risk_level_label, DiagnosticsBundle, GpuModePending, UiStatus,
-};
+use crate::{capability_status_label, DiagnosticsBundle, GpuModePending, UiStatus};
 use adw::prelude::*;
 use anyhow::Result;
 use legion_common::CapabilityRegistry;
@@ -53,14 +51,13 @@ fn append_status(
         "Detailed paths and raw probe evidence live in Diagnostics.",
     ));
     for capability in &status.capabilities {
-        capabilities.add(&info_row(
-            &capability.label,
-            &format!(
-                "{} · {}",
-                capability_status_label(capability.status),
-                risk_level_label(capability.risk)
-            ),
-        ));
+        let row = adw::ActionRow::builder()
+            .title(&capability.label)
+            .subtitle(capability_status_label(capability.status))
+            .selectable(false)
+            .build();
+        row.add_suffix(&super::shared::risk_badge(capability.risk));
+        capabilities.add(&row);
     }
     page.add(&capabilities);
 }

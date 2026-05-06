@@ -54,6 +54,16 @@ pub fn run(
     let bus_address = Rc::new(bus_address);
     let initial_page = Rc::new(normalize_dashboard_page_name(initial_page.as_deref()));
     app.connect_activate(move |app| {
+        let provider = gtk4::CssProvider::new();
+        provider.load_from_data(include_str!("style.css"));
+        if let Some(display) = gtk4::gdk::Display::default() {
+            gtk4::style_context_add_provider_for_display(
+                &display,
+                &provider,
+                gtk4::STYLE_PROVIDER_PRIORITY_APPLICATION,
+            );
+        }
+
         let window = adw::ApplicationWindow::builder()
             .application(app)
             .title("RatVantage")
@@ -118,11 +128,16 @@ pub fn dashboard_page(
     fan_snapshot: Result<Option<FanCurveSnapshot>>,
     initial_page: Rc<RefCell<String>>,
 ) -> gtk4::Widget {
+    let hardware_product = status
+        .as_ref()
+        .ok()
+        .map(|s| s.hardware.product_name.clone());
+
     let stack = adw::ViewStack::new();
     stack.set_hexpand(true);
     stack.set_vexpand(true);
     {
-        let p = stack.add_titled(
+        stack.add_titled(
             &crate::ui::status::status_page(
                 status,
                 crate::ui::shared::clone_result(&diagnostics),
@@ -131,26 +146,23 @@ pub fn dashboard_page(
             Some("status"),
             "Overview",
         );
-        p.set_icon_name(Some("system-run-symbolic"));
     }
     {
-        let p = stack.add_titled(
+        stack.add_titled(
             &crate::ui::profiles::profiles_page(crate::ui::shared::clone_result(&diagnostics)),
             Some("profiles"),
             "Power",
         );
-        p.set_icon_name(Some("power-profile-balanced-symbolic"));
     }
     {
-        let p = stack.add_titled(
+        stack.add_titled(
             &crate::ui::battery::battery_page(crate::ui::shared::clone_result(&diagnostics)),
             Some("battery"),
             "Battery",
         );
-        p.set_icon_name(Some("battery-good-symbolic"));
     }
     {
-        let p = stack.add_titled(
+        stack.add_titled(
             &crate::ui::gpu::gpu_page(
                 crate::ui::shared::clone_result(&diagnostics),
                 crate::ui::shared::clone_result(&gpu_pending),
@@ -158,10 +170,9 @@ pub fn dashboard_page(
             Some("gpu"),
             "GPU",
         );
-        p.set_icon_name(Some("video-display-symbolic"));
     }
     {
-        let p = stack.add_titled(
+        stack.add_titled(
             &crate::ui::fans::fans_page(
                 crate::ui::shared::clone_result(&diagnostics),
                 fan_snapshot,
@@ -169,67 +180,237 @@ pub fn dashboard_page(
             Some("fans"),
             "Fans",
         );
-        p.set_icon_name(Some("temperature-symbolic"));
     }
     {
-        let p = stack.add_titled(
+        stack.add_titled(
             &crate::ui::appearance::appearance_page(crate::ui::shared::clone_result(&diagnostics)),
             Some("appearance"),
             "Devices",
         );
-        p.set_icon_name(Some("input-keyboard-symbolic"));
     }
     {
-        let p = stack.add_titled(
+        stack.add_titled(
             &crate::ui::automations::automations_page(),
             Some("automations"),
             "Automations",
         );
-        p.set_icon_name(Some("media-playlist-repeat-symbolic"));
     }
     {
-        let p = stack.add_titled(
+        stack.add_titled(
             &crate::ui::settings::settings_page(crate::ui::shared::clone_result(&diagnostics)),
             Some("settings"),
             "Settings",
         );
-        p.set_icon_name(Some("preferences-system-symbolic"));
     }
     {
-        let p = stack.add_titled(
+        stack.add_titled(
             &crate::ui::diagnostics::diagnostics_page(diagnostics),
             Some("diagnostics"),
             "Diagnostics",
         );
-        p.set_icon_name(Some("utilities-system-monitor-symbolic"));
     }
 
     let current = initial_page.borrow().clone();
     stack.set_visible_child_name(&current);
 
-    stack.connect_visible_child_notify(move |stack| {
-        if let Some(name) = stack.visible_child_name() {
+    stack.connect_visible_child_notify(move |s| {
+        if let Some(name) = s.visible_child_name() {
             *initial_page.borrow_mut() = name.to_string();
         }
     });
 
-    let switcher = adw::ViewSwitcher::new();
-    switcher.set_stack(Some(&stack));
-    switcher.set_policy(adw::ViewSwitcherPolicy::Wide);
-    switcher.set_hexpand(true);
+    let sidebar = build_sidebar(&stack, &current, hardware_product.as_deref());
 
-    let switcher_box = gtk4::Box::new(gtk4::Orientation::Vertical, 0);
-    switcher_box.set_margin_top(4);
-    switcher_box.set_margin_bottom(4);
-    switcher_box.append(&switcher);
-    switcher_box.append(&gtk4::Separator::new(gtk4::Orientation::Horizontal));
+    let body = gtk4::Box::new(gtk4::Orientation::Horizontal, 0);
+    body.set_hexpand(true);
+    body.set_vexpand(true);
+    body.append(&sidebar);
+    body.append(&gtk4::Separator::new(gtk4::Orientation::Vertical));
+    body.append(&stack);
+    body.upcast()
+}
 
-    let page = gtk4::Box::new(gtk4::Orientation::Vertical, 0);
-    page.set_hexpand(true);
-    page.set_vexpand(true);
-    page.append(&switcher_box);
-    page.append(&stack);
-    page.upcast()
+fn build_sidebar(
+    stack: &adw::ViewStack,
+    active_id: &str,
+    hardware_product: Option<&str>,
+) -> gtk4::Box {
+    let sidebar = gtk4::Box::new(gtk4::Orientation::Vertical, 0);
+    sidebar.add_css_class("rv-sidebar");
+    sidebar.set_vexpand(true);
+
+    // Brand
+    let brand = gtk4::Box::new(gtk4::Orientation::Horizontal, 10);
+    brand.add_css_class("rv-brand");
+
+    let logo = rv_logo(28);
+    brand.append(&logo);
+
+    let brand_text = gtk4::Box::new(gtk4::Orientation::Vertical, 2);
+    let brand_name = gtk4::Label::new(Some("RatVantage"));
+    brand_name.set_xalign(0.0);
+    brand_name.add_css_class("rv-brand-name");
+    brand_text.append(&brand_name);
+    let brand_sub = gtk4::Label::new(Some(hardware_product.unwrap_or("Legion hardware")));
+    brand_sub.set_xalign(0.0);
+    brand_sub.set_max_width_chars(18);
+    brand_sub.set_ellipsize(gtk4::pango::EllipsizeMode::End);
+    brand_sub.add_css_class("rv-brand-sub");
+    brand_text.append(&brand_sub);
+    brand.append(&brand_text);
+    sidebar.append(&brand);
+
+    sidebar.append(&gtk4::Separator::new(gtk4::Orientation::Horizontal));
+
+    // Nav
+    let nav_tabs: &[(&str, &str, &str)] = &[
+        ("status", "◉", "Overview"),
+        ("profiles", "◐", "Power"),
+        ("battery", "▮", "Battery"),
+        ("gpu", "▤", "GPU"),
+        ("fans", "✺", "Fans"),
+        ("appearance", "✦", "Devices"),
+        ("automations", "⟳", "Automations"),
+        ("settings", "⚙", "Settings"),
+        ("diagnostics", "≣", "Diagnostics"),
+    ];
+
+    let nav_box = gtk4::Box::new(gtk4::Orientation::Vertical, 0);
+    nav_box.set_margin_top(6);
+    nav_box.set_margin_bottom(6);
+
+    let buttons: Vec<gtk4::Button> = nav_tabs
+        .iter()
+        .map(|(id, glyph, label)| {
+            let row = gtk4::Box::new(gtk4::Orientation::Horizontal, 6);
+            row.set_hexpand(true);
+
+            let glyph_label = gtk4::Label::new(Some(glyph));
+            glyph_label.add_css_class("rv-nav-glyph");
+            glyph_label.set_width_chars(2);
+            glyph_label.set_xalign(0.5);
+            row.append(&glyph_label);
+
+            let name_label = gtk4::Label::new(Some(label));
+            name_label.set_xalign(0.0);
+            name_label.set_hexpand(true);
+            row.append(&name_label);
+
+            let btn = gtk4::Button::new();
+            btn.set_child(Some(&row));
+            btn.add_css_class("rv-nav-btn");
+            btn.set_has_frame(false);
+            if *id == active_id {
+                btn.add_css_class("active");
+            }
+
+            nav_box.append(&btn);
+            btn
+        })
+        .collect();
+
+    for (i, (id, _, _)) in nav_tabs.iter().enumerate() {
+        let id = *id;
+        let stack_clone = stack.clone();
+        let all_buttons = buttons.clone();
+        buttons[i].connect_clicked(move |clicked| {
+            stack_clone.set_visible_child_name(id);
+            for btn in &all_buttons {
+                btn.remove_css_class("active");
+            }
+            clicked.add_css_class("active");
+        });
+    }
+
+    sidebar.append(&nav_box);
+
+    // Spacer
+    let spacer = gtk4::Box::new(gtk4::Orientation::Vertical, 0);
+    spacer.set_vexpand(true);
+    sidebar.append(&spacer);
+
+    // Footer
+    let footer = gtk4::Box::new(gtk4::Orientation::Vertical, 2);
+    footer.set_margin_start(12);
+    footer.set_margin_end(12);
+    footer.set_margin_bottom(12);
+
+    for text in &[
+        "org.ratvantage.LegionControl1",
+        "system bus · polkit active",
+    ] {
+        let lbl = gtk4::Label::new(Some(text));
+        lbl.set_xalign(0.0);
+        lbl.add_css_class("rv-side-foot-label");
+        lbl.set_max_width_chars(22);
+        lbl.set_ellipsize(gtk4::pango::EllipsizeMode::End);
+        footer.append(&lbl);
+    }
+    sidebar.append(&footer);
+
+    sidebar
+}
+
+fn rv_logo(size: i32) -> gtk4::DrawingArea {
+    let area = gtk4::DrawingArea::new();
+    area.set_content_width(size);
+    area.set_content_height(size);
+    area.set_draw_func(move |_, cr, w, _h| {
+        let scale = w as f64 / 40.0;
+        let _ = cr.save();
+        cr.scale(scale, scale);
+
+        // Ember #d65a3a
+        let (r, g, b) = (214.0 / 255.0, 90.0 / 255.0, 58.0 / 255.0);
+
+        // Octagon fill
+        cr.set_source_rgba(r, g, b, 0.15);
+        rv_logo_octagon(cr);
+        let _ = cr.fill();
+
+        // Octagon stroke
+        cr.set_source_rgba(r, g, b, 1.0);
+        cr.set_line_width(1.5);
+        rv_logo_octagon(cr);
+        let _ = cr.stroke();
+
+        // R vertical bar: x=11 y=11 w=3 h=18
+        cr.rectangle(11.0, 11.0, 3.0, 18.0);
+        let _ = cr.fill();
+
+        // R bowl: M14 11 Q24 11 24 17 Q24 23 14 23 (quadratic → cubic)
+        cr.set_line_width(2.8);
+        cr.move_to(14.0, 11.0);
+        cr.curve_to(20.67, 11.0, 24.0, 13.0, 24.0, 17.0);
+        cr.curve_to(24.0, 21.0, 20.67, 23.0, 14.0, 23.0);
+        let _ = cr.stroke();
+
+        // V slash: M14 23 L26 29
+        cr.set_line_width(2.6);
+        cr.move_to(14.0, 23.0);
+        cr.line_to(26.0, 29.0);
+        let _ = cr.stroke();
+
+        // V dot: circle cx=26 cy=29 r=1.8
+        cr.arc(26.0, 29.0, 1.8, 0.0, 2.0 * std::f64::consts::PI);
+        let _ = cr.fill();
+
+        let _ = cr.restore();
+    });
+    area
+}
+
+fn rv_logo_octagon(cr: &gtk4::cairo::Context) {
+    // M20 2 L34 8 L38 22 L32 35 L20 38 L8 35 L2 22 L6 8 Z
+    cr.move_to(20.0, 2.0);
+    cr.line_to(34.0, 8.0);
+    cr.line_to(38.0, 22.0);
+    cr.line_to(32.0, 35.0);
+    cr.line_to(20.0, 38.0);
+    cr.line_to(8.0, 35.0);
+    cr.line_to(2.0, 22.0);
+    cr.line_to(6.0, 8.0);
+    cr.close_path();
 }
 
 fn snapshot_page_with_active_sync(

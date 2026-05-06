@@ -109,7 +109,7 @@ pub fn settings_page(diagnostics: Result<DiagnosticsBundle>) -> adw::Preferences
 
     // ── Startup & tray ───────────────────────────────────────────────────────
     let startup_group = adw::PreferencesGroup::new();
-    startup_group.set_title("Startup & Tray");
+    startup_group.set_title("Startup and Tray");
     startup_group.set_description(Some(
         "Autostart and tray behavior. Packaging and .desktop integration are planned.",
     ));

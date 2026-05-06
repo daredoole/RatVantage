@@ -1,0 +1,96 @@
+/* RatVantage custom shell styles */
+
+@define-color rv-accent #d65a3a;
+
+/* ── Sidebar ─────────────────────────────────────────────────────────────── */
+
+.rv-sidebar {
+    min-width: 196px;
+    max-width: 196px;
+    background-color: @sidebar_bg_color;
+}
+
+.rv-brand {
+    padding: 14px 12px 10px 12px;
+}
+
+.rv-brand-name {
+    font-weight: 700;
+    font-size: 13px;
+}
+
+.rv-brand-sub {
+    font-size: 11px;
+    color: alpha(@window_fg_color, 0.5);
+}
+
+.rv-nav-btn {
+    border-radius: 8px;
+    margin: 1px 8px;
+    padding: 0 10px;
+    min-height: 34px;
+    background: transparent;
+    box-shadow: none;
+    border: none;
+    color: @window_fg_color;
+}
+
+.rv-nav-btn:hover {
+    background-color: alpha(@window_fg_color, 0.07);
+}
+
+.rv-nav-btn.active {
+    background-color: alpha(@rv-accent, 0.14);
+    color: @rv-accent;
+    font-weight: 600;
+}
+
+.rv-nav-glyph {
+    font-size: 12px;
+    min-width: 16px;
+    margin-right: 6px;
+    opacity: 0.65;
+}
+
+.rv-nav-btn.active .rv-nav-glyph {
+    opacity: 1.0;
+}
+
+.rv-side-foot-label {
+    font-size: 10px;
+    color: alpha(@window_fg_color, 0.40);
+}
+
+/* ── Risk badges ─────────────────────────────────────────────────────────── */
+
+.rv-risk {
+    border-radius: 99px;
+    padding: 2px 8px;
+    font-size: 11px;
+    font-weight: 500;
+}
+
+.rv-risk-safe {
+    color: @success_color;
+    background-color: alpha(@success_color, 0.15);
+}
+
+.rv-risk-confirm {
+    color: @warning_color;
+    background-color: alpha(@warning_color, 0.15);
+}
+
+.rv-risk-reboot {
+    color: @error_color;
+    background-color: alpha(@error_color, 0.15);
+}
+
+.rv-risk-experimental {
+    color: #9b77d6;
+    background-color: rgba(155, 119, 214, 0.15);
+}
+
+.rv-risk-unsupported {
+    color: alpha(@window_fg_color, 0.4);
+    background-color: alpha(@window_fg_color, 0.08);
+}
