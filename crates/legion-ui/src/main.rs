@@ -117,6 +117,12 @@ struct Args {
     #[arg(long)]
     hardware_profile_triggers: bool,
 
+    #[arg(long)]
+    automation_rules: bool,
+
+    #[arg(long)]
+    last_automation_rule_apply: bool,
+
     #[arg(long, value_name = "PROFILE_ID")]
     plan_hardware_profile: Option<String>,
 
@@ -211,6 +217,8 @@ fn main() -> Result<()> {
         args.clear_gpu_mode_pending,
         args.hardware_profiles,
         args.hardware_profile_triggers,
+        args.automation_rules,
+        args.last_automation_rule_apply,
         args.plan_hardware_profile.is_some(),
         args.plan_hardware_profile_trigger.is_some(),
         args.apply_hardware_profile.is_some(),
@@ -310,6 +318,10 @@ fn main() -> Result<()> {
             print_json(&client.hardware_profiles()?)?;
         } else if args.hardware_profile_triggers {
             print_json(&client.hardware_profile_triggers()?)?;
+        } else if args.automation_rules {
+            print_json(&client.automation_rules()?)?;
+        } else if args.last_automation_rule_apply {
+            print_json(&client.last_automation_rule_apply()?)?;
         } else if let Some(profile_id) = args.plan_hardware_profile {
             print_json(&client.hardware_profile_apply_preview(&profile_id)?)?;
         } else if let Some(trigger_id) = args.plan_hardware_profile_trigger {

@@ -1551,6 +1551,102 @@ fn last_curve_optimizer_cli_prints_empty_state() {
 }
 
 #[test]
+fn automation_rule_cli_prints_rules_and_last_runs() {
+    let fixture = copied_fixture_root("ui-automation-rule-cli");
+    let state_path = unique_state_path("ui-automation-rule-cli");
+    let service = LegionControl::new_with_runtime(
+        ProbeOptions {
+            sysfs_root: fixture.clone(),
+        },
+        &state_path,
+        WriteAccessPolicy {
+            battery_charge_type_enabled: true,
+            hardware_profile_apply_enabled: true,
+            ..Default::default()
+        },
+        Arc::new(AllowAllAuthorizer),
+        Arc::new(RealFixturePlatformProfileWriter),
+        Arc::new(RealFixtureBatteryChargeTypeWriter),
+        Arc::new(RealFixtureLedStateWriter),
+        Arc::new(RealFixtureIdeapadToggleWriter),
+        Arc::new(NoOpCpuGovernorWriter),
+        Arc::new(NoOpCpuEppWriter),
+    );
+    let (_bus, _service_connection, address) = fixture_service_with_runtime(service);
+    let client = LegionControlClient::address(&address).unwrap();
+    let fast_charge = serde_json::json!({
+        "schema_version": 1,
+        "label": "Fast charge",
+        "actions": {
+            "battery_charge_type": "Fast"
+        }
+    })
+    .to_string();
+    let protect = serde_json::json!({
+        "schema_version": 1,
+        "label": "Protect battery",
+        "actions": {
+            "battery_charge_type": "Conservation"
+        }
+    })
+    .to_string();
+    client
+        .set_hardware_profile("fast_charge", &fast_charge)
+        .unwrap();
+    client
+        .set_hardware_profile("battery_protect", &protect)
+        .unwrap();
+    let rule = serde_json::json!({
+        "schema_version": 1,
+        "label": "Fast charge until 80%",
+        "enabled": true,
+        "kind": "fast_charge_until_threshold",
+        "threshold_percent": 80,
+        "fast_charge_profile_id": "fast_charge",
+        "protect_profile_id": "battery_protect",
+        "require_ac": true
+    })
+    .to_string();
+    client
+        .set_automation_rule("fast_charge_until_80", &rule)
+        .unwrap();
+    client
+        .apply_automation_rule("fast_charge_until_80")
+        .unwrap();
+
+    let output = Command::new(env!("CARGO_BIN_EXE_legion-control-ui"))
+        .args(["--automation-rules", "--bus-address", &address])
+        .output()
+        .unwrap();
+    assert!(output.status.success());
+    assert!(output.stderr.is_empty());
+    let json: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(
+        json["fast_charge_until_80"]["label"],
+        "Fast charge until 80%"
+    );
+
+    let output = Command::new(env!("CARGO_BIN_EXE_legion-control-ui"))
+        .args(["--last-automation-rule-apply", "--bus-address", &address])
+        .output()
+        .unwrap();
+    assert!(output.status.success());
+    assert!(output.stderr.is_empty());
+    let json: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(
+        json["fast_charge_until_80"]["evaluation"]["selected_profile_id"],
+        "fast_charge"
+    );
+    assert_eq!(
+        json["fast_charge_until_80"]["profile_run"]["completed"],
+        true
+    );
+
+    let _ = std::fs::remove_file(state_path);
+    let _ = std::fs::remove_dir_all(fixture);
+}
+
+#[test]
 fn last_known_good_fan_curve_cli_captures_state_snapshot() {
     let state_path = unique_state_path("ui-fan-curve");
     let (_bus, _service_connection, address) = runtime_fixture_service_with_state(&state_path);

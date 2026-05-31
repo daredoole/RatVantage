@@ -39,7 +39,7 @@ use zbus::{
 
 pub const DBUS_INTERFACE: &str = "org.ratvantage.LegionControl1";
 pub const DBUS_PATH: &str = "/org/ratvantage/LegionControl1";
-pub const READ_ONLY_METHODS: &str = "CaptureLastKnownGoodFanCurve,ClearAutomationRules,ClearFanPresetProfileMap,ClearGpuModePending,ClearHardwareProfileTriggers,ClearHardwareProfiles,GetAutomationRulePreview,GetAutomationRules,GetCapabilities,GetFanPresetProfileMap,GetFanPresetReapplyAfterResume,GetGpuModePending,GetHardwareProfileApplyPreview,GetHardwareProfileTriggerApplyPreview,GetHardwareProfileTriggers,GetHardwareProfiles,GetHardwareSummary,GetLastCurveOptimizerAllCore,GetLastHardwareProfileApply,GetLastKnownGoodFanCurve,GetLiveFanCurveReadings,GetRawProbeReport,GetTelemetry,PlanAmdGpuDpmForceLevelWrite,PlanBatteryChargeTypeWrite,PlanConservationModeWrite,PlanCpuBoostWrite,PlanCpuEppWrite,PlanCpuGovernorWrite,PlanCurveOptimizerAllCoreWrite,PlanFanPresetWrite,PlanFirmwareAttributeWrite,PlanGpuModeWrite,PlanIdeapadToggleWrite,PlanLedStateWrite,PlanPlatformProfileWrite,PlanRestoreAutoFanWrite,RefreshCapabilities,RemoveAutomationRule,RemoveFanPresetProfileMapEntry,RemoveHardwareProfile,RemoveHardwareProfileTrigger,SetAutomationRule,SetFanPresetProfileMapEntry,SetFanPresetReapplyAfterResume,SetGpuModePending,SetHardwareProfile,SetHardwareProfileTrigger";
+pub const READ_ONLY_METHODS: &str = "CaptureLastKnownGoodFanCurve,ClearAutomationRules,ClearFanPresetProfileMap,ClearGpuModePending,ClearHardwareProfileTriggers,ClearHardwareProfiles,GetAutomationRulePreview,GetAutomationRules,GetCapabilities,GetFanPresetProfileMap,GetFanPresetReapplyAfterResume,GetGpuModePending,GetHardwareProfileApplyPreview,GetHardwareProfileTriggerApplyPreview,GetHardwareProfileTriggers,GetHardwareProfiles,GetHardwareSummary,GetLastAutomationRuleApply,GetLastCurveOptimizerAllCore,GetLastHardwareProfileApply,GetLastKnownGoodFanCurve,GetLiveFanCurveReadings,GetRawProbeReport,GetTelemetry,PlanAmdGpuDpmForceLevelWrite,PlanBatteryChargeTypeWrite,PlanConservationModeWrite,PlanCpuBoostWrite,PlanCpuEppWrite,PlanCpuGovernorWrite,PlanCurveOptimizerAllCoreWrite,PlanFanPresetWrite,PlanFirmwareAttributeWrite,PlanGpuModeWrite,PlanIdeapadToggleWrite,PlanLedStateWrite,PlanPlatformProfileWrite,PlanRestoreAutoFanWrite,RefreshCapabilities,RemoveAutomationRule,RemoveFanPresetProfileMapEntry,RemoveHardwareProfile,RemoveHardwareProfileTrigger,SetAutomationRule,SetFanPresetProfileMapEntry,SetFanPresetReapplyAfterResume,SetGpuModePending,SetHardwareProfile,SetHardwareProfileTrigger";
 pub const GATED_WRITE_METHODS: &str =
     "SetPlatformProfile,SetBatteryChargeType,SetLedState,SetIdeapadToggle,SetGpuMode,SetCpuGovernor,SetCpuEpp,SetFirmwareAttribute,SetCpuBoost,SetConservationMode,SetAmdGpuDpmForceLevel,SetCurveOptimizerAllCore,ApplyHardwareProfile,ApplyHardwareProfileTrigger,ApplyAutomationRule";
 pub const DEFAULT_STATE_PATH: &str = "/var/lib/legion-control/state.toml";
@@ -1871,6 +1871,15 @@ impl LegionControl {
             .map_err(|_| fdo::Error::Failed("daemon state lock poisoned".to_owned()))
     }
 
+    pub fn last_automation_rule_apply(
+        &self,
+    ) -> fdo::Result<BTreeMap<String, AutomationRuleApplyRun>> {
+        self.state
+            .lock()
+            .map(|state| state.last_automation_rule_apply.clone())
+            .map_err(|_| fdo::Error::Failed("daemon state lock poisoned".to_owned()))
+    }
+
     pub fn set_automation_rule(
         &self,
         rule_id: &str,
@@ -2397,6 +2406,10 @@ impl LegionControl {
 
     fn GetAutomationRules(&self) -> fdo::Result<String> {
         to_json(&self.automation_rules()?)
+    }
+
+    fn GetLastAutomationRuleApply(&self) -> fdo::Result<String> {
+        to_json(&self.last_automation_rule_apply()?)
     }
 
     fn GetAutomationRulePreview(&self, rule_id: &str) -> fdo::Result<String> {

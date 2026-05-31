@@ -213,6 +213,7 @@ fn introspection_exposes_gated_reversible_write_methods_only() {
             "GetHardwareProfileTriggers",
             "GetHardwareProfiles",
             "GetHardwareSummary",
+            "GetLastAutomationRuleApply",
             "GetLastCurveOptimizerAllCore",
             "GetLastHardwareProfileApply",
             "GetLastKnownGoodFanCurve",
@@ -1912,6 +1913,13 @@ fn fast_charge_threshold_automation_selects_and_applies_profile() {
         .apply_automation_rule("fast_charge_until_80", "test.sender")
         .unwrap();
     assert!(run.profile_run.as_ref().unwrap().completed);
+    assert_eq!(
+        service
+            .last_automation_rule_apply()
+            .unwrap()
+            .get("fast_charge_until_80"),
+        Some(&run)
+    );
     assert_eq!(
         fs::read_to_string(fixture.join("sys/class/power_supply/BAT0/charge_type"))
             .unwrap()

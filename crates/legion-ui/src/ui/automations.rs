@@ -571,9 +571,10 @@ fn append_persisted_automation_rules(page: &adw::PreferencesPage, bundle: &Diagn
     for (rule_id, rule) in &bundle.automation_rules {
         let row = adw::ActionRow::builder()
             .title(rule.label.as_str())
-            .subtitle(format!(
-                "{rule_id} · {}",
-                if rule.enabled { "enabled" } else { "disabled" }
+            .subtitle(automation_rule_subtitle(
+                rule_id,
+                rule.enabled,
+                bundle.last_automation_rule_apply.get(rule_id),
             ))
             .selectable(false)
             .build();
@@ -668,6 +669,33 @@ fn append_persisted_automation_rules(page: &adw::PreferencesPage, bundle: &Diagn
 
     group.add(&write_feedback_row("Automation rule"));
     page.add(&group);
+}
+
+fn automation_rule_subtitle(
+    rule_id: &str,
+    enabled: bool,
+    last_run: Option<&legion_common::AutomationRuleApplyRun>,
+) -> String {
+    let enabled_label = if enabled { "enabled" } else { "disabled" };
+    let Some(last_run) = last_run else {
+        return format!("{rule_id} · {enabled_label} · never run");
+    };
+    let action_label = match &last_run.profile_run {
+        Some(run) if run.completed => {
+            format!(
+                "applied {} ({} result(s))",
+                run.profile_id,
+                run.results.len()
+            )
+        }
+        Some(run) => format!("stopped {} ({})", run.profile_id, run.message),
+        None if last_run.evaluation.matched => "matched but no profile run".to_owned(),
+        None => "skipped".to_owned(),
+    };
+    format!(
+        "{rule_id} · {enabled_label} · last: {action_label} · {}",
+        last_run.evaluation.reason
+    )
 }
 
 fn trigger_label(trigger_id: &str) -> String {

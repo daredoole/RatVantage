@@ -70,6 +70,7 @@ pub struct DiagnosticsBundle {
     pub hardware_profiles: BTreeMap<String, HardwareProfile>,
     pub hardware_profile_triggers: BTreeMap<String, String>,
     pub automation_rules: BTreeMap<String, AutomationRule>,
+    pub last_automation_rule_apply: BTreeMap<String, AutomationRuleApplyRun>,
     pub last_hardware_profile_apply: Option<HardwareProfileApplyRun>,
     pub detected_sysfs_paths: Vec<String>,
     pub recent_daemon_logs: Vec<String>,
@@ -85,6 +86,7 @@ pub struct DiagnosticsRuntimeState {
     pub hardware_profiles: BTreeMap<String, HardwareProfile>,
     pub hardware_profile_triggers: BTreeMap<String, String>,
     pub automation_rules: BTreeMap<String, AutomationRule>,
+    pub last_automation_rule_apply: BTreeMap<String, AutomationRuleApplyRun>,
     pub last_hardware_profile_apply: Option<HardwareProfileApplyRun>,
 }
 
@@ -122,6 +124,7 @@ impl DiagnosticsBundle {
             hardware_profiles: BTreeMap::new(),
             hardware_profile_triggers: BTreeMap::new(),
             automation_rules: BTreeMap::new(),
+            last_automation_rule_apply: BTreeMap::new(),
             last_hardware_profile_apply: None,
             detected_sysfs_paths,
             recent_daemon_logs,
@@ -137,6 +140,7 @@ impl DiagnosticsBundle {
         self.hardware_profiles = state.hardware_profiles;
         self.hardware_profile_triggers = state.hardware_profile_triggers;
         self.automation_rules = state.automation_rules;
+        self.last_automation_rule_apply = state.last_automation_rule_apply;
         self.last_hardware_profile_apply = state.last_hardware_profile_apply;
         self
     }
@@ -894,6 +898,7 @@ impl LegionControlClient {
             hardware_profiles: self.hardware_profiles()?,
             hardware_profile_triggers: self.hardware_profile_triggers()?,
             automation_rules: self.automation_rules()?,
+            last_automation_rule_apply: self.last_automation_rule_apply()?,
             last_hardware_profile_apply: self.last_hardware_profile_apply()?,
         }))
     }
@@ -907,6 +912,7 @@ impl LegionControlClient {
         let hardware_profiles = self.hardware_profiles()?;
         let hardware_profile_triggers = self.hardware_profile_triggers()?;
         let automation_rules = self.automation_rules()?;
+        let last_automation_rule_apply = self.last_automation_rule_apply()?;
         let last_hardware_profile_apply = self.last_hardware_profile_apply()?;
         Ok(RuntimeSnapshot {
             status: UiStatus::from_parts(report.hardware.clone(), capabilities)?,
@@ -923,6 +929,7 @@ impl LegionControlClient {
                 hardware_profiles,
                 hardware_profile_triggers,
                 automation_rules,
+                last_automation_rule_apply,
                 last_hardware_profile_apply,
             }),
         })
@@ -1085,6 +1092,10 @@ impl LegionControlClient {
 
     pub fn automation_rules(&self) -> Result<BTreeMap<String, AutomationRule>> {
         self.call_json("GetAutomationRules")
+    }
+
+    pub fn last_automation_rule_apply(&self) -> Result<BTreeMap<String, AutomationRuleApplyRun>> {
+        self.call_json("GetLastAutomationRuleApply")
     }
 
     pub fn automation_rule_preview(&self, rule_id: &str) -> Result<AutomationRuleEvaluation> {
