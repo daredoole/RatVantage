@@ -11,8 +11,8 @@ use legion_common::{
 
 use super::shared::{
     append_error, build_write_controls, info_row, make_client, request_dashboard_refresh,
-    section_note, spawn_dbus_call, store_write_feedback_state, write_feedback_row,
-    write_feedback_subtitle, write_feedback_title,
+    section_note, selected_dropdown_value, spawn_dbus_call, store_write_feedback_state,
+    write_feedback_row, write_feedback_subtitle, write_feedback_title,
 };
 
 pub fn profiles_page(diagnostics: Result<DiagnosticsBundle>) -> adw::PreferencesPage {
@@ -167,6 +167,7 @@ fn append_profiles(page: &adw::PreferencesPage, bundle: &DiagnosticsBundle) {
         ));
     }
 
+    page.add(&build_advanced_cpu_profile_builder(bundle));
     page.add(&build_hardware_profile_apply_controls(bundle));
 }
 
@@ -533,6 +534,247 @@ fn build_ryzen_backend_status_group(status: &RyzenBackendStatus) -> adw::Prefere
     group
 }
 
+fn build_advanced_cpu_profile_builder(bundle: &DiagnosticsBundle) -> adw::PreferencesGroup {
+    let group = adw::PreferencesGroup::new();
+    group.set_title("Advanced CPU Profile Builder");
+    group.add(&section_note(
+        "Creates or updates a saved hardware profile only. Applying it still uses the daemon policy, polkit, validators, and per-action read-back behavior.",
+    ));
+
+    let profile_id = gtk4::Entry::builder()
+        .text("cpu_battery_saver")
+        .width_chars(24)
+        .build();
+    let profile_id_row = adw::ActionRow::builder()
+        .title("Profile ID")
+        .subtitle("Saving an existing ID updates that profile")
+        .selectable(false)
+        .build();
+    profile_id_row.add_suffix(&profile_id);
+    group.add(&profile_id_row);
+
+    let label = gtk4::Entry::builder()
+        .text("CPU battery saver")
+        .width_chars(24)
+        .build();
+    let label_row = adw::ActionRow::builder()
+        .title("Label")
+        .selectable(false)
+        .build();
+    label_row.add_suffix(&label);
+    group.add(&label_row);
+
+    let cpu = bundle.raw_probe_report.cpu_power.as_ref();
+    let governor_values = cpu
+        .map(|cpu| cpu.available_governors.clone())
+        .unwrap_or_default();
+    let governor = string_dropdown(
+        &governor_values,
+        cpu.and_then(|cpu| cpu.governor.as_deref()),
+    );
+    governor.set_sensitive(!governor_values.is_empty());
+    let include_governor = gtk4::Switch::new();
+    include_governor.set_active(false);
+    include_governor.set_sensitive(!governor_values.is_empty());
+    include_governor.set_valign(gtk4::Align::Center);
+    let governor_row = adw::ActionRow::builder()
+        .title("CPU governor")
+        .subtitle("Optional amd-pstate/cpufreq governor action")
+        .selectable(false)
+        .build();
+    governor_row.add_suffix(&governor);
+    governor_row.add_suffix(&include_governor);
+    group.add(&governor_row);
+
+    let epp_values = cpu.map(|cpu| cpu.available_epp.clone()).unwrap_or_default();
+    let epp = string_dropdown(&epp_values, cpu.and_then(|cpu| cpu.epp.as_deref()));
+    epp.set_sensitive(!epp_values.is_empty());
+    let include_epp = gtk4::Switch::new();
+    include_epp.set_active(false);
+    include_epp.set_sensitive(!epp_values.is_empty());
+    include_epp.set_valign(gtk4::Align::Center);
+    let epp_row = adw::ActionRow::builder()
+        .title("CPU EPP")
+        .subtitle("Optional energy-performance preference action")
+        .selectable(false)
+        .build();
+    epp_row.add_suffix(&epp);
+    epp_row.add_suffix(&include_epp);
+    group.add(&epp_row);
+
+    let boost_values = vec!["0".to_owned(), "1".to_owned()];
+    let boost_current = cpu
+        .and_then(|cpu| cpu.boost)
+        .map(|boost| if boost { "1" } else { "0" });
+    let boost = string_dropdown(&boost_values, boost_current);
+    boost.set_sensitive(cpu.is_some());
+    let include_boost = gtk4::Switch::new();
+    include_boost.set_active(false);
+    include_boost.set_sensitive(cpu.is_some());
+    include_boost.set_valign(gtk4::Align::Center);
+    let boost_row = adw::ActionRow::builder()
+        .title("CPU boost")
+        .subtitle("Optional boost toggle action")
+        .selectable(false)
+        .build();
+    boost_row.add_suffix(&boost);
+    boost_row.add_suffix(&include_boost);
+    group.add(&boost_row);
+
+    let co_values = (-30..=0)
+        .map(|offset| offset.to_string())
+        .collect::<Vec<_>>();
+    let co = string_dropdown(&co_values, Some("0"));
+    let co_available = bundle
+        .ryzen_backend_status
+        .as_ref()
+        .map(|status| status.curve_optimizer_backend != "unavailable")
+        .unwrap_or(false);
+    co.set_sensitive(co_available);
+    let include_co = gtk4::Switch::new();
+    include_co.set_active(false);
+    include_co.set_sensitive(co_available);
+    include_co.set_valign(gtk4::Align::Center);
+    let co_status = bundle
+        .ryzen_backend_status
+        .as_ref()
+        .map(|status| match status.curve_optimizer_readback_status {
+            legion_common::CurveOptimizerReadbackStatus::WriteOnly => "write-only",
+            legion_common::CurveOptimizerReadbackStatus::Verified => "read-back available",
+            legion_common::CurveOptimizerReadbackStatus::Failed => "read-back failed",
+        })
+        .unwrap_or("backend unknown");
+    let co_row = adw::ActionRow::builder()
+        .title("Curve Optimizer")
+        .subtitle(format!(
+            "Optional all-core CO action; {co_status}. Bad values can destabilize the system."
+        ))
+        .selectable(false)
+        .build();
+    co_row.add_suffix(&co);
+    co_row.add_suffix(&include_co);
+    group.add(&co_row);
+
+    let save_row = adw::ActionRow::builder()
+        .title("Save profile")
+        .subtitle("The profile is stored but not applied")
+        .selectable(false)
+        .build();
+    let save = gtk4::Button::builder()
+        .label("Save")
+        .css_classes(["suggested-action", "pill"])
+        .valign(gtk4::Align::Center)
+        .build();
+    save_row.add_suffix(&save);
+    group.add(&save_row);
+
+    let feedback = write_feedback_row("Advanced CPU profile");
+    group.add(&feedback);
+
+    save.connect_clicked(move |button| {
+        let profile_id_value = profile_id.text().trim().to_owned();
+        let label_value = label.text().trim().to_owned();
+        let governor_value = include_governor
+            .is_active()
+            .then(|| selected_dropdown_value(&governor))
+            .flatten();
+        let epp_value = include_epp
+            .is_active()
+            .then(|| selected_dropdown_value(&epp))
+            .flatten();
+        let boost_value = include_boost
+            .is_active()
+            .then(|| selected_dropdown_value(&boost))
+            .flatten();
+        let co_value = include_co
+            .is_active()
+            .then(|| selected_dropdown_value(&co))
+            .flatten();
+
+        if profile_id_value.is_empty() || label_value.is_empty() {
+            store_write_feedback_state(
+                "Advanced CPU profile",
+                "Save error",
+                "Failed: profile ID and label are required",
+            );
+            return;
+        }
+        if governor_value.is_none() && epp_value.is_none() && boost_value.is_none() && co_value.is_none() {
+            store_write_feedback_state(
+                "Advanced CPU profile",
+                "Save error",
+                "Failed: enable at least one CPU action",
+            );
+            return;
+        }
+
+        button.set_sensitive(false);
+        let button_for_recv = button.clone();
+        spawn_dbus_call(
+            move || {
+                let mut actions = serde_json::Map::new();
+                if let Some(value) = governor_value {
+                    actions.insert("cpu_governor".to_owned(), serde_json::Value::String(value));
+                }
+                if let Some(value) = epp_value {
+                    actions.insert("cpu_epp".to_owned(), serde_json::Value::String(value));
+                }
+                if let Some(value) = boost_value {
+                    actions.insert("cpu_boost".to_owned(), serde_json::Value::String(value));
+                }
+                if let Some(value) = co_value {
+                    actions.insert(
+                        "curve_optimizer_all_core".to_owned(),
+                        serde_json::Value::String(value),
+                    );
+                }
+                let profile_json = serde_json::json!({
+                    "schema_version": 1,
+                    "label": label_value,
+                    "actions": actions,
+                })
+                .to_string();
+                make_client()
+                    .and_then(|client| client.set_hardware_profile(&profile_id_value, &profile_json))
+            },
+            move |result| {
+                button_for_recv.set_sensitive(true);
+                match result {
+                    Ok(_) => {
+                        store_write_feedback_state(
+                            "Advanced CPU profile",
+                            "Saved",
+                            "Profile saved. Apply it manually or select it from an automation rule.",
+                        );
+                        let _ = request_dashboard_refresh();
+                    }
+                    Err(error) => {
+                        store_write_feedback_state(
+                            "Advanced CPU profile",
+                            "Save error",
+                            &format!("Failed: {error}"),
+                        );
+                    }
+                }
+            },
+        );
+    });
+
+    group
+}
+
+fn string_dropdown(values: &[String], selected: Option<&str>) -> gtk4::DropDown {
+    let value_refs = values.iter().map(String::as_str).collect::<Vec<_>>();
+    let model = gtk4::StringList::new(&value_refs);
+    let dropdown = gtk4::DropDown::builder().model(&model).build();
+    if let Some(position) =
+        selected.and_then(|selected| values.iter().position(|value| value.as_str() == selected))
+    {
+        dropdown.set_selected(position as u32);
+    }
+    dropdown
+}
+
 fn build_hardware_profile_apply_controls(bundle: &DiagnosticsBundle) -> adw::PreferencesGroup {
     let group = adw::PreferencesGroup::new();
     group.set_title("Saved Hardware Profiles");
@@ -561,7 +803,12 @@ fn build_hardware_profile_apply_controls(bundle: &DiagnosticsBundle) -> adw::Pre
             apply.add_css_class("suggested-action");
             apply.add_css_class("pill");
             apply.set_valign(gtk4::Align::Center);
+            let delete = gtk4::Button::with_label("Delete");
+            delete.add_css_class("destructive-action");
+            delete.add_css_class("pill");
+            delete.set_valign(gtk4::Align::Center);
             row.add_suffix(&apply);
+            row.add_suffix(&delete);
             group.add(&row);
 
             let feedback = write_feedback_row("Hardware profile");
@@ -620,6 +867,54 @@ fn build_hardware_profile_apply_controls(bundle: &DiagnosticsBundle) -> adw::Pre
                                 store_write_feedback_state(
                                     "Hardware profile",
                                     "Apply error",
+                                    &subtitle,
+                                );
+                            }
+                        }
+                    },
+                );
+            });
+
+            let profile_id_for_delete = profile_id.clone();
+            let delete_for_click = delete.clone();
+            let row_for_delete = row.clone();
+            let feedback_for_delete = feedback.clone();
+            delete.connect_clicked(move |_| {
+                feedback_for_delete.set_title("Deleting");
+                feedback_for_delete.set_subtitle("Removing saved hardware profile...");
+                delete_for_click.set_sensitive(false);
+                row_for_delete.set_sensitive(false);
+
+                let profile_id_for_call = profile_id_for_delete.clone();
+                let delete_for_recv = delete_for_click.clone();
+                let row_for_recv = row_for_delete.clone();
+                let feedback_for_recv = feedback_for_delete.clone();
+                spawn_dbus_call(
+                    move || {
+                        make_client()
+                            .and_then(|client| client.remove_hardware_profile(&profile_id_for_call))
+                    },
+                    move |result| {
+                        delete_for_recv.set_sensitive(true);
+                        row_for_recv.set_sensitive(true);
+                        match result {
+                            Ok(_) => {
+                                feedback_for_recv.set_title("Deleted");
+                                feedback_for_recv.set_subtitle("Profile removed.");
+                                store_write_feedback_state(
+                                    "Hardware profile",
+                                    "Deleted",
+                                    "Profile removed.",
+                                );
+                                let _ = request_dashboard_refresh();
+                            }
+                            Err(error) => {
+                                let subtitle = format!("Failed: {error}");
+                                feedback_for_recv.set_title("Delete error");
+                                feedback_for_recv.set_subtitle(&subtitle);
+                                store_write_feedback_state(
+                                    "Hardware profile",
+                                    "Delete error",
                                     &subtitle,
                                 );
                             }
