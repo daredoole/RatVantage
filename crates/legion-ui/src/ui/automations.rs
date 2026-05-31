@@ -1,7 +1,10 @@
 use crate::DiagnosticsBundle;
 use adw::prelude::*;
 use anyhow::Result;
-use legion_common::{AutomationRuleKind, HARDWARE_PROFILE_TRIGGER_IDS};
+use legion_common::{
+    AutomationRuleKind, CurveOptimizerReadbackStatus, HardwareProfile, RyzenBackendStatus,
+    HARDWARE_PROFILE_TRIGGER_IDS,
+};
 
 use super::shared::{
     append_error, make_client, request_dashboard_refresh, section_note, selected_dropdown_value,
@@ -620,6 +623,31 @@ fn append_persisted_automation_rules(page: &adw::PreferencesPage, bundle: &Diagn
         protect_row.add_suffix(&protect_profile);
         expander.add_row(&protect_row);
 
+        if let Some(summary) = advanced_cpu_profile_summary(
+            bundle.hardware_profiles.get(fast_charge_profile_id),
+            bundle.ryzen_backend_status.as_ref(),
+        ) {
+            expander.add_row(
+                &adw::ActionRow::builder()
+                    .title("Fast-charge advanced CPU actions")
+                    .subtitle(summary.as_str())
+                    .selectable(false)
+                    .build(),
+            );
+        }
+        if let Some(summary) = advanced_cpu_profile_summary(
+            bundle.hardware_profiles.get(protect_profile_id),
+            bundle.ryzen_backend_status.as_ref(),
+        ) {
+            expander.add_row(
+                &adw::ActionRow::builder()
+                    .title("Protect advanced CPU actions")
+                    .subtitle(summary.as_str())
+                    .selectable(false)
+                    .build(),
+            );
+        }
+
         let cooldown = gtk4::SpinButton::with_range(0.0, 86_400.0, 30.0);
         cooldown.set_value(*cooldown_secs as f64);
         cooldown.set_digits(0);
@@ -881,6 +909,41 @@ fn profile_dropdown(profile_ids: &[String], selected_profile_id: &str) -> gtk4::
         chooser.set_selected(position as u32);
     }
     chooser
+}
+
+fn advanced_cpu_profile_summary(
+    profile: Option<&HardwareProfile>,
+    ryzen_status: Option<&RyzenBackendStatus>,
+) -> Option<String> {
+    let profile = profile?;
+    let mut actions = Vec::new();
+    if let Some(value) = &profile.actions.cpu_governor {
+        actions.push(format!("governor={value}"));
+    }
+    if let Some(value) = &profile.actions.cpu_epp {
+        actions.push(format!("EPP={value}"));
+    }
+    if let Some(value) = &profile.actions.cpu_boost {
+        actions.push(format!("boost={value}"));
+    }
+    if let Some(value) = &profile.actions.curve_optimizer_all_core {
+        let readback = ryzen_status
+            .map(|status| match status.curve_optimizer_readback_status {
+                CurveOptimizerReadbackStatus::WriteOnly => "write-only",
+                CurveOptimizerReadbackStatus::Verified => "read-back available",
+                CurveOptimizerReadbackStatus::Failed => "read-back failed",
+            })
+            .unwrap_or("read-back unknown");
+        actions.push(format!("CO={value} ({readback})"));
+    }
+    if actions.is_empty() {
+        None
+    } else {
+        Some(format!(
+            "{}. These run through profile apply with daemon policy; bad CO values can destabilize the system.",
+            actions.join(", ")
+        ))
+    }
 }
 
 fn automation_rule_subtitle(
