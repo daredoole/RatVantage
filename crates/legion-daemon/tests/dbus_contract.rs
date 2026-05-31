@@ -1,8 +1,8 @@
 use std::{collections::BTreeMap, env, fs, os::unix::fs::PermissionsExt, sync::Arc};
 
 use legion_common::{
-    Capability, CapabilityRegistry, CurveOptimizerWriteState, FanCurveSnapshot, GpuModePending,
-    HardwareSummary, TelemetrySnapshot, WriteDryRunPlan, WriteExecutionResult,
+    AutomationRuleKind, Capability, CapabilityRegistry, CurveOptimizerWriteState, FanCurveSnapshot,
+    GpuModePending, HardwareSummary, TelemetrySnapshot, WriteDryRunPlan, WriteExecutionResult,
     WriteExecutionStatus,
 };
 use legion_control_daemon::{
@@ -1882,13 +1882,18 @@ fn fast_charge_threshold_automation_selects_and_applies_profile() {
         "threshold_percent": 80,
         "fast_charge_profile_id": "fast_charge",
         "protect_profile_id": "battery_protect",
-        "require_ac": true
+        "require_ac": true,
+        "cooldown_secs": 42
     })
     .to_string();
 
     service
         .set_automation_rule("fast_charge_until_80", &rule)
         .unwrap();
+    let rules = service.automation_rules().unwrap();
+    let AutomationRuleKind::FastChargeUntilThreshold { cooldown_secs, .. } =
+        &rules["fast_charge_until_80"].kind;
+    assert_eq!(*cooldown_secs, 42);
     let preview = service
         .automation_rule_preview("fast_charge_until_80")
         .unwrap();
@@ -1971,7 +1976,8 @@ fn automation_observer_tick_applies_saved_rule_once_per_cooldown() {
         "threshold_percent": 80,
         "fast_charge_profile_id": "fast_charge",
         "protect_profile_id": "battery_protect",
-        "require_ac": true
+        "require_ac": true,
+        "cooldown_secs": 300
     })
     .to_string();
     service

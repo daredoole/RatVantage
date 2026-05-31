@@ -2081,6 +2081,7 @@ impl LegionControl {
                 fast_charge_profile_id,
                 protect_profile_id,
                 require_ac,
+                ..
             } => {
                 if *require_ac && ac_online != Some(true) {
                     evaluation.reason = "AC adapter is not online".to_owned();
@@ -2806,7 +2807,7 @@ pub fn handle_automation_observer_tick(
     state_path: &Path,
     options: &ProbeOptions,
     write_policy: WriteAccessPolicy,
-    cooldown_secs: u64,
+    _default_cooldown_secs: u64,
 ) -> Result<Vec<AutomationRuleApplyRun>, String> {
     if !write_policy.hardware_profile_apply_enabled {
         return Err("automation observer requires hardware profile apply policy".to_owned());
@@ -2827,12 +2828,15 @@ pub fn handle_automation_observer_tick(
         .automation_rules()
         .map_err(|e| format!("automation rules unavailable: {e}"))?;
     let mut runs = Vec::new();
-    for rule_id in rules.keys() {
+    for (rule_id, rule) in &rules {
+        let rule_cooldown_secs = match &rule.kind {
+            AutomationRuleKind::FastChargeUntilThreshold { cooldown_secs, .. } => *cooldown_secs,
+        };
         let run = ctl
             .apply_automation_rule_with_cooldown(
                 rule_id,
                 AUTOMATION_OBSERVER_SENDER,
-                Some(cooldown_secs),
+                Some(rule_cooldown_secs),
             )
             .map_err(|e| format!("automation rule `{rule_id}` failed: {e}"))?;
         runs.push(run);

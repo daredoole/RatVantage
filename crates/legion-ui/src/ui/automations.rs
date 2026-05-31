@@ -1,11 +1,11 @@
 use crate::DiagnosticsBundle;
 use adw::prelude::*;
 use anyhow::Result;
-use legion_common::HARDWARE_PROFILE_TRIGGER_IDS;
+use legion_common::{AutomationRuleKind, HARDWARE_PROFILE_TRIGGER_IDS};
 
 use super::shared::{
-    append_error, make_client, request_dashboard_refresh, section_note, spawn_dbus_call,
-    store_write_feedback_state, write_feedback_row,
+    append_error, make_client, request_dashboard_refresh, section_note, selected_dropdown_value,
+    spawn_dbus_call, store_write_feedback_state, write_feedback_row,
 };
 
 pub fn automations_page(diagnostics: Result<DiagnosticsBundle>) -> adw::PreferencesPage {
@@ -31,28 +31,10 @@ pub fn automations_page(diagnostics: Result<DiagnosticsBundle>) -> adw::Preferen
 
     // ── Seed rules ───────────────────────────────────────────────────────────
     let rules_group = adw::PreferencesGroup::new();
-    rules_group.set_title("Automation Rules");
+    rules_group.set_title("Planned Rule Types");
     rules_group.set_description(Some(
-        "Full multi-condition rules remain planned. Hardware-profile trigger mappings above are persisted by the daemon now.",
+        "Saved rules above are live and editable. These examples remain planned multi-condition templates.",
     ));
-
-    let add_row = adw::ActionRow::builder()
-        .title("New automation rule")
-        .subtitle(
-            "Create a rule to automate power profiles, fan presets, and more on system events",
-        )
-        .selectable(false)
-        .build();
-    let add_btn = gtk4::Button::builder()
-        .label("Add rule")
-        .css_classes(["suggested-action", "pill"])
-        .valign(gtk4::Align::Center)
-        .build();
-    add_btn.connect_clicked(|_| {
-        // TODO: open rule-editor dialog once the backend ships
-    });
-    add_row.add_suffix(&add_btn);
-    rules_group.add(&add_row);
 
     type SeedRule<'a> = (&'a str, &'a str, Option<&'a str>, &'a str, bool, &'a str);
     let seed_rules: &[SeedRule<'_>] = &[
@@ -357,7 +339,8 @@ fn append_fast_charge_profile_starter(group: &adw::PreferencesGroup) {
                     "threshold_percent": 80,
                     "fast_charge_profile_id": "fast_charge",
                     "protect_profile_id": "battery_protect",
-                    "require_ac": true
+                    "require_ac": true,
+                    "cooldown_secs": 300
                 })
                 .to_string();
                 client.set_automation_rule("fast_charge_until_80", &rule)?;
@@ -553,7 +536,7 @@ fn append_persisted_automation_rules(page: &adw::PreferencesPage, bundle: &Diagn
     let group = adw::PreferencesGroup::new();
     group.set_title("Saved Automation Rules");
     group.add(&section_note(
-        "Rules are daemon-owned. Preview refreshes telemetry, selects a hardware profile, and test run applies that profile through the normal daemon write path.",
+        "Rules are daemon-owned. Save updates the daemon state; preview refreshes telemetry without writing; test run applies through the normal daemon write path.",
     ));
 
     if bundle.automation_rules.is_empty() {
@@ -568,16 +551,87 @@ fn append_persisted_automation_rules(page: &adw::PreferencesPage, bundle: &Diagn
         return;
     }
 
+    let profile_ids = bundle.hardware_profiles.keys().cloned().collect::<Vec<_>>();
+
     for (rule_id, rule) in &bundle.automation_rules {
-        let row = adw::ActionRow::builder()
-            .title(rule.label.as_str())
-            .subtitle(automation_rule_subtitle(
-                rule_id,
-                rule.enabled,
-                bundle.last_automation_rule_apply.get(rule_id),
-            ))
+        let expander = adw::ExpanderRow::new();
+        expander.set_title(rule.label.as_str());
+        expander.set_subtitle(&automation_rule_subtitle(
+            rule_id,
+            rule.enabled,
+            bundle.last_automation_rule_apply.get(rule_id),
+        ));
+
+        let enabled = gtk4::Switch::new();
+        enabled.set_active(rule.enabled);
+        enabled.set_valign(gtk4::Align::Center);
+        expander.add_suffix(&enabled);
+
+        let AutomationRuleKind::FastChargeUntilThreshold {
+            threshold_percent,
+            fast_charge_profile_id,
+            protect_profile_id,
+            require_ac,
+            cooldown_secs,
+        } = &rule.kind;
+
+        let threshold = gtk4::SpinButton::with_range(1.0, 100.0, 1.0);
+        threshold.set_value((*threshold_percent).into());
+        threshold.set_digits(0);
+        threshold.set_valign(gtk4::Align::Center);
+        let threshold_row = adw::ActionRow::builder()
+            .title("Battery threshold")
+            .subtitle("Switch from fast charge to protect profile at or above this percent")
             .selectable(false)
             .build();
+        threshold_row.add_suffix(&threshold);
+        expander.add_row(&threshold_row);
+
+        let require_ac_switch = gtk4::Switch::new();
+        require_ac_switch.set_active(*require_ac);
+        require_ac_switch.set_valign(gtk4::Align::Center);
+        let require_ac_row = adw::ActionRow::builder()
+            .title("Require AC")
+            .subtitle("Skip the rule unless the AC adapter is online")
+            .selectable(false)
+            .build();
+        require_ac_row.add_suffix(&require_ac_switch);
+        expander.add_row(&require_ac_row);
+
+        let fast_profile = profile_dropdown(&profile_ids, fast_charge_profile_id);
+        fast_profile.set_valign(gtk4::Align::Center);
+        fast_profile.set_sensitive(!profile_ids.is_empty());
+        let fast_row = adw::ActionRow::builder()
+            .title("Fast-charge profile")
+            .subtitle("Profile applied while battery is below the threshold")
+            .selectable(false)
+            .build();
+        fast_row.add_suffix(&fast_profile);
+        expander.add_row(&fast_row);
+
+        let protect_profile = profile_dropdown(&profile_ids, protect_profile_id);
+        protect_profile.set_valign(gtk4::Align::Center);
+        protect_profile.set_sensitive(!profile_ids.is_empty());
+        let protect_row = adw::ActionRow::builder()
+            .title("Protect profile")
+            .subtitle("Profile applied when battery reaches the threshold")
+            .selectable(false)
+            .build();
+        protect_row.add_suffix(&protect_profile);
+        expander.add_row(&protect_row);
+
+        let cooldown = gtk4::SpinButton::with_range(0.0, 86_400.0, 30.0);
+        cooldown.set_value(*cooldown_secs as f64);
+        cooldown.set_digits(0);
+        cooldown.set_valign(gtk4::Align::Center);
+        let cooldown_row = adw::ActionRow::builder()
+            .title("Cooldown seconds")
+            .subtitle("Minimum delay between automatic observer runs for this rule")
+            .selectable(false)
+            .build();
+        cooldown_row.add_suffix(&cooldown);
+        expander.add_row(&cooldown_row);
+
         let preview = gtk4::Button::builder()
             .label("Preview")
             .css_classes(["flat"])
@@ -588,9 +642,33 @@ fn append_persisted_automation_rules(page: &adw::PreferencesPage, bundle: &Diagn
             .css_classes(["suggested-action", "pill"])
             .valign(gtk4::Align::Center)
             .build();
-        row.add_suffix(&preview);
-        row.add_suffix(&run);
-        group.add(&row);
+        let save = gtk4::Button::builder()
+            .label("Save")
+            .css_classes(["suggested-action", "pill"])
+            .valign(gtk4::Align::Center)
+            .build();
+        save.set_sensitive(profile_ids.len() >= 2);
+        let delete = gtk4::Button::builder()
+            .label("Delete")
+            .css_classes(["destructive-action", "pill"])
+            .valign(gtk4::Align::Center)
+            .build();
+
+        let action_row = adw::ActionRow::builder()
+            .title("Rule actions")
+            .subtitle(if profile_ids.len() >= 2 {
+                "Preview, apply once, save edits, or delete this rule"
+            } else {
+                "Create at least two hardware profiles before saving edits"
+            })
+            .selectable(false)
+            .build();
+        action_row.add_suffix(&preview);
+        action_row.add_suffix(&run);
+        action_row.add_suffix(&save);
+        action_row.add_suffix(&delete);
+        expander.add_row(&action_row);
+        group.add(&expander);
 
         let rule_id_for_preview = rule_id.clone();
         preview.connect_clicked(move |button| {
@@ -665,10 +743,144 @@ fn append_persisted_automation_rules(page: &adw::PreferencesPage, bundle: &Diagn
                 },
             );
         });
+
+        let rule_id_for_save = rule_id.clone();
+        let label_for_save = rule.label.clone();
+        let profile_ids_for_save = profile_ids.clone();
+        save.connect_clicked(move |button| {
+            let Some(fast_profile_id) = selected_dropdown_value(&fast_profile) else {
+                store_write_feedback_state(
+                    "Automation rule",
+                    "Save error",
+                    "Failed: select a fast-charge profile",
+                );
+                return;
+            };
+            let Some(protect_profile_id) = selected_dropdown_value(&protect_profile) else {
+                store_write_feedback_state(
+                    "Automation rule",
+                    "Save error",
+                    "Failed: select a protect profile",
+                );
+                return;
+            };
+            if fast_profile_id == protect_profile_id {
+                store_write_feedback_state(
+                    "Automation rule",
+                    "Save error",
+                    "Failed: fast-charge and protect profiles must be different",
+                );
+                return;
+            }
+            if !profile_ids_for_save.contains(&fast_profile_id)
+                || !profile_ids_for_save.contains(&protect_profile_id)
+            {
+                store_write_feedback_state(
+                    "Automation rule",
+                    "Save error",
+                    "Failed: selected profile no longer exists",
+                );
+                return;
+            }
+            let enabled_value = enabled.is_active();
+            let threshold_value = threshold.value_as_int();
+            let require_ac_value = require_ac_switch.is_active();
+            let cooldown_value = cooldown.value_as_int();
+
+            button.set_sensitive(false);
+            let button_for_recv = button.clone();
+            let rule_id_for_call = rule_id_for_save.clone();
+            let label_for_call = label_for_save.clone();
+            spawn_dbus_call(
+                move || {
+                    let rule_json = serde_json::json!({
+                        "schema_version": 1,
+                        "label": label_for_call,
+                        "enabled": enabled_value,
+                        "kind": "fast_charge_until_threshold",
+                        "threshold_percent": threshold_value,
+                        "fast_charge_profile_id": fast_profile_id,
+                        "protect_profile_id": protect_profile_id,
+                        "require_ac": require_ac_value,
+                        "cooldown_secs": cooldown_value
+                    })
+                    .to_string();
+                    make_client().and_then(|client| {
+                        client.set_automation_rule(&rule_id_for_call, &rule_json)
+                    })
+                },
+                move |result| {
+                    button_for_recv.set_sensitive(true);
+                    match result {
+                        Ok(_) => {
+                            store_write_feedback_state(
+                                "Automation rule",
+                                "Saved",
+                                "Rule edits saved to the daemon.",
+                            );
+                            let _ = request_dashboard_refresh();
+                        }
+                        Err(error) => {
+                            store_write_feedback_state(
+                                "Automation rule",
+                                "Save error",
+                                &format!("Failed: {error}"),
+                            );
+                        }
+                    }
+                },
+            );
+        });
+
+        let rule_id_for_delete = rule_id.clone();
+        delete.connect_clicked(move |button| {
+            button.set_sensitive(false);
+            let button_for_recv = button.clone();
+            let rule_id_for_call = rule_id_for_delete.clone();
+            spawn_dbus_call(
+                move || {
+                    make_client()
+                        .and_then(|client| client.remove_automation_rule(&rule_id_for_call))
+                },
+                move |result| {
+                    button_for_recv.set_sensitive(true);
+                    match result {
+                        Ok(_) => {
+                            store_write_feedback_state(
+                                "Automation rule",
+                                "Deleted",
+                                "Rule removed from the daemon.",
+                            );
+                            let _ = request_dashboard_refresh();
+                        }
+                        Err(error) => {
+                            store_write_feedback_state(
+                                "Automation rule",
+                                "Delete error",
+                                &format!("Failed: {error}"),
+                            );
+                        }
+                    }
+                },
+            );
+        });
     }
 
     group.add(&write_feedback_row("Automation rule"));
     page.add(&group);
+}
+
+fn profile_dropdown(profile_ids: &[String], selected_profile_id: &str) -> gtk4::DropDown {
+    let values = profile_ids.iter().map(String::as_str).collect::<Vec<_>>();
+    let model = gtk4::StringList::new(&values);
+    let chooser = gtk4::DropDown::builder().model(&model).build();
+    if let Some(position) = profile_ids
+        .iter()
+        .position(|profile_id| profile_id == selected_profile_id)
+    {
+        chooser.set_selected(position as u32);
+    }
+    chooser
 }
 
 fn automation_rule_subtitle(

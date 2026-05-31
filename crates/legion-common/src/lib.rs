@@ -156,6 +156,10 @@ fn default_true() -> bool {
     true
 }
 
+fn default_automation_cooldown_secs() -> u64 {
+    300
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 pub enum AutomationRuleKind {
@@ -165,6 +169,8 @@ pub enum AutomationRuleKind {
         protect_profile_id: String,
         #[serde(default = "default_true")]
         require_ac: bool,
+        #[serde(default = "default_automation_cooldown_secs")]
+        cooldown_secs: u64,
     },
 }
 
@@ -1707,6 +1713,7 @@ pub fn validate_automation_rule(rule: &AutomationRule) -> Result<(), ValidationE
             threshold_percent,
             fast_charge_profile_id,
             protect_profile_id,
+            cooldown_secs,
             ..
         } => {
             if !(1..=100).contains(threshold_percent) {
@@ -1724,6 +1731,13 @@ pub fn validate_automation_rule(rule: &AutomationRule) -> Result<(), ValidationE
                     requested: fast_charge_profile_id.clone(),
                     reason: "fast_charge_profile_id and protect_profile_id must be different"
                         .to_owned(),
+                });
+            }
+            if *cooldown_secs > 86_400 {
+                return Err(ValidationError::BlockedChoice {
+                    capability_id: "automation_rules:cooldown_secs".to_owned(),
+                    requested: cooldown_secs.to_string(),
+                    reason: "cooldown_secs must be 0..=86400".to_owned(),
                 });
             }
         }

@@ -1604,7 +1604,8 @@ fn automation_rule_cli_prints_rules_and_last_runs() {
         "threshold_percent": 80,
         "fast_charge_profile_id": "fast_charge",
         "protect_profile_id": "battery_protect",
-        "require_ac": true
+        "require_ac": true,
+        "cooldown_secs": 300
     })
     .to_string();
     client
