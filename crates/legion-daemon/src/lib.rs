@@ -1,6 +1,7 @@
 use std::{
     collections::BTreeMap,
     fs,
+    os::unix::fs::PermissionsExt,
     path::{Path, PathBuf},
     process::Command,
     sync::{Arc, Mutex},
@@ -26,7 +27,9 @@ use legion_common::{
     CurveOptimizerReadbackStatus, CurveOptimizerWriteState, DaemonState, FanCurveSnapshot,
     FanPreset, GpuModePending, HardwareProfile, HardwareProfileActions,
     HardwareProfileApplyActionResult, HardwareProfileApplyPreview, HardwareProfileApplyRun,
-    IdeapadToggleCapability, LedCapability, ValidationError, WriteDryRunPlan, WriteExecutionResult,
+    IdeapadToggleCapability, LedCapability, RyzenAdjBackendStatus, RyzenBackendStatus,
+    RyzenSmuBackendStatus, RyzenSmuSetupAssistant, ValidationError, WriteDryRunPlan,
+    WriteExecutionResult,
 };
 use legion_probe::{probe, ProbeOptions};
 use serde::Serialize;
@@ -39,7 +42,7 @@ use zbus::{
 
 pub const DBUS_INTERFACE: &str = "org.ratvantage.LegionControl1";
 pub const DBUS_PATH: &str = "/org/ratvantage/LegionControl1";
-pub const READ_ONLY_METHODS: &str = "CaptureLastKnownGoodFanCurve,ClearAutomationRules,ClearFanPresetProfileMap,ClearGpuModePending,ClearHardwareProfileTriggers,ClearHardwareProfiles,GetAutomationRulePreview,GetAutomationRules,GetCapabilities,GetFanPresetProfileMap,GetFanPresetReapplyAfterResume,GetGpuModePending,GetHardwareProfileApplyPreview,GetHardwareProfileTriggerApplyPreview,GetHardwareProfileTriggers,GetHardwareProfiles,GetHardwareSummary,GetLastAutomationRuleApply,GetLastCurveOptimizerAllCore,GetLastHardwareProfileApply,GetLastKnownGoodFanCurve,GetLiveFanCurveReadings,GetRawProbeReport,GetTelemetry,PlanAmdGpuDpmForceLevelWrite,PlanBatteryChargeTypeWrite,PlanConservationModeWrite,PlanCpuBoostWrite,PlanCpuEppWrite,PlanCpuGovernorWrite,PlanCurveOptimizerAllCoreWrite,PlanFanPresetWrite,PlanFirmwareAttributeWrite,PlanGpuModeWrite,PlanIdeapadToggleWrite,PlanLedStateWrite,PlanPlatformProfileWrite,PlanRestoreAutoFanWrite,RefreshCapabilities,RemoveAutomationRule,RemoveFanPresetProfileMapEntry,RemoveHardwareProfile,RemoveHardwareProfileTrigger,SetAutomationRule,SetFanPresetProfileMapEntry,SetFanPresetReapplyAfterResume,SetGpuModePending,SetHardwareProfile,SetHardwareProfileTrigger";
+pub const READ_ONLY_METHODS: &str = "CaptureLastKnownGoodFanCurve,ClearAutomationRules,ClearFanPresetProfileMap,ClearGpuModePending,ClearHardwareProfileTriggers,ClearHardwareProfiles,GetAutomationRulePreview,GetAutomationRules,GetCapabilities,GetFanPresetProfileMap,GetFanPresetReapplyAfterResume,GetGpuModePending,GetHardwareProfileApplyPreview,GetHardwareProfileTriggerApplyPreview,GetHardwareProfileTriggers,GetHardwareProfiles,GetHardwareSummary,GetLastAutomationRuleApply,GetLastCurveOptimizerAllCore,GetLastHardwareProfileApply,GetLastKnownGoodFanCurve,GetLiveFanCurveReadings,GetRawProbeReport,GetRyzenBackendStatus,GetTelemetry,PlanAmdGpuDpmForceLevelWrite,PlanBatteryChargeTypeWrite,PlanConservationModeWrite,PlanCpuBoostWrite,PlanCpuEppWrite,PlanCpuGovernorWrite,PlanCurveOptimizerAllCoreWrite,PlanFanPresetWrite,PlanFirmwareAttributeWrite,PlanGpuModeWrite,PlanIdeapadToggleWrite,PlanLedStateWrite,PlanPlatformProfileWrite,PlanRestoreAutoFanWrite,RefreshCapabilities,RemoveAutomationRule,RemoveFanPresetProfileMapEntry,RemoveHardwareProfile,RemoveHardwareProfileTrigger,SetAutomationRule,SetFanPresetProfileMapEntry,SetFanPresetReapplyAfterResume,SetGpuModePending,SetHardwareProfile,SetHardwareProfileTrigger";
 pub const GATED_WRITE_METHODS: &str =
     "SetPlatformProfile,SetBatteryChargeType,SetLedState,SetIdeapadToggle,SetGpuMode,SetCpuGovernor,SetCpuEpp,SetFirmwareAttribute,SetCpuBoost,SetConservationMode,SetAmdGpuDpmForceLevel,SetCurveOptimizerAllCore,ApplyHardwareProfile,ApplyHardwareProfileTrigger,ApplyAutomationRule";
 pub const DEFAULT_STATE_PATH: &str = "/var/lib/legion-control/state.toml";
@@ -406,6 +409,110 @@ impl CurveOptimizerAllCoreWriter for RyzenAdjCurveOptimizerWriter {
                 output.status, stdout, stderr
             ))
         }
+    }
+}
+
+pub fn detect_ryzen_backend_status(root: &Path) -> RyzenBackendStatus {
+    let ryzenadj_path = root.join("usr/local/bin/ryzenadj");
+    let ryzenadj_metadata = fs::metadata(&ryzenadj_path).ok();
+    let ryzenadj_available = ryzenadj_metadata.is_some();
+    let ryzenadj_executable = ryzenadj_metadata
+        .as_ref()
+        .map(|metadata| metadata.permissions().mode() & 0o111 != 0)
+        .unwrap_or(false);
+    let ryzenadj = RyzenAdjBackendStatus {
+        path: ryzenadj_path.display().to_string(),
+        available: ryzenadj_available,
+        executable: ryzenadj_executable,
+        supports_curve_optimizer: ryzenadj_executable,
+        detail: if ryzenadj_executable {
+            "RyzenAdj command backend is available; Curve Optimizer writes remain write-only without ryzen_smu read-back.".to_owned()
+        } else if ryzenadj_available {
+            "RyzenAdj exists but is not executable.".to_owned()
+        } else {
+            "RyzenAdj was not found at the expected path.".to_owned()
+        },
+    };
+
+    let ryzen_smu_path = root.join("sys/kernel/ryzen_smu_drv");
+    let pm_table_path = ryzen_smu_path.join("pm_table");
+    let modules_path = root.join("proc/modules");
+    let module_loaded = fs::read_to_string(&modules_path)
+        .map(|modules| {
+            modules
+                .lines()
+                .any(|line| line.split_whitespace().next() == Some("ryzen_smu"))
+        })
+        .unwrap_or_else(|_| ryzen_smu_path.exists());
+    let sysfs_available = ryzen_smu_path.is_dir();
+    let pm_table_available = pm_table_path.exists();
+    let readback_available = sysfs_available && pm_table_available;
+    let ryzen_smu = RyzenSmuBackendStatus {
+        module_loaded,
+        sysfs_path: ryzen_smu_path.display().to_string(),
+        sysfs_available,
+        pm_table_available,
+        readback_available,
+        detail: if readback_available {
+            "ryzen_smu sysfs backend is present; future provider code can use it for read-back/validation.".to_owned()
+        } else if module_loaded || sysfs_available {
+            "ryzen_smu appears partially present, but pm_table read-back was not detected."
+                .to_owned()
+        } else {
+            "ryzen_smu backend is not loaded or not exposing sysfs on this host.".to_owned()
+        },
+    };
+
+    let curve_optimizer_readback_status = if readback_available {
+        CurveOptimizerReadbackStatus::Verified
+    } else {
+        CurveOptimizerReadbackStatus::WriteOnly
+    };
+    let curve_optimizer_backend = if readback_available {
+        "ryzen_smu".to_owned()
+    } else if ryzenadj.supports_curve_optimizer {
+        "ryzenadj_write_only".to_owned()
+    } else {
+        "unavailable".to_owned()
+    };
+    let setup_assistant = build_ryzen_smu_setup_assistant(&ryzenadj, &ryzen_smu);
+
+    RyzenBackendStatus {
+        ryzenadj,
+        ryzen_smu,
+        curve_optimizer_backend,
+        curve_optimizer_readback_status,
+        setup_assistant,
+    }
+}
+
+fn build_ryzen_smu_setup_assistant(
+    ryzenadj: &RyzenAdjBackendStatus,
+    ryzen_smu: &RyzenSmuBackendStatus,
+) -> RyzenSmuSetupAssistant {
+    let recommended = ryzenadj.supports_curve_optimizer && !ryzen_smu.readback_available;
+    RyzenSmuSetupAssistant {
+        recommended,
+        reason: if recommended {
+            "Curve Optimizer writes are available through RyzenAdj, but read-back is missing. ryzen_smu may provide future validation/read-back support.".to_owned()
+        } else if ryzen_smu.readback_available {
+            "ryzen_smu read-back surface is already detected.".to_owned()
+        } else {
+            "Install RyzenAdj first if you want Curve Optimizer writes; ryzen_smu alone is only the read-back/setup side here.".to_owned()
+        },
+        commands: vec![
+            "git clone https://github.com/amkillam/ryzen_smu.git".to_owned(),
+            "cd ryzen_smu".to_owned(),
+            "make".to_owned(),
+            "sudo make install".to_owned(),
+            "sudo modprobe ryzen_smu".to_owned(),
+            "ls /sys/kernel/ryzen_smu_drv".to_owned(),
+        ],
+        notes: vec![
+            "RatVantage does not install or load kernel modules automatically.".to_owned(),
+            "Review the upstream README and code before building a kernel module.".to_owned(),
+            "After loading ryzen_smu, refresh diagnostics and confirm /sys/kernel/ryzen_smu_drv is present.".to_owned(),
+        ],
     }
 }
 
@@ -1618,6 +1725,10 @@ impl LegionControl {
             .map_err(|_| fdo::Error::Failed("daemon state lock poisoned".to_owned()))
     }
 
+    pub fn ryzen_backend_status(&self) -> fdo::Result<RyzenBackendStatus> {
+        Ok(detect_ryzen_backend_status(&self.options.sysfs_root))
+    }
+
     pub fn last_hardware_profile_apply(&self) -> fdo::Result<Option<HardwareProfileApplyRun>> {
         self.state
             .lock()
@@ -2431,6 +2542,10 @@ impl LegionControl {
 
     fn GetLastCurveOptimizerAllCore(&self) -> fdo::Result<String> {
         to_json(&self.last_curve_optimizer_all_core()?)
+    }
+
+    fn GetRyzenBackendStatus(&self) -> fdo::Result<String> {
+        to_json(&self.ryzen_backend_status()?)
     }
 
     fn GetLastKnownGoodFanCurve(&self) -> fdo::Result<String> {

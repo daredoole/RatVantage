@@ -78,6 +78,12 @@ struct Args {
     #[arg(long)]
     last_curve_optimizer_all_core: bool,
 
+    #[arg(long)]
+    ryzen_backend_status: bool,
+
+    #[arg(long)]
+    ryzen_smu_setup: bool,
+
     #[arg(long, value_name = "0|1")]
     plan_conservation_mode: Option<String>,
 
@@ -204,6 +210,8 @@ fn main() -> Result<()> {
         args.set_curve_optimizer_all_core.is_some(),
         args.reset_curve_optimizer_all_core,
         args.last_curve_optimizer_all_core,
+        args.ryzen_backend_status,
+        args.ryzen_smu_setup,
         args.plan_conservation_mode.is_some(),
         args.set_conservation_mode.is_some(),
         args.plan_amd_gpu_dpm_force_level.is_some(),
@@ -292,6 +300,10 @@ fn main() -> Result<()> {
             print_json(&client.set_curve_optimizer_all_core("0")?)?;
         } else if args.last_curve_optimizer_all_core {
             print_json(&client.last_curve_optimizer_all_core()?)?;
+        } else if args.ryzen_backend_status {
+            print_json(&client.ryzen_backend_status()?)?;
+        } else if args.ryzen_smu_setup {
+            print_json(&client.ryzen_backend_status()?.setup_assistant)?;
         } else if let Some(requested) = args.plan_conservation_mode {
             print_write_plan(&client.plan_conservation_mode_write(&requested)?)?;
         } else if let Some(requested) = args.set_conservation_mode {

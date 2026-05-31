@@ -216,6 +216,42 @@ pub enum CurveOptimizerReadbackStatus {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct RyzenBackendStatus {
+    pub ryzenadj: RyzenAdjBackendStatus,
+    pub ryzen_smu: RyzenSmuBackendStatus,
+    pub curve_optimizer_backend: String,
+    pub curve_optimizer_readback_status: CurveOptimizerReadbackStatus,
+    pub setup_assistant: RyzenSmuSetupAssistant,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct RyzenAdjBackendStatus {
+    pub path: String,
+    pub available: bool,
+    pub executable: bool,
+    pub supports_curve_optimizer: bool,
+    pub detail: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct RyzenSmuBackendStatus {
+    pub module_loaded: bool,
+    pub sysfs_path: String,
+    pub sysfs_available: bool,
+    pub pm_table_available: bool,
+    pub readback_available: bool,
+    pub detail: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct RyzenSmuSetupAssistant {
+    pub recommended: bool,
+    pub reason: String,
+    pub commands: Vec<String>,
+    pub notes: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct GpuModePending {
     pub requested_mode: String,
     pub previous_mode: Option<String>,

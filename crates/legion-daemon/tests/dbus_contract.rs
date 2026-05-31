@@ -2,8 +2,8 @@ use std::{collections::BTreeMap, env, fs, os::unix::fs::PermissionsExt, sync::Ar
 
 use legion_common::{
     AutomationRuleKind, Capability, CapabilityRegistry, CurveOptimizerWriteState, FanCurveSnapshot,
-    GpuModePending, HardwareSummary, TelemetrySnapshot, WriteDryRunPlan, WriteExecutionResult,
-    WriteExecutionStatus,
+    GpuModePending, HardwareSummary, RyzenBackendStatus, TelemetrySnapshot, WriteDryRunPlan,
+    WriteExecutionResult, WriteExecutionStatus,
 };
 use legion_control_daemon::{
     BatteryChargeTypeWriter, CpuEppWriter, CpuGovernorWriter, CurveOptimizerAllCoreWriter,
@@ -76,6 +76,13 @@ fn read_only_methods_return_expected_json_contracts() {
 
     let refreshed: Vec<Capability> = call_json(&proxy, "RefreshCapabilities");
     assert_eq!(refreshed, capabilities);
+
+    let ryzen_status: RyzenBackendStatus = call_json(&proxy, "GetRyzenBackendStatus");
+    assert_eq!(
+        ryzen_status.curve_optimizer_readback_status,
+        legion_common::CurveOptimizerReadbackStatus::WriteOnly
+    );
+    assert!(!ryzen_status.setup_assistant.commands.is_empty());
 
     let live: FanCurveSnapshot = call_json(&proxy, "GetLiveFanCurveReadings");
     assert_eq!(live.curve_id, "legion-hwmon");
@@ -219,6 +226,7 @@ fn introspection_exposes_gated_reversible_write_methods_only() {
             "GetLastKnownGoodFanCurve",
             "GetLiveFanCurveReadings",
             "GetRawProbeReport",
+            "GetRyzenBackendStatus",
             "GetTelemetry",
             "PlanAmdGpuDpmForceLevelWrite",
             "PlanBatteryChargeTypeWrite",

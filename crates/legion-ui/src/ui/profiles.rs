@@ -5,7 +5,8 @@ use adw::prelude::*;
 use anyhow::Result;
 use legion_common::PlatformProfileCapability;
 use legion_common::{
-    CpuPowerCapability, FirmwareAttributeCapability, SUPPORTED_FIRMWARE_SCALAR_ATTRIBUTES,
+    CpuPowerCapability, FirmwareAttributeCapability, RyzenBackendStatus,
+    SUPPORTED_FIRMWARE_SCALAR_ATTRIBUTES,
 };
 
 use super::shared::{
@@ -156,7 +157,7 @@ fn append_profiles(page: &adw::PreferencesPage, bundle: &DiagnosticsBundle) {
         page.add(&build_cpu_boost_write_controls(
             bundle.raw_probe_report.cpu_power.as_ref(),
         ));
-        append_advanced_cpu_tuning_controls(page);
+        append_advanced_cpu_tuning_controls(page, bundle);
     }
 
     // PPT firmware power limits.
@@ -433,7 +434,11 @@ fn append_curve_optimizer_reset_control(group: &adw::PreferencesGroup) {
     });
 }
 
-fn append_advanced_cpu_tuning_controls(page: &adw::PreferencesPage) {
+fn append_advanced_cpu_tuning_controls(page: &adw::PreferencesPage, bundle: &DiagnosticsBundle) {
+    if let Some(status) = &bundle.ryzen_backend_status {
+        page.add(&build_ryzen_backend_status_group(status));
+    }
+
     let gate_group = adw::PreferencesGroup::new();
     gate_group.set_title("Advanced CPU Tuning");
     gate_group.add(&section_note(
@@ -460,6 +465,72 @@ fn append_advanced_cpu_tuning_controls(page: &adw::PreferencesPage) {
 
     page.add(&gate_group);
     page.add(&controls);
+}
+
+fn build_ryzen_backend_status_group(status: &RyzenBackendStatus) -> adw::PreferencesGroup {
+    let group = adw::PreferencesGroup::new();
+    group.set_title("Ryzen Backend Status");
+    group.add(&section_note(
+        "Read-only backend detection for advanced CPU tuning. RatVantage reports setup commands only; it does not install or load kernel modules automatically.",
+    ));
+    group.add(&info_row(
+        "Curve Optimizer backend",
+        &status.curve_optimizer_backend,
+    ));
+    group.add(&info_row(
+        "Curve Optimizer read-back",
+        match status.curve_optimizer_readback_status {
+            legion_common::CurveOptimizerReadbackStatus::WriteOnly => "write-only",
+            legion_common::CurveOptimizerReadbackStatus::Verified => "available",
+            legion_common::CurveOptimizerReadbackStatus::Failed => "failed",
+        },
+    ));
+    group.add(&info_row(
+        "RyzenAdj",
+        if status.ryzenadj.supports_curve_optimizer {
+            "available"
+        } else if status.ryzenadj.available {
+            "not executable"
+        } else {
+            "missing"
+        },
+    ));
+    group.add(&info_row("RyzenAdj path", &status.ryzenadj.path));
+    group.add(&info_row(
+        "ryzen_smu",
+        if status.ryzen_smu.readback_available {
+            "read-back surface present"
+        } else if status.ryzen_smu.module_loaded || status.ryzen_smu.sysfs_available {
+            "partial"
+        } else {
+            "missing"
+        },
+    ));
+    group.add(&info_row("ryzen_smu sysfs", &status.ryzen_smu.sysfs_path));
+
+    let setup = adw::ExpanderRow::builder()
+        .title("ryzen_smu setup assistant")
+        .subtitle(status.setup_assistant.reason.as_str())
+        .build();
+    for command in &status.setup_assistant.commands {
+        setup.add_row(
+            &adw::ActionRow::builder()
+                .title(command.as_str())
+                .selectable(true)
+                .build(),
+        );
+    }
+    for note in &status.setup_assistant.notes {
+        setup.add_row(
+            &adw::ActionRow::builder()
+                .title("Note")
+                .subtitle(note.as_str())
+                .selectable(false)
+                .build(),
+        );
+    }
+    group.add(&setup);
+    group
 }
 
 fn build_hardware_profile_apply_controls(bundle: &DiagnosticsBundle) -> adw::PreferencesGroup {

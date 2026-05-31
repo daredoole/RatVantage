@@ -8,7 +8,7 @@ use legion_common::{
     AutomationRuleEvaluation, Capability, CapabilityRegistry, CapabilityStatus,
     CurveOptimizerWriteState, FanCurveSnapshot, GpuModePending, HardwareProfile,
     HardwareProfileApplyPreview, HardwareProfileApplyRun, HardwareSummary, RiskLevel,
-    TelemetrySnapshot, WriteDryRunPlan, WriteExecutionResult,
+    RyzenBackendStatus, TelemetrySnapshot, WriteDryRunPlan, WriteExecutionResult,
 };
 use serde::{de::DeserializeOwned, Serialize};
 use zbus::blocking::{Connection, ConnectionBuilder, Proxy};
@@ -71,6 +71,7 @@ pub struct DiagnosticsBundle {
     pub hardware_profile_triggers: BTreeMap<String, String>,
     pub automation_rules: BTreeMap<String, AutomationRule>,
     pub last_automation_rule_apply: BTreeMap<String, AutomationRuleApplyRun>,
+    pub ryzen_backend_status: Option<RyzenBackendStatus>,
     pub last_hardware_profile_apply: Option<HardwareProfileApplyRun>,
     pub detected_sysfs_paths: Vec<String>,
     pub recent_daemon_logs: Vec<String>,
@@ -87,6 +88,7 @@ pub struct DiagnosticsRuntimeState {
     pub hardware_profile_triggers: BTreeMap<String, String>,
     pub automation_rules: BTreeMap<String, AutomationRule>,
     pub last_automation_rule_apply: BTreeMap<String, AutomationRuleApplyRun>,
+    pub ryzen_backend_status: Option<RyzenBackendStatus>,
     pub last_hardware_profile_apply: Option<HardwareProfileApplyRun>,
 }
 
@@ -125,6 +127,7 @@ impl DiagnosticsBundle {
             hardware_profile_triggers: BTreeMap::new(),
             automation_rules: BTreeMap::new(),
             last_automation_rule_apply: BTreeMap::new(),
+            ryzen_backend_status: None,
             last_hardware_profile_apply: None,
             detected_sysfs_paths,
             recent_daemon_logs,
@@ -141,6 +144,7 @@ impl DiagnosticsBundle {
         self.hardware_profile_triggers = state.hardware_profile_triggers;
         self.automation_rules = state.automation_rules;
         self.last_automation_rule_apply = state.last_automation_rule_apply;
+        self.ryzen_backend_status = state.ryzen_backend_status;
         self.last_hardware_profile_apply = state.last_hardware_profile_apply;
         self
     }
@@ -899,6 +903,7 @@ impl LegionControlClient {
             hardware_profile_triggers: self.hardware_profile_triggers()?,
             automation_rules: self.automation_rules()?,
             last_automation_rule_apply: self.last_automation_rule_apply()?,
+            ryzen_backend_status: Some(self.ryzen_backend_status()?),
             last_hardware_profile_apply: self.last_hardware_profile_apply()?,
         }))
     }
@@ -913,6 +918,7 @@ impl LegionControlClient {
         let hardware_profile_triggers = self.hardware_profile_triggers()?;
         let automation_rules = self.automation_rules()?;
         let last_automation_rule_apply = self.last_automation_rule_apply()?;
+        let ryzen_backend_status = Some(self.ryzen_backend_status()?);
         let last_hardware_profile_apply = self.last_hardware_profile_apply()?;
         Ok(RuntimeSnapshot {
             status: UiStatus::from_parts(report.hardware.clone(), capabilities)?,
@@ -930,6 +936,7 @@ impl LegionControlClient {
                 hardware_profile_triggers,
                 automation_rules,
                 last_automation_rule_apply,
+                ryzen_backend_status,
                 last_hardware_profile_apply,
             }),
         })
@@ -1020,6 +1027,10 @@ impl LegionControlClient {
 
     pub fn last_curve_optimizer_all_core(&self) -> Result<Option<CurveOptimizerWriteState>> {
         self.call_json("GetLastCurveOptimizerAllCore")
+    }
+
+    pub fn ryzen_backend_status(&self) -> Result<RyzenBackendStatus> {
+        self.call_json("GetRyzenBackendStatus")
     }
 
     pub fn plan_conservation_mode_write(&self, requested: &str) -> Result<WriteDryRunPlan> {

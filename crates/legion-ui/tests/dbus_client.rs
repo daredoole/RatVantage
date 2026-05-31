@@ -1,6 +1,6 @@
-use std::{fs, process::Command, sync::Arc};
+use std::{fs, os::unix::fs::PermissionsExt, process::Command, sync::Arc};
 
-use legion_common::{Capability, CapabilityStatus, HardwareSummary, RiskLevel};
+use legion_common::{Capability, CapabilityStatus, HardwareSummary, RiskLevel, RyzenBackendStatus};
 use legion_control_daemon::{
     BatteryChargeTypeWriter, CpuEppWriter, CpuGovernorWriter, IdeapadToggleWriter, LedStateWriter,
     LegionControl, PlatformProfileWriter, WriteAccessPolicy, WriteAuthorizer, DBUS_INTERFACE,
@@ -1642,6 +1642,59 @@ fn automation_rule_cli_prints_rules_and_last_runs() {
         json["fast_charge_until_80"]["profile_run"]["completed"],
         true
     );
+
+    let _ = std::fs::remove_file(state_path);
+    let _ = std::fs::remove_dir_all(fixture);
+}
+
+#[test]
+fn ryzen_backend_cli_prints_status_and_setup_assistant() {
+    let fixture = copied_fixture_root("ui-ryzen-backend-status");
+    fs::create_dir_all(fixture.join("usr/local/bin")).unwrap();
+    fs::write(fixture.join("usr/local/bin/ryzenadj"), "#!/bin/sh\n").unwrap();
+    let mut perms = fs::metadata(fixture.join("usr/local/bin/ryzenadj"))
+        .unwrap()
+        .permissions();
+    perms.set_mode(0o755);
+    fs::set_permissions(fixture.join("usr/local/bin/ryzenadj"), perms).unwrap();
+    fs::create_dir_all(fixture.join("proc")).unwrap();
+    fs::write(fixture.join("proc/modules"), "").unwrap();
+
+    let state_path = unique_state_path("ui-ryzen-backend-status");
+    let service = LegionControl::new_with_state_path(
+        ProbeOptions {
+            sysfs_root: fixture.clone(),
+        },
+        &state_path,
+    );
+    let (_bus, _service_connection, address) = fixture_service_with_runtime(service);
+    let client = LegionControlClient::address(&address).unwrap();
+    let status = client.ryzen_backend_status().unwrap();
+    assert_eq!(status.curve_optimizer_backend, "ryzenadj_write_only");
+    assert!(status.setup_assistant.recommended);
+
+    let output = Command::new(env!("CARGO_BIN_EXE_legion-control-ui"))
+        .args(["--ryzen-backend-status", "--bus-address", &address])
+        .output()
+        .unwrap();
+    assert!(output.status.success());
+    assert!(output.stderr.is_empty());
+    let json: RyzenBackendStatus = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(json.curve_optimizer_backend, "ryzenadj_write_only");
+
+    let output = Command::new(env!("CARGO_BIN_EXE_legion-control-ui"))
+        .args(["--ryzen-smu-setup", "--bus-address", &address])
+        .output()
+        .unwrap();
+    assert!(output.status.success());
+    assert!(output.stderr.is_empty());
+    let json: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(json["recommended"], true);
+    assert!(json["commands"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|command| command.as_str().unwrap().contains("modprobe ryzen_smu")));
 
     let _ = std::fs::remove_file(state_path);
     let _ = std::fs::remove_dir_all(fixture);
