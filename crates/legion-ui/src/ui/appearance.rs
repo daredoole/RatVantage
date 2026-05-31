@@ -6,9 +6,9 @@ use std::cell::RefCell;
 use std::rc::Rc;
 
 use super::shared::{
-    append_error, info_row, make_client, request_dashboard_refresh, spawn_dbus_call, status_pill,
-    store_write_feedback_state, write_feedback_row, write_feedback_subtitle, write_feedback_title,
-    PillTone,
+    append_error, info_row, make_client, request_dashboard_refresh, section_note, spawn_dbus_call,
+    status_pill, store_write_feedback_state, write_feedback_row, write_feedback_subtitle,
+    write_feedback_title, PillTone,
 };
 
 pub fn appearance_page(diagnostics: Result<DiagnosticsBundle>) -> adw::PreferencesPage {
@@ -53,10 +53,12 @@ fn append_appearance(page: &adw::PreferencesPage, bundle: &DiagnosticsBundle) {
         page.add(&build_ideapad_toggle_controls(None, None));
         page.add(&build_camera_power_controls(None, None));
         page.add(&build_usb_charging_controls(None, None));
+        page.add(&build_fan_mode_controls(None, None));
     } else {
         let mut fn_lock_row = None;
         let mut camera_power_row = None;
         let mut usb_charging_row = None;
+        let mut fan_mode_row = None;
         for toggle in &bundle.raw_probe_report.ideapad_toggles {
             let row = info_row(&toggle.name, &render_ideapad_toggle_row(toggle));
             if toggle.name == "fn_lock" {
@@ -67,6 +69,9 @@ fn append_appearance(page: &adw::PreferencesPage, bundle: &DiagnosticsBundle) {
             }
             if toggle.name == "usb_charging" {
                 usb_charging_row = Some(row.clone());
+            }
+            if toggle.name == "fan_mode" {
+                fan_mode_row = Some(row.clone());
             }
             toggles.add(&row);
         }
@@ -85,6 +90,14 @@ fn append_appearance(page: &adw::PreferencesPage, bundle: &DiagnosticsBundle) {
         page.add(&build_usb_charging_controls(
             writable_usb_charging_toggle(bundle.raw_probe_report.ideapad_toggles.as_slice()),
             usb_charging_row,
+        ));
+        page.add(&build_fan_mode_controls(
+            bundle
+                .raw_probe_report
+                .ideapad_toggles
+                .iter()
+                .find(|t| t.name == "fan_mode"),
+            fan_mode_row,
         ));
     }
 }
@@ -738,6 +751,85 @@ fn writable_usb_charging_toggle(
     })
 }
 
+fn build_fan_mode_controls(
+    toggle: Option<&IdeapadToggleCapability>,
+    current_row: Option<adw::ActionRow>,
+) -> adw::PreferencesGroup {
+    let group = adw::PreferencesGroup::new();
+    group.set_title("Fan Mode");
+    group.add(&section_note(
+        "0 = Auto (firmware-controlled). 1 = Full speed (dust cleaning / max cooling). Requires --enable-fan-mode-write daemon flag.",
+    ));
+
+    let Some(toggle) = toggle else {
+        group.add(&info_row(
+            "fan_mode",
+            "Unavailable — ideapad_acpi not bound or fan_mode not exposed.",
+        ));
+        return group;
+    };
+
+    let current_val = toggle.current_value.as_deref().unwrap_or("0");
+    let current_label = render_ideapad_toggle_value(&toggle.name, current_val);
+    let is_full = current_val == "1";
+
+    let toggle_id = toggle.name.clone();
+    let path = toggle.path.clone().unwrap_or_else(|| "unknown".to_owned());
+
+    let auto_btn = gtk4::Button::with_label("Auto (0)");
+    auto_btn.set_sensitive(is_full); // only enabled if currently full
+    auto_btn.add_css_class("pill");
+    auto_btn.set_valign(gtk4::Align::Center);
+
+    let full_btn = gtk4::Button::with_label("Full speed (1)");
+    full_btn.set_sensitive(!is_full); // only enabled if currently auto
+    full_btn.add_css_class("destructive-action");
+    full_btn.add_css_class("pill");
+    full_btn.set_valign(gtk4::Align::Center);
+
+    let row = adw::ActionRow::builder()
+        .title("Fan mode")
+        .subtitle(format!("Current: {current_label} — {path}"))
+        .selectable(false)
+        .build();
+    row.add_suffix(&auto_btn);
+    row.add_suffix(&full_btn);
+    group.add(&row);
+
+    let feedback_row = write_feedback_row("Fan mode");
+    group.add(&feedback_row);
+
+    let feedback_for_auto = feedback_row.clone();
+    let current_row_for_auto = current_row.clone();
+    let toggle_id_for_auto = toggle_id.clone();
+    let path_for_auto = path.clone();
+    auto_btn.connect_clicked(move |_| {
+        handle_ideapad_toggle_button_click(
+            &feedback_for_auto,
+            current_row_for_auto.as_ref(),
+            "Fan mode",
+            &toggle_id_for_auto,
+            &path_for_auto,
+            false,
+        );
+    });
+
+    let feedback_for_full = feedback_row.clone();
+    let current_row_for_full = current_row.clone();
+    full_btn.connect_clicked(move |_| {
+        handle_ideapad_toggle_button_click(
+            &feedback_for_full,
+            current_row_for_full.as_ref(),
+            "Fan mode",
+            &toggle_id,
+            &path,
+            true,
+        );
+    });
+
+    group
+}
+
 fn render_led_row(led: &LedCapability) -> String {
     let brightness = led
         .brightness
@@ -753,5 +845,14 @@ fn render_led_row(led: &LedCapability) -> String {
 fn render_ideapad_toggle_row(toggle: &IdeapadToggleCapability) -> String {
     let value = toggle.current_value.as_deref().unwrap_or("unknown");
     let path = toggle.path.as_deref().unwrap_or("unknown");
+    let value = render_ideapad_toggle_value(&toggle.name, value);
     format!("{value} - {path}")
+}
+
+fn render_ideapad_toggle_value(toggle_name: &str, value: &str) -> String {
+    match (toggle_name, value) {
+        ("fan_mode", "0") => "Auto (0)".to_owned(),
+        ("fan_mode", "1") => "Full speed (1)".to_owned(),
+        _ => value.to_owned(),
+    }
 }

@@ -208,6 +208,16 @@ fn append_write_surfaces(page: &adw::PreferencesPage, bundle: &DiagnosticsBundle
             "Fan curves",
             "Probe-only PWM snapshot; write planning only",
         ),
+        (
+            "firmware_attributes",
+            "Firmware power limits",
+            "82WM PPT sliders — polkit-gated, range-validated, read-back validated",
+        ),
+        (
+            "cpu_power",
+            "CPU power",
+            "Governor and EPP — polkit-gated, read-back validated",
+        ),
     ];
 
     for (cap_id, cap_label, note) in surfaces {

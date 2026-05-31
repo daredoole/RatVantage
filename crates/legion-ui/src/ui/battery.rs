@@ -1,7 +1,7 @@
 use crate::DiagnosticsBundle;
 use adw::prelude::*;
 use anyhow::Result;
-use legion_common::BatteryChargeTypeCapability;
+use legion_common::{BatteryChargeTypeCapability, IdeapadToggleCapability};
 
 use super::shared::{
     append_error, build_write_controls, info_row, make_client, request_dashboard_refresh,
@@ -53,6 +53,13 @@ fn append_battery(page: &adw::PreferencesPage, bundle: &DiagnosticsBundle) {
         page.add(&controls);
     }
 
+    let conservation = bundle
+        .raw_probe_report
+        .ideapad_toggles
+        .iter()
+        .find(|toggle| toggle.name == "conservation_mode");
+    page.add(&build_conservation_mode_controls(conservation));
+
     let telemetry = adw::PreferencesGroup::new();
     telemetry.set_title("Telemetry");
     if let Some(battery) = &bundle.raw_probe_report.telemetry.battery {
@@ -72,10 +79,98 @@ fn append_battery(page: &adw::PreferencesPage, bundle: &DiagnosticsBundle) {
             "Health",
             battery.health.as_deref().unwrap_or("unknown"),
         ));
+        if let Some(uw) = battery.power_now_uw {
+            telemetry.add(&info_row(
+                "Power draw",
+                &format!("{:.1} W", uw as f64 / 1_000_000.0),
+            ));
+        }
+        if let Some(cycles) = battery.cycle_count {
+            telemetry.add(&info_row("Cycle count", &cycles.to_string()));
+        }
+        if let (Some(now), Some(full)) = (battery.energy_now_uwh, battery.energy_full_uwh) {
+            telemetry.add(&info_row(
+                "Energy",
+                &format!(
+                    "{:.1} / {:.1} Wh",
+                    now as f64 / 1_000_000.0,
+                    full as f64 / 1_000_000.0
+                ),
+            ));
+        }
+        if let (Some(full), Some(design)) =
+            (battery.energy_full_uwh, battery.energy_full_design_uwh)
+        {
+            if design > 0 {
+                telemetry.add(&info_row(
+                    "Wear level",
+                    &format!(
+                        "{:.0}% of design ({:.1} Wh)",
+                        full as f64 / design as f64 * 100.0,
+                        design as f64 / 1_000_000.0
+                    ),
+                ));
+            }
+        }
+        if let Some(uv) = battery.voltage_now_uv {
+            telemetry.add(&info_row(
+                "Voltage",
+                &format!("{:.2} V", uv as f64 / 1_000_000.0),
+            ));
+        }
+        if let Some(level) = &battery.capacity_level {
+            telemetry.add(&info_row("Capacity level", level));
+        }
+        if let Some(tech) = &battery.technology {
+            telemetry.add(&info_row("Technology", tech));
+        }
+        if let Some(model) = &battery.model_name {
+            telemetry.add(&info_row("Model", model));
+        }
+        if let Some(mfr) = &battery.manufacturer {
+            telemetry.add(&info_row("Manufacturer", mfr));
+        }
     } else {
         telemetry.add(&info_row("Battery telemetry", "unavailable"));
     }
     page.add(&telemetry);
+
+    let ac_adapters = &bundle.raw_probe_report.telemetry.ac_adapters;
+    if !ac_adapters.is_empty() {
+        let ac_group = adw::PreferencesGroup::new();
+        ac_group.set_title("AC Adapter");
+        for adapter in ac_adapters {
+            let state = match adapter.online {
+                Some(true) => "connected",
+                Some(false) => "disconnected",
+                None => "unknown",
+            };
+            ac_group.add(&info_row(&adapter.name, state));
+        }
+        page.add(&ac_group);
+    }
+}
+
+fn build_conservation_mode_controls(
+    toggle: Option<&IdeapadToggleCapability>,
+) -> adw::PreferencesGroup {
+    let choices = vec!["0".to_owned(), "1".to_owned()];
+    let group = build_write_controls(
+        "Conservation Mode Control",
+        toggle.and_then(|toggle| toggle.current_value.as_deref()),
+        toggle.map(|_| choices.as_slice()),
+        "Requested conservation mode",
+        "Apply conservation mode",
+        "Conservation mode",
+        |requested| make_client().and_then(|client| client.set_conservation_mode(requested)),
+        move |_| {
+            request_dashboard_refresh();
+        },
+    );
+    group.add(&section_note(
+        "This is the ideapad_acpi conservation_mode toggle. On some firmware it mirrors the battery charge-type Long_Life/Conservation mode; verify both read-backs after changing either control.",
+    ));
+    group
 }
 
 fn build_battery_charge_type_controls(

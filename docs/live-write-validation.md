@@ -14,12 +14,24 @@ currently implemented reversible write surface:
 - `fn_lock`
 - `camera_power`
 - `usb_charging`
+- `fan_mode`
+- `conservation_mode`
+- `cpu_governor`
+- `cpu_epp`
+- `cpu_boost`
+- `firmware_attribute:ppt_pl1_spl`
+- `firmware_attribute:ppt_pl2_sppt`
+- `firmware_attribute:ppt_pl3_fppt`
+- `amd_gpu_dpm_force_level`
+- `curve_optimizer_all_core`
+- `hardware_profile`
+- `hardware_profile_trigger`
 - **Fan preset dry-run** (`--plan-fan-preset balanced-daily`) when the probe reports fan curves
 - **Fan restore-to-auto dry-run** (`--plan-restore-auto-fan`) under the same condition
-- **GPU mode dry-run** (`--plan-gpu-mode <mode>`) when the probe reports EnvyControl with `status: probe_only` and a known current mode (`integrated` / `hybrid` / `nvidia`) so an alternate mode exists
+- **GPU mode dry-run** (`--plan-gpu-mode <mode>`) and explicit execute-only capture (`gpu_mode`) when the probe reports EnvyControl with `status: probe_only` and a known current mode (`integrated` / `hybrid` / `nvidia`) so an alternate mode exists
 
-Fan and GPU plan rows are **plan capture only**: even with `--execute`, the harness never
-calls `ApplyFanPreset`, `RestoreAutoFan`, or GPU execution (those remain absent or policy-gated). The
+Fan rows are **plan capture only**: even with `--execute`, the harness never
+calls `ApplyFanPreset` or `RestoreAutoFan` (those remain absent or policy-gated). GPU mode execution is available only through explicit `--execute-only gpu_mode` and is not auto-reverted. The
 primary `tests/fixtures/sysfs-82wm-confirmed` tree includes a full 10-point
 `pwm1_auto_point{1..10}_{temp,pwm}` set so packaged preset dry-run planning
 matches CI expectations; slimmer local trees may still show `plan-failed` until
@@ -171,6 +183,38 @@ available control, but runs **apply + revert** only for the matching `control_id
 (see table below). Other controls show status `execute-skipped-filter` in
 `validation-report.json` when their plan succeeded.
 
+For profile evidence, seed a narrow CPU driver-behavior validation profile
+before capture so the bundle is reproducible. The full-set verifier expects
+per-action results for `cpu_governor`, `cpu_epp`, and `cpu_boost`, so enable
+those write flags together with hardware-profile apply for this bundle:
+
+```bash
+scripts/capture-write-validation-report.sh \
+  --output target/validation/82wm-live-profile \
+  --execute --execute-only hardware_profile --system-bus \
+  --seed-hardware-profile 'validation_cpu_driver={"schema_version":1,"label":"Validation CPU driver behavior","actions":{"cpu_governor":"powersave","cpu_epp":"balance_performance","cpu_boost":"1"}}'
+```
+
+For `fan_mode`, the complete evidence bundle must also include
+`operator-checklist.md` with the observed `Auto (0) -> Full speed (1) -> Auto (0)`
+sequence and thermal/fan behavior notes. The full-set verifier checks this
+checklist because there is no portable fan RPM readback on the current host.
+
+For trigger evidence, seed both the profile and mapping:
+
+```bash
+scripts/capture-write-validation-report.sh \
+  --output target/validation/82wm-live-profile-trigger \
+  --execute --execute-only hardware_profile_trigger --system-bus \
+  --seed-hardware-profile 'validation_cpu_driver={"schema_version":1,"label":"Validation CPU driver behavior","actions":{"cpu_governor":"powersave","cpu_epp":"balance_performance","cpu_boost":"1"}}' \
+  --seed-hardware-profile-trigger manual=validation_cpu_driver
+```
+
+Use `PROFILE_ID=@path/to/profile.json` when shell quoting the JSON would be
+awkward. Seeding updates daemon configuration only; hardware-changing writes
+still require `--execute`, the matching `--execute-only`, daemon write flags,
+and the normal policy/read-back path.
+
 Valid `control_id` values (must match exactly):
 
 | `control_id` | Daemon flags (system service override / manual run) |
@@ -181,6 +225,19 @@ Valid `control_id` values (must match exactly):
 | `fn_lock` | `--enable-ideapad-toggle-write` |
 | `camera_power` | `--enable-camera-power-write` |
 | `usb_charging` | `--enable-usb-charging-write` |
+| `fan_mode` | `--enable-fan-mode-write` |
+| `conservation_mode` | `--enable-conservation-mode-write` |
+| `cpu_governor` | `--enable-cpu-governor-write` |
+| `cpu_epp` | `--enable-cpu-epp-write` |
+| `cpu_boost` | `--enable-cpu-boost-write` |
+| `firmware_attribute:ppt_pl1_spl` | `--enable-firmware-attribute-write` |
+| `firmware_attribute:ppt_pl2_sppt` | `--enable-firmware-attribute-write` |
+| `firmware_attribute:ppt_pl3_fppt` | `--enable-firmware-attribute-write` |
+| `amd_gpu_dpm_force_level` | `--enable-amd-gpu-dpm-write` |
+| `gpu_mode` | `--enable-gpu-mode-write` |
+| `curve_optimizer_all_core` | `--enable-curve-optimizer-write` |
+| `hardware_profile` | `--enable-hardware-profile-apply` plus every flag needed by the saved profile actions |
+| `hardware_profile_trigger` | `--enable-hardware-profile-apply` plus every flag needed by the resolved profile actions |
 
 Example: reinstall **`install-dev-systemd-ratvantage.sh`** with only the flag for
 the family under test, or edit the unit drop-in / `ExecStart` the same way, then
@@ -193,7 +250,12 @@ live execute tests — prefer one flag at a time):
 cargo run -p legion-control-daemon -- --enable-platform-profile-write --enable-battery-charge-type-write --enable-led-state-write --enable-ideapad-toggle-write --enable-camera-power-write
 ```
 
-Add `--enable-usb-charging-write` when capturing USB charging evidence.
+Add only the extra flag for the specific family under test. Advanced controls
+(`firmware_attribute:*`, `cpu_governor`, `cpu_epp`, `cpu_boost`, `conservation_mode`,
+`amd_gpu_dpm_force_level`, `gpu_mode`, `curve_optimizer_all_core`,
+`hardware_profile`, and `hardware_profile_trigger`) are planned in every run
+when detectable, but the harness only executes them when `--execute-only`
+matches that exact `control_id`.
 
 ## Recommended live workflow
 
@@ -233,11 +295,36 @@ GNOME-specific capture is **not** required for your own evidence bundles.
   if needed.
 - `usb_charging`: confirm sysfs read-back first; treat off-state charging
   behavior as a separate slower manual check.
+- `fan_mode`: current 82WM live evidence is negative: requesting full-speed mode
+  read back unchanged as `0` and the daemon restored `0`. Keep collecting
+  operator thermal/fan notes, but do not promote this as a passing write until a
+  different live path validates.
+- `conservation_mode`: confirm conservation-mode read-back and battery behavior.
+- `cpu_governor`: confirm `scaling_governor` read-back changes and returns under the current desktop power profile context.
+- `cpu_epp`: confirm `energy_performance_preference` read-back changes and returns under `amd-pstate-epp`.
+- `cpu_boost`: confirm boost read-back changes under the current amd-pstate mode.
+- `firmware_attribute:ppt_pl1_spl`, `firmware_attribute:ppt_pl2_sppt`,
+  `firmware_attribute:ppt_pl3_fppt`: current 82WM live evidence is negative:
+  the Lenovo WMI firmware attribute paths are detected, but writes return
+  `Device or resource busy (os error 16)`. Keep the bundles as executed
+  negative evidence and do not promote PPT sliders until the busy firmware state
+  is understood.
+- `amd_gpu_dpm_force_level`: confirm DPM force-level read-back, then revert.
+- `gpu_mode`: explicit execute-only capture only; prepare reboot/logout recovery
+  before running because this path is not auto-reverted by the harness.
+- `curve_optimizer_all_core`: explicit execute-only capture only; verify RyzenAdj
+  success text, record write-only state, reset to `0`, then run stability checks
+  outside the harness. The aggregate verifier requires the bundle's
+  `operator-checklist.md` to mention `curve_optimizer_all_core`, reset, and
+  stability.
+- `hardware_profile`: requires at least one saved daemon hardware profile; inspect
+  per-action results and last-apply state.
+- `hardware_profile_trigger`: requires at least one trigger mapping; inspect the
+  resolved preview and per-action results.
 - `fan_preset_balanced_daily`: read the plan JSON / stderr artifact only; do not
   expect apply execution from this harness.
 - `restore_auto_fan`: read the plan JSON only; do not expect restore execution
   from this harness.
-- `gpu_mode`: read the plan JSON only; `SetGpuMode` is not an executable D-Bus method in RatVantage.
 
 ## Reviewing a bundle locally
 
@@ -246,6 +333,38 @@ From the repo root (requires `jq`):
 ```bash
 scripts/review-write-validation-bundle.sh target/validation/<your-bundle-dir>
 ```
+
+For PR-quality evidence, make the review command assert the control that should
+have passed:
+
+```bash
+scripts/review-write-validation-bundle.sh \
+  --require-mode execute \
+  --require-control cpu_boost=pass \
+  --control cpu_boost \
+  target/validation/82wm-live-cpu_boost
+```
+
+Use `planned` instead of `pass` for plan-only fixture bundles. Use `executed`
+for intentional one-way evidence where no revert artifact is expected, including
+`gpu_mode`, `hardware_profile`, and `hardware_profile_trigger`.
+
+To verify the complete 82WM advanced evidence set after collecting all bundles:
+
+```bash
+scripts/verify-82wm-live-evidence.sh --root target/validation
+```
+
+This aggregate gate requires execute-mode bundles for PPT limits, conservation
+mode, CPU boost, fan mode, AMD GPU DPM, Curve Optimizer apply/reset, GPU mode,
+hardware profile apply, and hardware profile trigger apply. It also checks that
+each bundle was captured with the matching `execute_only` value and includes the
+expected apply/revert result payloads.
+
+The required control/status/daemon-flag/output-slug matrix lives in
+[`data/validation/82wm-live-evidence-requirements.tsv`](../data/validation/82wm-live-evidence-requirements.tsv).
+The verifier itself is covered by `scripts/test-verify-82wm-live-evidence.sh`,
+which is included in `scripts/ci-local.sh`.
 
 To produce a single shareable archive (requires `zip` only; default name is
 `<bundle-name>.zip` beside the bundle directory):

@@ -1,5 +1,6 @@
 use legion_common::{
-    CapabilityRegistry, CapabilityStatus, FanCurveSnapshot, GpuModePending, HwmonSensor,
+    CapabilityRegistry, CapabilityStatus, FanCurveSnapshot, GpuModePending,
+    HardwareProfileApplyRun, HwmonSensor,
 };
 use legion_control_ui::UiStatus;
 
@@ -9,6 +10,7 @@ struct TooltipTelemetry<'a> {
     fan_rpm: Option<&'a str>,
     gpu_pending_reboot: Option<&'a str>,
     fan_curve_snapshot: Option<&'a str>,
+    hardware_profile_apply: Option<&'a str>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -24,6 +26,7 @@ pub struct TraySummary {
     pub fan_rpm: Option<String>,
     pub gpu_pending_reboot: Option<String>,
     pub fan_curve_snapshot: Option<String>,
+    pub hardware_profile_apply: Option<String>,
 }
 
 impl TraySummary {
@@ -53,6 +56,7 @@ impl TraySummary {
                     fan_rpm: None,
                     gpu_pending_reboot: None,
                     fan_curve_snapshot: None,
+                    hardware_profile_apply: None,
                 },
             ),
             capability_count: status.capability_count(),
@@ -64,6 +68,7 @@ impl TraySummary {
             fan_rpm: None,
             gpu_pending_reboot: None,
             fan_curve_snapshot: None,
+            hardware_profile_apply: None,
         }
     }
 
@@ -72,6 +77,7 @@ impl TraySummary {
         report: &CapabilityRegistry,
         gpu_pending: Option<&GpuModePending>,
         fan_snapshot: Option<&FanCurveSnapshot>,
+        hardware_profile_apply: Option<&HardwareProfileApplyRun>,
     ) -> Self {
         let mut summary = Self::from_status(status);
         summary.platform_profile = report
@@ -87,6 +93,8 @@ impl TraySummary {
             .map(|pending| legion_common::format_gpu_mode_pending_summary(Some(pending)));
         summary.fan_curve_snapshot = fan_snapshot
             .map(|snapshot| legion_common::format_fan_curve_snapshot_summary(Some(snapshot)));
+        summary.hardware_profile_apply = hardware_profile_apply
+            .map(|run| legion_common::format_hardware_profile_apply_run_summary(Some(run)));
         summary.tooltip = capability_tooltip(
             &status.hardware.product_name,
             &status.hardware.product_version,
@@ -98,6 +106,7 @@ impl TraySummary {
                 fan_rpm: summary.fan_rpm.as_deref(),
                 gpu_pending_reboot: summary.gpu_pending_reboot.as_deref(),
                 fan_curve_snapshot: summary.fan_curve_snapshot.as_deref(),
+                hardware_profile_apply: summary.hardware_profile_apply.as_deref(),
             },
         );
         summary
@@ -131,6 +140,11 @@ impl TraySummary {
         if let Some(fan_curve_snapshot) = &self.fan_curve_snapshot {
             lines.push(format!("last_known_good_fan_curve={fan_curve_snapshot}"));
         }
+        if let Some(hardware_profile_apply) = &self.hardware_profile_apply {
+            lines.push(format!(
+                "last_hardware_profile_apply={hardware_profile_apply}"
+            ));
+        }
         lines
     }
 }
@@ -157,6 +171,9 @@ fn capability_tooltip(
     }
     if let Some(fan_curve_snapshot) = telemetry_state.fan_curve_snapshot {
         telemetry.push(format!("Saved curve: {fan_curve_snapshot}"));
+    }
+    if let Some(hardware_profile_apply) = telemetry_state.hardware_profile_apply {
+        telemetry.push(format!("Profile apply: {hardware_profile_apply}"));
     }
     let telemetry = if telemetry.is_empty() {
         String::new()
@@ -194,8 +211,9 @@ fn fan_rpm_label(sensors: &[HwmonSensor]) -> Option<String> {
 mod tests {
     use legion_common::{
         Capability, CapabilityRegistry, CapabilityStatus, FanCurvePointSnapshot, FanCurveSnapshot,
-        GpuModePending, HardwareSummary, HwmonSensor, PlatformProfileCapability,
-        PowerProfilesCapability, RiskLevel,
+        GpuModePending, HardwareProfileApplyActionResult, HardwareProfileApplyRun, HardwareSummary,
+        HwmonSensor, PlatformProfileCapability, PowerProfilesCapability, RiskLevel,
+        WriteDryRunPlan, WriteExecutionResult,
     };
     use legion_control_ui::UiStatus;
 
@@ -310,11 +328,12 @@ mod tests {
                     value: Some(2410),
                 }],
                 battery: None,
+                ac_adapters: Vec::new(),
             },
             ..Default::default()
         };
 
-        let summary = TraySummary::from_status_and_report(&status, &report, None, None);
+        let summary = TraySummary::from_status_and_report(&status, &report, None, None, None);
 
         assert_eq!(
             summary.tooltip,
@@ -378,6 +397,7 @@ mod tests {
             &report,
             Some(&gpu_pending),
             Some(&fan_snapshot),
+            None,
         );
 
         assert!(summary
@@ -392,6 +412,65 @@ mod tests {
         assert!(summary
             .render_lines()
             .contains(&"last_known_good_fan_curve=1 point on legion_hwmon".to_owned()));
+    }
+
+    #[test]
+    fn tray_summary_tooltip_includes_last_hardware_profile_apply() {
+        let status = UiStatus::from_parts(
+            HardwareSummary {
+                sysfs_root: "/tmp/fixture".to_owned(),
+                vendor: Some("LENOVO".to_owned()),
+                product_name: Some("82WM".to_owned()),
+                product_version: Some("Legion Pro 5 16ARX8".to_owned()),
+                product_sku: None,
+            },
+            vec![capability("hardware_profiles", "Hardware profiles")],
+        )
+        .unwrap();
+        let run = HardwareProfileApplyRun {
+            profile_id: "co_test".to_owned(),
+            profile_label: "CO test".to_owned(),
+            timestamp_unix_secs: 1,
+            completed: false,
+            message: "hardware profile apply stopped after first non-applied action".to_owned(),
+            results: vec![HardwareProfileApplyActionResult {
+                action_id: "curve_optimizer_all_core".to_owned(),
+                result: WriteExecutionResult::blocked_by_policy(
+                    WriteDryRunPlan {
+                        method: "SetCurveOptimizerAllCore".to_owned(),
+                        capability_id: "curve_optimizer_all_core".to_owned(),
+                        polkit_action: "org.ratvantage.LegionControl1.set-curve-optimizer"
+                            .to_owned(),
+                        path: "ryzenadj:/usr/local/bin/ryzenadj".to_owned(),
+                        previous_value: "unknown".to_owned(),
+                        requested_value: "-20 (encoded 4294967276)".to_owned(),
+                        readback_required: false,
+                        rollback_value: "0".to_owned(),
+                        rollback_instructions: Vec::new(),
+                        reboot_required: false,
+                        safety_notes: Vec::new(),
+                        steps: Vec::new(),
+                    },
+                    "Curve Optimizer writes are disabled by daemon policy",
+                ),
+            }],
+        };
+
+        let summary = TraySummary::from_status_and_report(
+            &status,
+            &CapabilityRegistry::default(),
+            None,
+            None,
+            Some(&run),
+        );
+
+        let expected = "co_test stopped at curve_optimizer_all_core: blocked_by_policy - Curve Optimizer writes are disabled by daemon policy";
+        assert!(summary
+            .tooltip
+            .contains(&format!("Profile apply: {expected}")));
+        assert!(summary
+            .render_lines()
+            .contains(&format!("last_hardware_profile_apply={expected}")));
     }
 
     fn capability(id: &str, label: &str) -> Capability {

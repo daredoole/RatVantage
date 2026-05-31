@@ -74,6 +74,46 @@ fn append_fans(
     }
     page.add(&telemetry);
 
+    let temps = adw::PreferencesGroup::new();
+    temps.set_title("Temperature Sensors");
+    let temp_sensors = bundle
+        .raw_probe_report
+        .telemetry
+        .sensors
+        .iter()
+        .filter(|sensor| sensor.kind == "temp")
+        .collect::<Vec<_>>();
+    let mut any_temp = false;
+    for sensor in temp_sensors {
+        let name = sensor.hwmon_name.as_deref().unwrap_or("hwmon");
+        let title = match &sensor.label {
+            Some(label) => format!("{name} / {label}"),
+            None => name.to_owned(),
+        };
+        let value = sensor
+            .value
+            .map(|value| format!("{:.1} °C", value as f64 / 1000.0))
+            .unwrap_or_else(|| "unknown".to_owned());
+        temps.add(&info_row(&title, &value));
+        any_temp = true;
+    }
+    for zone in &bundle.raw_probe_report.thermal_zones {
+        let title = match &zone.zone_type {
+            Some(kind) => format!("{} ({kind})", zone.name),
+            None => zone.name.clone(),
+        };
+        let value = zone
+            .temp_millicelsius
+            .map(|value| format!("{:.1} °C", value as f64 / 1000.0))
+            .unwrap_or_else(|| "unknown".to_owned());
+        temps.add(&info_row(&title, &value));
+        any_temp = true;
+    }
+    if !any_temp {
+        temps.add(&info_row("Temperature sensors", "unavailable"));
+    }
+    page.add(&temps);
+
     let curves = adw::PreferencesGroup::new();
     curves.set_title("Fan Curves");
     if bundle.raw_probe_report.fan_curves.is_empty() {

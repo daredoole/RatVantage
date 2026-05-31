@@ -4,9 +4,11 @@ use std::process::Command;
 use anyhow::Result;
 use legion_common::{
     format_fan_curve_snapshot_summary, format_gpu_mode_pending_summary,
-    format_power_profiles_probe_summary, Capability, CapabilityRegistry, CapabilityStatus,
-    FanCurveSnapshot, GpuModePending, HardwareSummary, RiskLevel, TelemetrySnapshot,
-    WriteDryRunPlan, WriteExecutionResult,
+    format_power_profiles_probe_summary, AutomationRule, AutomationRuleApplyRun,
+    AutomationRuleEvaluation, Capability, CapabilityRegistry, CapabilityStatus,
+    CurveOptimizerWriteState, FanCurveSnapshot, GpuModePending, HardwareProfile,
+    HardwareProfileApplyPreview, HardwareProfileApplyRun, HardwareSummary, RiskLevel,
+    TelemetrySnapshot, WriteDryRunPlan, WriteExecutionResult,
 };
 use serde::{de::DeserializeOwned, Serialize};
 use zbus::blocking::{Connection, ConnectionBuilder, Proxy};
@@ -65,9 +67,25 @@ pub struct DiagnosticsBundle {
     pub last_known_good_fan_curve: Option<FanCurveSnapshot>,
     pub fan_preset_by_platform_profile: BTreeMap<String, String>,
     pub fan_preset_reapply_after_resume: bool,
+    pub hardware_profiles: BTreeMap<String, HardwareProfile>,
+    pub hardware_profile_triggers: BTreeMap<String, String>,
+    pub automation_rules: BTreeMap<String, AutomationRule>,
+    pub last_hardware_profile_apply: Option<HardwareProfileApplyRun>,
     pub detected_sysfs_paths: Vec<String>,
     pub recent_daemon_logs: Vec<String>,
     pub raw_probe_report: CapabilityRegistry,
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct DiagnosticsRuntimeState {
+    pub gpu_mode_pending: Option<GpuModePending>,
+    pub last_known_good_fan_curve: Option<FanCurveSnapshot>,
+    pub fan_preset_by_platform_profile: BTreeMap<String, String>,
+    pub fan_preset_reapply_after_resume: bool,
+    pub hardware_profiles: BTreeMap<String, HardwareProfile>,
+    pub hardware_profile_triggers: BTreeMap<String, String>,
+    pub automation_rules: BTreeMap<String, AutomationRule>,
+    pub last_hardware_profile_apply: Option<HardwareProfileApplyRun>,
 }
 
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
@@ -101,23 +119,25 @@ impl DiagnosticsBundle {
             last_known_good_fan_curve: None,
             fan_preset_by_platform_profile: BTreeMap::new(),
             fan_preset_reapply_after_resume: false,
+            hardware_profiles: BTreeMap::new(),
+            hardware_profile_triggers: BTreeMap::new(),
+            automation_rules: BTreeMap::new(),
+            last_hardware_profile_apply: None,
             detected_sysfs_paths,
             recent_daemon_logs,
             raw_probe_report: report,
         }
     }
 
-    pub fn with_runtime_state(
-        mut self,
-        gpu_mode_pending: Option<GpuModePending>,
-        last_known_good_fan_curve: Option<FanCurveSnapshot>,
-        fan_preset_by_platform_profile: BTreeMap<String, String>,
-        fan_preset_reapply_after_resume: bool,
-    ) -> Self {
-        self.gpu_mode_pending = gpu_mode_pending;
-        self.last_known_good_fan_curve = last_known_good_fan_curve;
-        self.fan_preset_by_platform_profile = fan_preset_by_platform_profile;
-        self.fan_preset_reapply_after_resume = fan_preset_reapply_after_resume;
+    pub fn with_runtime_state(mut self, state: DiagnosticsRuntimeState) -> Self {
+        self.gpu_mode_pending = state.gpu_mode_pending;
+        self.last_known_good_fan_curve = state.last_known_good_fan_curve;
+        self.fan_preset_by_platform_profile = state.fan_preset_by_platform_profile;
+        self.fan_preset_reapply_after_resume = state.fan_preset_reapply_after_resume;
+        self.hardware_profiles = state.hardware_profiles;
+        self.hardware_profile_triggers = state.hardware_profile_triggers;
+        self.automation_rules = state.automation_rules;
+        self.last_hardware_profile_apply = state.last_hardware_profile_apply;
         self
     }
 }
@@ -329,6 +349,26 @@ pub fn render_overview_lines_with_pending(
                 .as_ref()
                 .and_then(|battery| battery.health.as_deref())
                 .unwrap_or("unknown")
+        ),
+        format!(
+            "battery_power_now_w={}",
+            report
+                .telemetry
+                .battery
+                .as_ref()
+                .and_then(|battery| battery.power_now_uw)
+                .map(|uw| format!("{:.1}", uw as f64 / 1_000_000.0))
+                .unwrap_or_else(|| "unknown".to_owned())
+        ),
+        format!(
+            "battery_cycle_count={}",
+            report
+                .telemetry
+                .battery
+                .as_ref()
+                .and_then(|battery| battery.cycle_count)
+                .map(|c| c.to_string())
+                .unwrap_or_else(|| "unknown".to_owned())
         ),
     ];
     lines.push(format!("leds={}", render_led_values(report)));
@@ -721,7 +761,10 @@ mod tests {
             choices_path: "/tmp/charge_types".to_owned(),
         });
         let diagnostics = DiagnosticsBundle::from_report(report, Some("test-kernel".to_owned()))
-            .with_runtime_state(None, fan_snapshot, BTreeMap::new(), false);
+            .with_runtime_state(DiagnosticsRuntimeState {
+                last_known_good_fan_curve: fan_snapshot,
+                ..Default::default()
+            });
 
         RuntimeSnapshot {
             status,
@@ -843,12 +886,16 @@ impl LegionControlClient {
             kernel_version(),
             recent_daemon_logs(),
         )
-        .with_runtime_state(
-            self.gpu_mode_pending()?,
-            self.last_known_good_fan_curve()?,
-            self.fan_preset_by_platform_profile()?,
-            self.fan_preset_reapply_after_resume()?,
-        ))
+        .with_runtime_state(DiagnosticsRuntimeState {
+            gpu_mode_pending: self.gpu_mode_pending()?,
+            last_known_good_fan_curve: self.last_known_good_fan_curve()?,
+            fan_preset_by_platform_profile: self.fan_preset_by_platform_profile()?,
+            fan_preset_reapply_after_resume: self.fan_preset_reapply_after_resume()?,
+            hardware_profiles: self.hardware_profiles()?,
+            hardware_profile_triggers: self.hardware_profile_triggers()?,
+            automation_rules: self.automation_rules()?,
+            last_hardware_profile_apply: self.last_hardware_profile_apply()?,
+        }))
     }
 
     pub fn refresh_runtime_snapshot(&self) -> Result<RuntimeSnapshot> {
@@ -857,6 +904,10 @@ impl LegionControlClient {
         let gpu_pending = self.gpu_mode_pending()?;
         let fan_snapshot = self.last_known_good_fan_curve()?;
         let fan_preset_map = self.fan_preset_by_platform_profile()?;
+        let hardware_profiles = self.hardware_profiles()?;
+        let hardware_profile_triggers = self.hardware_profile_triggers()?;
+        let automation_rules = self.automation_rules()?;
+        let last_hardware_profile_apply = self.last_hardware_profile_apply()?;
         Ok(RuntimeSnapshot {
             status: UiStatus::from_parts(report.hardware.clone(), capabilities)?,
             diagnostics: DiagnosticsBundle::from_report_with_logs(
@@ -864,12 +915,16 @@ impl LegionControlClient {
                 kernel_version(),
                 recent_daemon_logs(),
             )
-            .with_runtime_state(
-                gpu_pending,
-                fan_snapshot,
-                fan_preset_map,
-                self.fan_preset_reapply_after_resume()?,
-            ),
+            .with_runtime_state(DiagnosticsRuntimeState {
+                gpu_mode_pending: gpu_pending,
+                last_known_good_fan_curve: fan_snapshot,
+                fan_preset_by_platform_profile: fan_preset_map,
+                fan_preset_reapply_after_resume: self.fan_preset_reapply_after_resume()?,
+                hardware_profiles,
+                hardware_profile_triggers,
+                automation_rules,
+                last_hardware_profile_apply,
+            }),
         })
     }
 
@@ -924,8 +979,80 @@ impl LegionControlClient {
         Ok(serde_json::from_str(&payload)?)
     }
 
+    pub fn plan_cpu_governor_write(&self, requested: &str) -> Result<WriteDryRunPlan> {
+        self.call_json_arg("PlanCpuGovernorWrite", requested)
+    }
+
+    pub fn set_cpu_governor(&self, requested: &str) -> Result<WriteExecutionResult> {
+        self.call_json_arg("SetCpuGovernor", requested)
+    }
+
+    pub fn plan_cpu_epp_write(&self, requested: &str) -> Result<WriteDryRunPlan> {
+        self.call_json_arg("PlanCpuEppWrite", requested)
+    }
+
+    pub fn set_cpu_epp(&self, requested: &str) -> Result<WriteExecutionResult> {
+        self.call_json_arg("SetCpuEpp", requested)
+    }
+
+    pub fn plan_cpu_boost_write(&self, requested: &str) -> Result<WriteDryRunPlan> {
+        self.call_json_arg("PlanCpuBoostWrite", requested)
+    }
+
+    pub fn set_cpu_boost(&self, requested: &str) -> Result<WriteExecutionResult> {
+        self.call_json_arg("SetCpuBoost", requested)
+    }
+
+    pub fn plan_curve_optimizer_all_core_write(&self, requested: &str) -> Result<WriteDryRunPlan> {
+        self.call_json_arg("PlanCurveOptimizerAllCoreWrite", requested)
+    }
+
+    pub fn set_curve_optimizer_all_core(&self, requested: &str) -> Result<WriteExecutionResult> {
+        self.call_json_arg("SetCurveOptimizerAllCore", requested)
+    }
+
+    pub fn last_curve_optimizer_all_core(&self) -> Result<Option<CurveOptimizerWriteState>> {
+        self.call_json("GetLastCurveOptimizerAllCore")
+    }
+
+    pub fn plan_conservation_mode_write(&self, requested: &str) -> Result<WriteDryRunPlan> {
+        self.call_json_arg("PlanConservationModeWrite", requested)
+    }
+
+    pub fn set_conservation_mode(&self, requested: &str) -> Result<WriteExecutionResult> {
+        self.call_json_arg("SetConservationMode", requested)
+    }
+
+    pub fn plan_amd_gpu_dpm_force_level_write(&self, requested: &str) -> Result<WriteDryRunPlan> {
+        self.call_json_arg("PlanAmdGpuDpmForceLevelWrite", requested)
+    }
+
+    pub fn set_amd_gpu_dpm_force_level(&self, requested: &str) -> Result<WriteExecutionResult> {
+        self.call_json_arg("SetAmdGpuDpmForceLevel", requested)
+    }
+
+    pub fn plan_firmware_attribute_write(
+        &self,
+        attribute_id: &str,
+        requested: &str,
+    ) -> Result<WriteDryRunPlan> {
+        self.call_json_two_args("PlanFirmwareAttributeWrite", attribute_id, requested)
+    }
+
+    pub fn set_firmware_attribute(
+        &self,
+        attribute_id: &str,
+        requested: &str,
+    ) -> Result<WriteExecutionResult> {
+        self.call_json_two_args("SetFirmwareAttribute", attribute_id, requested)
+    }
+
     pub fn plan_gpu_mode_write(&self, requested: &str) -> Result<WriteDryRunPlan> {
         self.call_json_arg("PlanGpuModeWrite", requested)
+    }
+
+    pub fn set_gpu_mode(&self, requested: &str) -> Result<WriteExecutionResult> {
+        self.call_json_arg("SetGpuMode", requested)
     }
 
     pub fn plan_fan_preset_write(&self, requested: &str) -> Result<WriteDryRunPlan> {
@@ -946,6 +1073,103 @@ impl LegionControlClient {
 
     pub fn clear_gpu_mode_pending(&self) -> Result<Option<GpuModePending>> {
         self.call_json("ClearGpuModePending")
+    }
+
+    pub fn hardware_profiles(&self) -> Result<BTreeMap<String, HardwareProfile>> {
+        self.call_json("GetHardwareProfiles")
+    }
+
+    pub fn hardware_profile_triggers(&self) -> Result<BTreeMap<String, String>> {
+        self.call_json("GetHardwareProfileTriggers")
+    }
+
+    pub fn automation_rules(&self) -> Result<BTreeMap<String, AutomationRule>> {
+        self.call_json("GetAutomationRules")
+    }
+
+    pub fn automation_rule_preview(&self, rule_id: &str) -> Result<AutomationRuleEvaluation> {
+        self.call_json_arg("GetAutomationRulePreview", rule_id)
+    }
+
+    pub fn apply_automation_rule(&self, rule_id: &str) -> Result<AutomationRuleApplyRun> {
+        self.call_json_arg("ApplyAutomationRule", rule_id)
+    }
+
+    pub fn hardware_profile_apply_preview(
+        &self,
+        profile_id: &str,
+    ) -> Result<HardwareProfileApplyPreview> {
+        self.call_json_arg("GetHardwareProfileApplyPreview", profile_id)
+    }
+
+    pub fn hardware_profile_trigger_apply_preview(
+        &self,
+        trigger_id: &str,
+    ) -> Result<HardwareProfileApplyPreview> {
+        self.call_json_arg("GetHardwareProfileTriggerApplyPreview", trigger_id)
+    }
+
+    pub fn last_hardware_profile_apply(&self) -> Result<Option<HardwareProfileApplyRun>> {
+        self.call_json("GetLastHardwareProfileApply")
+    }
+
+    pub fn apply_hardware_profile(&self, profile_id: &str) -> Result<HardwareProfileApplyRun> {
+        self.call_json_arg("ApplyHardwareProfile", profile_id)
+    }
+
+    pub fn apply_hardware_profile_trigger(
+        &self,
+        trigger_id: &str,
+    ) -> Result<HardwareProfileApplyRun> {
+        self.call_json_arg("ApplyHardwareProfileTrigger", trigger_id)
+    }
+
+    pub fn set_hardware_profile(
+        &self,
+        profile_id: &str,
+        profile_json: &str,
+    ) -> Result<HardwareProfileApplyPreview> {
+        self.call_json_two_args("SetHardwareProfile", profile_id, profile_json)
+    }
+
+    pub fn set_hardware_profile_trigger(
+        &self,
+        trigger_id: &str,
+        profile_id: &str,
+    ) -> Result<BTreeMap<String, String>> {
+        self.call_json_two_args("SetHardwareProfileTrigger", trigger_id, profile_id)
+    }
+
+    pub fn set_automation_rule(
+        &self,
+        rule_id: &str,
+        rule_json: &str,
+    ) -> Result<BTreeMap<String, AutomationRule>> {
+        self.call_json_two_args("SetAutomationRule", rule_id, rule_json)
+    }
+
+    pub fn remove_automation_rule(&self, rule_id: &str) -> Result<Option<AutomationRule>> {
+        self.call_json_arg("RemoveAutomationRule", rule_id)
+    }
+
+    pub fn clear_automation_rules(&self) -> Result<BTreeMap<String, AutomationRule>> {
+        self.call_json("ClearAutomationRules")
+    }
+
+    pub fn remove_hardware_profile_trigger(&self, trigger_id: &str) -> Result<Option<String>> {
+        self.call_json_arg("RemoveHardwareProfileTrigger", trigger_id)
+    }
+
+    pub fn clear_hardware_profile_triggers(&self) -> Result<BTreeMap<String, String>> {
+        self.call_json("ClearHardwareProfileTriggers")
+    }
+
+    pub fn remove_hardware_profile(&self, profile_id: &str) -> Result<Option<HardwareProfile>> {
+        self.call_json_arg("RemoveHardwareProfile", profile_id)
+    }
+
+    pub fn clear_hardware_profiles(&self) -> Result<BTreeMap<String, HardwareProfile>> {
+        self.call_json("ClearHardwareProfiles")
     }
 
     pub fn last_known_good_fan_curve(&self) -> Result<Option<FanCurveSnapshot>> {
@@ -1028,4 +1252,33 @@ impl LegionControlClient {
         let payload: String = proxy.call(method, &(first, second))?;
         Ok(serde_json::from_str(&payload)?)
     }
+}
+
+const PPD_BUS_NAME: &str = "org.freedesktop.UPower.PowerProfiles";
+const PPD_OBJECT_PATH: &str = "/org/freedesktop/UPower/PowerProfiles";
+const PPD_INTERFACE: &str = "org.freedesktop.UPower.PowerProfiles";
+
+/// Standard desktop power profile choices exposed by power-profiles-daemon.
+pub const PPD_PROFILE_CHOICES: &[&str] = &["power-saver", "balanced", "performance"];
+
+/// Set the active power-profiles-daemon profile directly on the system bus.
+/// PPD allows regular session users to change the active profile; no daemon proxy needed.
+pub fn set_ppd_active_profile(profile: &str) -> Result<()> {
+    use zbus::zvariant::Value;
+    let connection = Connection::system()?;
+    let proxy = Proxy::new(
+        &connection,
+        PPD_BUS_NAME,
+        PPD_OBJECT_PATH,
+        "org.freedesktop.DBus.Properties",
+    )?;
+    proxy.call::<_, _, ()>(
+        "Set",
+        &(
+            PPD_INTERFACE,
+            "ActiveProfile",
+            Value::from(profile.to_owned()),
+        ),
+    )?;
+    Ok(())
 }

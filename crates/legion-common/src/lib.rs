@@ -13,6 +13,15 @@ pub struct CapabilityRegistry {
     pub firmware_attributes: Vec<FirmwareAttributeCapability>,
     pub ideapad_toggles: Vec<IdeapadToggleCapability>,
     pub gpu: Option<GpuCapability>,
+    /// AMD GPU runtime DPM force-level control exposed by amdgpu under `/sys/class/drm`.
+    #[serde(default)]
+    pub amd_gpu_power_dpm: Option<AmdGpuPowerDpmCapability>,
+    /// CPU frequency-scaling / amd-pstate parameters under `/sys/devices/system/cpu`.
+    #[serde(default)]
+    pub cpu_power: Option<CpuPowerCapability>,
+    /// ACPI thermal zones under `/sys/class/thermal`.
+    #[serde(default)]
+    pub thermal_zones: Vec<ThermalZone>,
     /// `org.freedesktop.UPower.PowerProfiles` probe when `sysfs_root` is `/` (fixtures use `null`).
     #[serde(default)]
     pub power_profiles: Option<PowerProfilesCapability>,
@@ -32,6 +41,24 @@ pub struct DaemonState {
     /// When true, the daemon may run resume-time fan preset planning (dry-run until fan writes ship).
     #[serde(default)]
     pub fan_preset_reapply_after_resume: bool,
+    /// Last requested all-core Curve Optimizer write. Write-only until a ryzen_smu read-back backend is available.
+    #[serde(default)]
+    pub last_curve_optimizer_all_core: Option<CurveOptimizerWriteState>,
+    /// Daemon-owned hardware profiles. Applying is planned through dry-run write plans before any action executes.
+    #[serde(default)]
+    pub hardware_profiles: BTreeMap<String, HardwareProfile>,
+    /// Event trigger to hardware profile mapping. Trigger execution is explicit and daemon-gated.
+    #[serde(default)]
+    pub hardware_profile_triggers: BTreeMap<String, String>,
+    /// Last manual hardware profile application run, including per-action write results.
+    #[serde(default)]
+    pub last_hardware_profile_apply: Option<HardwareProfileApplyRun>,
+    /// Daemon-owned automation rules. Rules resolve to hardware profiles before execution.
+    #[serde(default)]
+    pub automation_rules: BTreeMap<String, AutomationRule>,
+    /// Last automation rule evaluations/applications by rule id.
+    #[serde(default)]
+    pub last_automation_rule_apply: BTreeMap<String, AutomationRuleApplyRun>,
 }
 
 impl Default for DaemonState {
@@ -42,8 +69,144 @@ impl Default for DaemonState {
             last_known_good_fan_curve: None,
             fan_preset_by_platform_profile: BTreeMap::new(),
             fan_preset_reapply_after_resume: false,
+            last_curve_optimizer_all_core: None,
+            hardware_profiles: BTreeMap::new(),
+            hardware_profile_triggers: BTreeMap::new(),
+            last_hardware_profile_apply: None,
+            automation_rules: BTreeMap::new(),
+            last_automation_rule_apply: BTreeMap::new(),
         }
     }
+}
+
+pub const HARDWARE_PROFILE_TRIGGER_IDS: &[&str] = &[
+    "ac_connected",
+    "ac_disconnected",
+    "resume",
+    "platform_profile_changed",
+    "manual",
+];
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
+pub struct HardwareProfile {
+    pub schema_version: u32,
+    pub label: String,
+    #[serde(default)]
+    pub actions: HardwareProfileActions,
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
+pub struct HardwareProfileActions {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub platform_profile: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub battery_charge_type: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cpu_governor: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cpu_epp: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cpu_boost: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub conservation_mode: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub amd_gpu_dpm_force_level: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub curve_optimizer_all_core: Option<String>,
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub firmware_attributes: BTreeMap<String, String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct HardwareProfileApplyPreview {
+    pub profile_id: String,
+    pub profile_label: String,
+    pub plans: Vec<WriteDryRunPlan>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct HardwareProfileApplyRun {
+    pub profile_id: String,
+    pub profile_label: String,
+    pub timestamp_unix_secs: u64,
+    pub completed: bool,
+    pub message: String,
+    pub results: Vec<HardwareProfileApplyActionResult>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct HardwareProfileApplyActionResult {
+    pub action_id: String,
+    pub result: WriteExecutionResult,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct AutomationRule {
+    pub schema_version: u32,
+    pub label: String,
+    #[serde(default = "default_true")]
+    pub enabled: bool,
+    #[serde(flatten)]
+    pub kind: AutomationRuleKind,
+}
+
+fn default_true() -> bool {
+    true
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
+pub enum AutomationRuleKind {
+    FastChargeUntilThreshold {
+        threshold_percent: u8,
+        fast_charge_profile_id: String,
+        protect_profile_id: String,
+        #[serde(default = "default_true")]
+        require_ac: bool,
+    },
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct AutomationRuleEvaluation {
+    pub rule_id: String,
+    pub rule_label: String,
+    pub enabled: bool,
+    pub matched: bool,
+    pub reason: String,
+    pub battery_capacity_percent: Option<i64>,
+    pub ac_online: Option<bool>,
+    pub selected_profile_id: Option<String>,
+    pub profile_preview: Option<HardwareProfileApplyPreview>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct AutomationRuleApplyRun {
+    pub timestamp_unix_secs: u64,
+    pub evaluation: AutomationRuleEvaluation,
+    pub profile_run: Option<HardwareProfileApplyRun>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct CurveOptimizerWriteState {
+    pub signed_offset: i32,
+    pub encoded_value: u32,
+    pub backend: String,
+    pub readback_status: CurveOptimizerReadbackStatus,
+    pub timestamp_unix_secs: u64,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub stdout: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub stderr: Option<String>,
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum CurveOptimizerReadbackStatus {
+    WriteOnly,
+    Verified,
+    Failed,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -108,6 +271,41 @@ pub fn format_fan_curve_snapshot_summary(snapshot: Option<&FanCurveSnapshot>) ->
             let unit = if n == 1 { "point" } else { "points" };
             format!("{n} {unit} on {}", snapshot.curve_id)
         }
+    }
+}
+
+/// Human-readable value for the last manual hardware profile apply run.
+/// Returns `"none"` when no profile has been applied.
+pub fn format_hardware_profile_apply_run_summary(run: Option<&HardwareProfileApplyRun>) -> String {
+    let Some(run) = run else {
+        return "none".to_owned();
+    };
+
+    if run.completed {
+        let n = run.results.len();
+        let unit = if n == 1 { "action" } else { "actions" };
+        return format!("{} completed; {n} {unit} applied", run.profile_id);
+    }
+
+    if let Some(result) = run.results.iter().find(|result| !result.result.applied) {
+        return format!(
+            "{} stopped at {}: {} - {}",
+            run.profile_id,
+            result.action_id,
+            write_execution_status_label(result.result.status),
+            result.result.message
+        );
+    }
+
+    format!("{} stopped: {}", run.profile_id, run.message)
+}
+
+fn write_execution_status_label(status: WriteExecutionStatus) -> &'static str {
+    match status {
+        WriteExecutionStatus::BlockedByPolicy => "blocked_by_policy",
+        WriteExecutionStatus::BlockedByAuthorization => "blocked_by_authorization",
+        WriteExecutionStatus::Failed => "failed",
+        WriteExecutionStatus::Applied => "applied",
     }
 }
 
@@ -291,13 +489,89 @@ pub struct HwmonSensor {
     pub value: Option<i64>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]
 pub struct BatteryTelemetry {
     pub name: String,
     pub path: String,
     pub capacity_percent: Option<i64>,
     pub status: Option<String>,
     pub health: Option<String>,
+    /// Instantaneous power draw in microwatts (µW). Divide by 1_000_000 for watts.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub power_now_uw: Option<i64>,
+    /// Number of full charge/discharge cycles.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cycle_count: Option<i64>,
+    /// Present full-charge energy capacity in microwatt-hours (µWh).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub energy_full_uwh: Option<i64>,
+    /// Design (factory) full-charge energy capacity in microwatt-hours (µWh).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub energy_full_design_uwh: Option<i64>,
+    /// Current stored energy in microwatt-hours (µWh).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub energy_now_uwh: Option<i64>,
+    /// Instantaneous terminal voltage in microvolts (µV).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub voltage_now_uv: Option<i64>,
+    /// Coarse charge level label (for example `Normal`, `Low`, `Critical`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub capacity_level: Option<String>,
+    /// Cell chemistry, for example `Li-poly`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub technology: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub model_name: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub manufacturer: Option<String>,
+}
+
+/// Read-only AC adapter (mains) connection state from `/sys/class/power_supply`.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct AcAdapterTelemetry {
+    pub name: String,
+    pub path: String,
+    /// `true` when the adapter reports `online=1`.
+    pub online: Option<bool>,
+}
+
+/// Read-only ACPI thermal zone reading from `/sys/class/thermal/thermal_zoneN`.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct ThermalZone {
+    pub name: String,
+    pub zone_type: Option<String>,
+    /// Temperature in millidegrees Celsius (m°C). Divide by 1000 for °C.
+    pub temp_millicelsius: Option<i64>,
+    pub path: String,
+}
+
+/// CPU frequency-scaling / amd-pstate parameters under `/sys/devices/system/cpu`.
+///
+/// Read-only by default. `governor`, `epp`, and `boost` become write targets only once
+/// their validators, daemon `--enable-*-write` flag, and rollback path ship.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct CpuPowerCapability {
+    pub status: CapabilityStatus,
+    /// cpufreq driver, for example `amd-pstate-epp`.
+    pub scaling_driver: Option<String>,
+    /// amd-pstate operating mode (`active`, `guided`, `passive`) from `/sys/devices/system/cpu/amd_pstate/status`.
+    pub amd_pstate_status: Option<String>,
+    pub governor: Option<String>,
+    pub available_governors: Vec<String>,
+    /// `energy_performance_preference` (EPP) current value.
+    pub epp: Option<String>,
+    pub available_epp: Vec<String>,
+    /// Core-performance boost state (`/sys/devices/system/cpu/cpufreq/boost`).
+    pub boost: Option<bool>,
+    pub scaling_min_khz: Option<i64>,
+    pub scaling_max_khz: Option<i64>,
+    pub scaling_cur_khz: Option<i64>,
+    pub cpuinfo_min_khz: Option<i64>,
+    pub cpuinfo_max_khz: Option<i64>,
+    /// Write paths (per-policy for governor/EPP, global for boost). Empty string when absent.
+    pub governor_path: String,
+    pub epp_path: String,
+    pub boost_path: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -339,7 +613,16 @@ pub struct FirmwareAttributeCapability {
     pub current_value: Option<String>,
     pub display_name: Option<String>,
     pub path: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub min_value: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub max_value: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub scalar_increment: Option<String>,
 }
+
+pub const SUPPORTED_FIRMWARE_SCALAR_ATTRIBUTES: &[&str] =
+    &["ppt_pl1_spl", "ppt_pl2_sppt", "ppt_pl3_fppt"];
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct IdeapadToggleCapability {
@@ -354,6 +637,19 @@ pub struct GpuCapability {
     pub provider: String,
     pub status: CapabilityStatus,
     pub mode: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct AmdGpuPowerDpmCapability {
+    pub card: String,
+    pub status: CapabilityStatus,
+    pub vendor: String,
+    pub force_performance_level_path: String,
+    pub current_force_performance_level: Option<String>,
+    pub power_dpm_state: Option<String>,
+    pub current_sclk: Option<String>,
+    pub current_mclk: Option<String>,
+    pub choices: Vec<String>,
 }
 
 /// Read-only snapshot of the generic desktop power profile API (power-profiles-daemon or another owner).
@@ -373,6 +669,8 @@ pub struct PowerProfilesCapability {
 pub struct TelemetrySnapshot {
     pub sensors: Vec<HwmonSensor>,
     pub battery: Option<BatteryTelemetry>,
+    #[serde(default)]
+    pub ac_adapters: Vec<AcAdapterTelemetry>,
 }
 
 #[derive(Debug, Clone, Copy, Serialize, PartialEq, Eq)]
@@ -464,7 +762,7 @@ pub const WRITE_METHOD_CONTRACTS: &[WriteMethodContract] = &[
         method: "SetIdeapadToggle",
         capability_id: "ideapad_toggles",
         polkit_action: "org.ratvantage.LegionControl1.set-ideapad-toggle",
-        request_type: r#"{"toggle_id":"fn_lock|camera_power|usb_charging","enabled":"bool"}"#,
+        request_type: r#"{"toggle_id":"fn_lock|camera_power|usb_charging|fan_mode","enabled":"bool"}"#,
         risk: RiskLevel::ReversibleWrite,
         enabled: false,
         reboot_required: false,
@@ -474,7 +772,7 @@ pub const WRITE_METHOD_CONTRACTS: &[WriteMethodContract] = &[
         ],
         validators: &[
             "requested toggle exactly matches one detected ideapad toggle id",
-            "only fn_lock, camera_power, and usb_charging are enabled for reversible ideapad toggle writes right now",
+            "only fn_lock, camera_power, usb_charging, and fan_mode are enabled for reversible ideapad toggle writes right now",
             "fn_lock requires paired platform::fnlock LED corroboration before and after write",
             "camera_power requires binary current value and explicit UI warning/confirmation before frontend exposure",
             "usb_charging requires binary current value and explicit UI warning/confirmation before frontend exposure",
@@ -486,7 +784,7 @@ pub const WRITE_METHOD_CONTRACTS: &[WriteMethodContract] = &[
         ],
         safety_notes: &[
             "write method remains disabled; dry-run planning only",
-            "current rollout is restricted to fn_lock, camera_power, and usb_charging with per-toggle safety rules",
+            "current rollout is restricted to fn_lock, camera_power, usb_charging, and fan_mode with per-toggle safety rules",
         ],
     },
     WriteMethodContract {
@@ -569,6 +867,187 @@ pub const WRITE_METHOD_CONTRACTS: &[WriteMethodContract] = &[
             "write method remains disabled; dry-run planning only",
         ],
     },
+    WriteMethodContract {
+        method: "SetCpuGovernor",
+        capability_id: "cpu_power",
+        polkit_action: "org.ratvantage.LegionControl1.set-cpu-governor",
+        request_type: r#"{"governor":"string"}"#,
+        risk: RiskLevel::ReversibleWrite,
+        enabled: false,
+        reboot_required: false,
+        preconditions: &[
+            "cpu_power capability is detected",
+            "daemon has read current governor and available_governors",
+            "governor_path is non-empty",
+        ],
+        validators: &[
+            "requested governor exactly matches one listed available_governors value",
+            "post-write read-back matches requested governor",
+        ],
+        rollback: &[
+            "store previous governor before write",
+            "restore previous governor if read-back fails and previous value is still listed",
+        ],
+        safety_notes: &["write method remains disabled; dry-run planning only"],
+    },
+    WriteMethodContract {
+        method: "SetCpuEpp",
+        capability_id: "cpu_power",
+        polkit_action: "org.ratvantage.LegionControl1.set-cpu-epp",
+        request_type: r#"{"epp":"string"}"#,
+        risk: RiskLevel::ReversibleWrite,
+        enabled: false,
+        reboot_required: false,
+        preconditions: &[
+            "cpu_power capability is detected",
+            "daemon has read current epp and available_epp",
+            "epp_path is non-empty",
+            "amd-pstate-epp driver is active",
+        ],
+        validators: &[
+            "requested epp exactly matches one listed available_epp value",
+            "post-write read-back matches requested epp",
+        ],
+        rollback: &[
+            "store previous epp before write",
+            "restore previous epp if read-back fails and previous value is still listed",
+        ],
+        safety_notes: &[
+            "EPP is only writable when amd-pstate-epp driver is active",
+            "write method remains disabled; dry-run planning only",
+        ],
+    },
+    WriteMethodContract {
+        method: "SetFirmwareAttribute",
+        capability_id: "firmware_attributes",
+        polkit_action: "org.ratvantage.LegionControl1.set-firmware-attribute",
+        request_type: r#"{"attribute_id":"ppt_pl1_spl|ppt_pl2_sppt|ppt_pl3_fppt","value":"integer"}"#,
+        risk: RiskLevel::ReversibleWrite,
+        enabled: false,
+        reboot_required: false,
+        preconditions: &[
+            "firmware_attributes capability is detected",
+            "target attribute is one of the allowlisted 82WM PPT scalar ids",
+            "daemon has read current_value, min_value, max_value, and scalar_increment",
+        ],
+        validators: &[
+            "requested value parses as an integer",
+            "requested value is inside min_value..=max_value",
+            "requested value aligns with scalar_increment from min_value",
+            "post-write read-back matches requested value",
+        ],
+        rollback: &[
+            "store previous current_value before write",
+            "restore previous current_value if read-back fails",
+        ],
+        safety_notes: &[
+            "firmware power limits can change sustained CPU package power immediately",
+            "write method remains disabled unless daemon firmware attribute write policy is enabled",
+        ],
+    },
+    WriteMethodContract {
+        method: "SetCpuBoost",
+        capability_id: "cpu_power",
+        polkit_action: "org.ratvantage.LegionControl1.set-cpu-boost",
+        request_type: r#"{"enabled":"0|1"}"#,
+        risk: RiskLevel::ReversibleWrite,
+        enabled: false,
+        reboot_required: false,
+        preconditions: &[
+            "cpu_power capability is detected",
+            "daemon has read current boost state",
+            "boost_path is non-empty",
+        ],
+        validators: &[
+            "requested boost value is exactly 0 or 1",
+            "post-write read-back matches requested boost value",
+        ],
+        rollback: &[
+            "store previous boost value before write",
+            "restore previous boost value if read-back fails",
+        ],
+        safety_notes: &["CPU boost changes can affect peak thermals and power draw immediately"],
+    },
+    WriteMethodContract {
+        method: "SetConservationMode",
+        capability_id: "ideapad_toggles",
+        polkit_action: "org.ratvantage.LegionControl1.set-conservation-mode",
+        request_type: r#"{"enabled":"0|1"}"#,
+        risk: RiskLevel::ReversibleWrite,
+        enabled: false,
+        reboot_required: false,
+        preconditions: &[
+            "ideapad conservation_mode toggle is detected",
+            "daemon has read current conservation_mode state",
+        ],
+        validators: &[
+            "requested conservation mode value is exactly 0 or 1",
+            "post-write read-back matches requested conservation_mode value",
+        ],
+        rollback: &[
+            "store previous conservation_mode value before write",
+            "restore previous conservation_mode value if read-back fails",
+        ],
+        safety_notes: &[
+            "conservation_mode overlaps battery charge behavior and must not be applied in the same request as battery charge type",
+        ],
+    },
+    WriteMethodContract {
+        method: "SetAmdGpuDpmForceLevel",
+        capability_id: "amd_gpu_power_dpm",
+        polkit_action: "org.ratvantage.LegionControl1.set-amd-gpu-dpm-force-level",
+        request_type: r#"{"force_level":"auto|low"}"#,
+        risk: RiskLevel::ReversibleWrite,
+        enabled: false,
+        reboot_required: false,
+        preconditions: &[
+            "amd_gpu_power_dpm capability is detected",
+            "daemon has read current power_dpm_force_performance_level",
+            "force_performance_level_path is non-empty",
+        ],
+        validators: &[
+            "requested force level exactly matches one listed capability choice",
+            "post-write read-back matches requested force level",
+        ],
+        rollback: &[
+            "store previous force level before write",
+            "restore previous force level if read-back fails",
+        ],
+        safety_notes: &[
+            "AMD GPU DPM force-level changes can affect graphics power and thermals immediately",
+            "manual GPU clock writes remain unsupported",
+        ],
+    },
+    WriteMethodContract {
+        method: "SetCurveOptimizerAllCore",
+        capability_id: "curve_optimizer_all_core",
+        polkit_action: "org.ratvantage.LegionControl1.set-curve-optimizer",
+        request_type: r#"{"offset":"0|-1..-30"}"#,
+        risk: RiskLevel::ExperimentalWrite,
+        enabled: false,
+        reboot_required: false,
+        preconditions: &[
+            "advanced CPU tuning is explicitly enabled",
+            "daemon can execute the selected Curve Optimizer backend",
+            "RyzenAdj fallback through /dev/mem is treated as write-only unless ryzen_smu read-back exists",
+        ],
+        validators: &[
+            "requested offset parses as a signed integer",
+            "requested offset is between -30 and 0 inclusive",
+            "requested offset is encoded to the u32 RyzenAdj value before execution",
+            "success requires backend exit success and expected success marker",
+            "read-back is marked write-only until a ryzen_smu backend is available",
+        ],
+        rollback: &[
+            "automatic rollback is not claimed for write-only Curve Optimizer writes",
+            "provide explicit reset-to-zero restore command through the same backend",
+        ],
+        safety_notes: &[
+            "negative Curve Optimizer values can cause crashes, reboots, app instability, or silent performance loss",
+            "write method remains disabled unless daemon Curve Optimizer policy is enabled",
+            "read-back is unavailable on this machine until a ryzen_smu backend is detected",
+        ],
+    },
 ];
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -637,6 +1116,247 @@ pub fn validate_battery_charge_type_choice(
         &capability.choices,
         &[],
     )
+}
+
+pub fn validate_cpu_governor_choice(
+    capability: Option<&CpuPowerCapability>,
+    requested: &str,
+) -> Result<(), ValidationError> {
+    let capability = capability.ok_or_else(|| ValidationError::MissingCapability {
+        capability_id: "cpu_power".to_owned(),
+    })?;
+    require_current("cpu_power", capability.governor.as_deref())?;
+    if capability.governor_path.is_empty() {
+        return Err(ValidationError::MissingCapability {
+            capability_id: "cpu_power:governor_path".to_owned(),
+        });
+    }
+    validate_choice(
+        "cpu_power",
+        "governor",
+        requested,
+        &capability.available_governors,
+        &[],
+    )
+}
+
+pub fn validate_cpu_epp_choice(
+    capability: Option<&CpuPowerCapability>,
+    requested: &str,
+) -> Result<(), ValidationError> {
+    let capability = capability.ok_or_else(|| ValidationError::MissingCapability {
+        capability_id: "cpu_power".to_owned(),
+    })?;
+    require_current("cpu_power", capability.epp.as_deref())?;
+    if capability.epp_path.is_empty() {
+        return Err(ValidationError::MissingCapability {
+            capability_id: "cpu_power:epp_path".to_owned(),
+        });
+    }
+    validate_choice(
+        "cpu_power",
+        "epp",
+        requested,
+        &capability.available_epp,
+        &[],
+    )
+}
+
+pub fn validate_cpu_boost_request(
+    capability: Option<&CpuPowerCapability>,
+    requested: &str,
+) -> Result<(), ValidationError> {
+    let capability = capability.ok_or_else(|| ValidationError::MissingCapability {
+        capability_id: "cpu_power".to_owned(),
+    })?;
+    if requested != "0" && requested != "1" {
+        return Err(ValidationError::UnsupportedChoice {
+            capability_id: "cpu_power:boost".to_owned(),
+            requested: requested.to_owned(),
+            choices: vec!["0".to_owned(), "1".to_owned()],
+        });
+    }
+    if capability.boost_path.is_empty() {
+        return Err(ValidationError::MissingCapability {
+            capability_id: "cpu_power:boost_path".to_owned(),
+        });
+    }
+    if capability.boost.is_none() {
+        return Err(ValidationError::MissingCurrentValue {
+            capability_id: "cpu_power:boost".to_owned(),
+        });
+    }
+    Ok(())
+}
+
+pub fn encode_curve_optimizer_offset(offset: i32) -> Result<u32, ValidationError> {
+    if !(-30..=0).contains(&offset) {
+        return Err(ValidationError::UnsupportedChoice {
+            capability_id: "curve_optimizer_all_core".to_owned(),
+            requested: offset.to_string(),
+            choices: curve_optimizer_offset_choices(),
+        });
+    }
+    Ok(if offset == 0 {
+        0
+    } else {
+        (u32::MAX as i64 + 1 + offset as i64) as u32
+    })
+}
+
+pub fn validate_curve_optimizer_all_core_offset(requested: &str) -> Result<i32, ValidationError> {
+    let offset = requested
+        .parse::<i32>()
+        .map_err(|_| ValidationError::BlockedChoice {
+            capability_id: "curve_optimizer_all_core".to_owned(),
+            requested: requested.to_owned(),
+            reason: "Curve Optimizer offset must be an integer from -30 through 0".to_owned(),
+        })?;
+    encode_curve_optimizer_offset(offset)?;
+    Ok(offset)
+}
+
+pub fn validate_conservation_mode_request(
+    toggles: &[IdeapadToggleCapability],
+    requested: &str,
+) -> Result<(), ValidationError> {
+    if requested != "0" && requested != "1" {
+        return Err(ValidationError::UnsupportedChoice {
+            capability_id: "ideapad_toggles:conservation_mode".to_owned(),
+            requested: requested.to_owned(),
+            choices: vec!["0".to_owned(), "1".to_owned()],
+        });
+    }
+    let toggle = toggles
+        .iter()
+        .find(|toggle| toggle.name == "conservation_mode")
+        .ok_or_else(|| ValidationError::MissingCapability {
+            capability_id: "ideapad_toggles:conservation_mode".to_owned(),
+        })?;
+    if toggle.path.as_deref().unwrap_or_default().is_empty() {
+        return Err(ValidationError::MissingCapability {
+            capability_id: "ideapad_toggles:conservation_mode:path".to_owned(),
+        });
+    }
+    require_current(
+        "ideapad_toggles:conservation_mode",
+        toggle.current_value.as_deref(),
+    )?;
+    let current = toggle.current_value.as_deref().unwrap_or_default();
+    if current != "0" && current != "1" {
+        return Err(ValidationError::BlockedChoice {
+            capability_id: "ideapad_toggles".to_owned(),
+            requested: "conservation_mode".to_owned(),
+            reason: format!(
+                "only binary conservation_mode states are supported; detected current_value={current}"
+            ),
+        });
+    }
+    Ok(())
+}
+
+pub fn validate_amd_gpu_dpm_force_level_choice(
+    capability: Option<&AmdGpuPowerDpmCapability>,
+    requested: &str,
+) -> Result<(), ValidationError> {
+    let capability = capability.ok_or_else(|| ValidationError::MissingCapability {
+        capability_id: "amd_gpu_power_dpm".to_owned(),
+    })?;
+    require_current(
+        "amd_gpu_power_dpm",
+        capability.current_force_performance_level.as_deref(),
+    )?;
+    if capability.force_performance_level_path.trim().is_empty() {
+        return Err(ValidationError::MissingCapability {
+            capability_id: "amd_gpu_power_dpm:force_performance_level_path".to_owned(),
+        });
+    }
+    validate_choice(
+        "amd_gpu_power_dpm",
+        "force_level",
+        requested,
+        &capability.choices,
+        &[],
+    )
+}
+
+pub fn validate_firmware_scalar_attribute_request(
+    attributes: &[FirmwareAttributeCapability],
+    attribute_id: &str,
+    requested: &str,
+) -> Result<(), ValidationError> {
+    if attribute_id.trim().is_empty() {
+        return Err(ValidationError::EmptyValue {
+            field: "attribute_id".to_owned(),
+        });
+    }
+    if requested.trim().is_empty() {
+        return Err(ValidationError::EmptyValue {
+            field: "value".to_owned(),
+        });
+    }
+    if !SUPPORTED_FIRMWARE_SCALAR_ATTRIBUTES
+        .iter()
+        .any(|supported| supported == &attribute_id)
+    {
+        return Err(ValidationError::BlockedChoice {
+            capability_id: "firmware_attributes".to_owned(),
+            requested: attribute_id.to_owned(),
+            reason: "only 82WM PPT scalar firmware attributes are enabled for writes right now"
+                .to_owned(),
+        });
+    }
+
+    let attribute = attributes
+        .iter()
+        .find(|attribute| attribute.name == attribute_id)
+        .ok_or_else(|| ValidationError::MissingCapability {
+            capability_id: format!("firmware_attributes:{attribute_id}"),
+        })?;
+    require_current(
+        &format!("firmware_attributes:{attribute_id}"),
+        attribute.current_value.as_deref(),
+    )?;
+
+    let requested_value = requested
+        .parse::<i64>()
+        .map_err(|_| ValidationError::BlockedChoice {
+            capability_id: "firmware_attributes".to_owned(),
+            requested: requested.to_owned(),
+            reason: "requested firmware attribute value must be an integer".to_owned(),
+        })?;
+    let min_value =
+        parse_firmware_integer(attribute_id, "min_value", attribute.min_value.as_deref())?;
+    let max_value =
+        parse_firmware_integer(attribute_id, "max_value", attribute.max_value.as_deref())?;
+    let step = parse_firmware_integer(
+        attribute_id,
+        "scalar_increment",
+        attribute.scalar_increment.as_deref(),
+    )?;
+
+    if step <= 0 {
+        return Err(ValidationError::BlockedChoice {
+            capability_id: "firmware_attributes".to_owned(),
+            requested: requested.to_owned(),
+            reason: format!("scalar_increment must be positive; detected {step}"),
+        });
+    }
+    if requested_value < min_value || requested_value > max_value {
+        return Err(ValidationError::UnsupportedChoice {
+            capability_id: format!("firmware_attributes:{attribute_id}"),
+            requested: requested.to_owned(),
+            choices: firmware_integer_choices(min_value, max_value, step),
+        });
+    }
+    if (requested_value - min_value) % step != 0 {
+        return Err(ValidationError::BlockedChoice {
+            capability_id: "firmware_attributes".to_owned(),
+            requested: requested.to_owned(),
+            reason: format!("requested value must align to step {step} from minimum {min_value}"),
+        });
+    }
+    Ok(())
 }
 
 pub fn validate_gpu_mode_choice(
@@ -756,12 +1476,16 @@ pub fn validate_ideapad_toggle_request(
         });
     };
 
-    if toggle.name != "fn_lock" && toggle.name != "camera_power" && toggle.name != "usb_charging" {
+    if toggle.name != "fn_lock"
+        && toggle.name != "camera_power"
+        && toggle.name != "usb_charging"
+        && toggle.name != "fan_mode"
+    {
         return Err(ValidationError::BlockedChoice {
             capability_id: "ideapad_toggles".to_owned(),
             requested: toggle_id.to_owned(),
             reason:
-                "only fn_lock, camera_power, and usb_charging are enabled for reversible ideapad toggle writes right now; touchpad remains blocked until dedicated fixture coverage and recovery validation exist"
+                "only fn_lock, camera_power, usb_charging, and fan_mode are enabled for reversible ideapad toggle writes right now; touchpad remains blocked until dedicated fixture coverage and recovery validation exist"
                     .to_owned(),
         });
     }
@@ -795,7 +1519,7 @@ pub fn validate_ideapad_toggle_request(
         });
     }
 
-    if toggle.name == "camera_power" || toggle.name == "usb_charging" {
+    if toggle.name == "camera_power" || toggle.name == "usb_charging" || toggle.name == "fan_mode" {
         return Ok(());
     }
 
@@ -906,6 +1630,104 @@ pub fn validate_fan_preset_platform_profile_entry(
         &[],
     )?;
     validate_fan_preset_choice(fan_curves, presets, fan_preset_id)?;
+    Ok(())
+}
+
+pub fn validate_hardware_profile_id(profile_id: &str) -> Result<(), ValidationError> {
+    if profile_id.trim().is_empty() {
+        return Err(ValidationError::EmptyValue {
+            field: "profile_id".to_owned(),
+        });
+    }
+    if profile_id
+        .chars()
+        .any(|ch| !(ch.is_ascii_alphanumeric() || ch == '-' || ch == '_'))
+    {
+        return Err(ValidationError::BlockedChoice {
+            capability_id: "hardware_profiles".to_owned(),
+            requested: profile_id.to_owned(),
+            reason: "profile_id may contain only ASCII letters, digits, '-' and '_'".to_owned(),
+        });
+    }
+    Ok(())
+}
+
+pub fn validate_hardware_profile_trigger_id(trigger_id: &str) -> Result<(), ValidationError> {
+    if HARDWARE_PROFILE_TRIGGER_IDS
+        .iter()
+        .any(|supported| supported == &trigger_id)
+    {
+        return Ok(());
+    }
+    Err(ValidationError::BlockedChoice {
+        capability_id: "hardware_profile_triggers".to_owned(),
+        requested: trigger_id.to_owned(),
+        reason: format!(
+            "supported trigger ids are: {}",
+            HARDWARE_PROFILE_TRIGGER_IDS.join(", ")
+        ),
+    })
+}
+
+pub fn validate_automation_rule_id(rule_id: &str) -> Result<(), ValidationError> {
+    if rule_id.trim().is_empty() {
+        return Err(ValidationError::EmptyValue {
+            field: "rule_id".to_owned(),
+        });
+    }
+    if rule_id
+        .chars()
+        .any(|ch| !(ch.is_ascii_alphanumeric() || ch == '-' || ch == '_'))
+    {
+        return Err(ValidationError::BlockedChoice {
+            capability_id: "automation_rules".to_owned(),
+            requested: rule_id.to_owned(),
+            reason: "rule_id may contain only ASCII letters, digits, '-' and '_'".to_owned(),
+        });
+    }
+    Ok(())
+}
+
+pub fn validate_automation_rule(rule: &AutomationRule) -> Result<(), ValidationError> {
+    if rule.schema_version != 1 {
+        return Err(ValidationError::BlockedChoice {
+            capability_id: "automation_rules".to_owned(),
+            requested: rule.schema_version.to_string(),
+            reason: "only automation rule schema_version 1 is supported".to_owned(),
+        });
+    }
+    if rule.label.trim().is_empty() {
+        return Err(ValidationError::EmptyValue {
+            field: "label".to_owned(),
+        });
+    }
+
+    match &rule.kind {
+        AutomationRuleKind::FastChargeUntilThreshold {
+            threshold_percent,
+            fast_charge_profile_id,
+            protect_profile_id,
+            ..
+        } => {
+            if !(1..=100).contains(threshold_percent) {
+                return Err(ValidationError::BlockedChoice {
+                    capability_id: "automation_rules:threshold_percent".to_owned(),
+                    requested: threshold_percent.to_string(),
+                    reason: "threshold_percent must be 1..=100".to_owned(),
+                });
+            }
+            validate_hardware_profile_id(fast_charge_profile_id)?;
+            validate_hardware_profile_id(protect_profile_id)?;
+            if fast_charge_profile_id == protect_profile_id {
+                return Err(ValidationError::BlockedChoice {
+                    capability_id: "automation_rules".to_owned(),
+                    requested: fast_charge_profile_id.clone(),
+                    reason: "fast_charge_profile_id and protect_profile_id must be different"
+                        .to_owned(),
+                });
+            }
+        }
+    }
     Ok(())
 }
 
@@ -1137,6 +1959,155 @@ pub fn plan_restore_auto_fan_write(
     )
 }
 
+pub fn plan_cpu_governor_write(
+    capability: Option<&CpuPowerCapability>,
+    requested: &str,
+) -> Result<WriteDryRunPlan, ValidationError> {
+    validate_cpu_governor_choice(capability, requested)?;
+    let capability = capability.expect("validated cpu_power capability must exist");
+    plan_write(
+        write_contract("SetCpuGovernor"),
+        &capability.governor_path,
+        capability
+            .governor
+            .as_deref()
+            .expect("validated cpu governor current value must exist"),
+        requested,
+    )
+}
+
+pub fn plan_cpu_epp_write(
+    capability: Option<&CpuPowerCapability>,
+    requested: &str,
+) -> Result<WriteDryRunPlan, ValidationError> {
+    validate_cpu_epp_choice(capability, requested)?;
+    let capability = capability.expect("validated cpu_power capability must exist");
+    plan_write(
+        write_contract("SetCpuEpp"),
+        &capability.epp_path,
+        capability
+            .epp
+            .as_deref()
+            .expect("validated cpu epp current value must exist"),
+        requested,
+    )
+}
+
+pub fn plan_cpu_boost_write(
+    capability: Option<&CpuPowerCapability>,
+    requested: &str,
+) -> Result<WriteDryRunPlan, ValidationError> {
+    validate_cpu_boost_request(capability, requested)?;
+    let capability = capability.expect("validated cpu_power capability must exist");
+    let previous_value = if capability
+        .boost
+        .expect("validated CPU boost current value must exist")
+    {
+        "1"
+    } else {
+        "0"
+    };
+    plan_write(
+        write_contract("SetCpuBoost"),
+        &capability.boost_path,
+        previous_value,
+        requested,
+    )
+}
+
+pub fn plan_curve_optimizer_all_core_write(
+    requested: &str,
+) -> Result<WriteDryRunPlan, ValidationError> {
+    let offset = validate_curve_optimizer_all_core_offset(requested)?;
+    let encoded = encode_curve_optimizer_offset(offset)?;
+    let contract = write_contract("SetCurveOptimizerAllCore");
+    Ok(WriteDryRunPlan {
+        method: contract.method.to_owned(),
+        capability_id: contract.capability_id.to_owned(),
+        polkit_action: contract.polkit_action.to_owned(),
+        path: "/usr/local/bin/ryzenadj --set-coall".to_owned(),
+        previous_value: "write-only".to_owned(),
+        requested_value: format!("{offset} (encoded {encoded})"),
+        readback_required: false,
+        rollback_value: "0".to_owned(),
+        rollback_instructions: rollback_instructions(contract, "write-only", &offset.to_string()),
+        reboot_required: contract.reboot_required,
+        safety_notes: contract
+            .safety_notes
+            .iter()
+            .map(|note| (*note).to_owned())
+            .collect(),
+        steps: vec![
+            WritePlanStep::AuthorizeCaller,
+            WritePlanStep::WriteRequestedValue,
+        ],
+    })
+}
+
+pub fn plan_conservation_mode_write(
+    toggles: &[IdeapadToggleCapability],
+    requested: &str,
+) -> Result<WriteDryRunPlan, ValidationError> {
+    validate_conservation_mode_request(toggles, requested)?;
+    let toggle = toggles
+        .iter()
+        .find(|toggle| toggle.name == "conservation_mode")
+        .expect("validated conservation_mode capability must exist");
+    let previous_value = toggle
+        .current_value
+        .as_deref()
+        .expect("validated conservation_mode current value must exist");
+    plan_write(
+        write_contract("SetConservationMode"),
+        toggle
+            .path
+            .as_deref()
+            .expect("validated conservation_mode path must exist"),
+        previous_value,
+        requested,
+    )
+}
+
+pub fn plan_amd_gpu_dpm_force_level_write(
+    capability: Option<&AmdGpuPowerDpmCapability>,
+    requested: &str,
+) -> Result<WriteDryRunPlan, ValidationError> {
+    validate_amd_gpu_dpm_force_level_choice(capability, requested)?;
+    let capability = capability.expect("validated AMD GPU DPM capability must exist");
+    plan_write(
+        write_contract("SetAmdGpuDpmForceLevel"),
+        &capability.force_performance_level_path,
+        capability
+            .current_force_performance_level
+            .as_deref()
+            .expect("validated AMD GPU DPM current force level must exist"),
+        requested,
+    )
+}
+
+pub fn plan_firmware_attribute_write(
+    attributes: &[FirmwareAttributeCapability],
+    attribute_id: &str,
+    requested: &str,
+) -> Result<WriteDryRunPlan, ValidationError> {
+    validate_firmware_scalar_attribute_request(attributes, attribute_id, requested)?;
+    let attribute = attributes
+        .iter()
+        .find(|attribute| attribute.name == attribute_id)
+        .expect("validated firmware attribute capability must exist");
+    let current_value = attribute
+        .current_value
+        .as_deref()
+        .expect("validated firmware attribute current value must exist");
+    let current_value_path = format!("{}/current_value", attribute.path);
+    plan_write(
+        write_contract("SetFirmwareAttribute"),
+        &current_value_path,
+        current_value,
+        requested,
+    )
+}
+
 fn write_contract(method: &str) -> &'static WriteMethodContract {
     WRITE_METHOD_CONTRACTS
         .iter()
@@ -1212,6 +2183,37 @@ fn require_current(capability_id: &str, current: Option<&str>) -> Result<(), Val
             capability_id: capability_id.to_owned(),
         }),
     }
+}
+
+fn parse_firmware_integer(
+    attribute_id: &str,
+    field: &str,
+    value: Option<&str>,
+) -> Result<i64, ValidationError> {
+    let value = value.ok_or_else(|| ValidationError::MissingCurrentValue {
+        capability_id: format!("firmware_attributes:{attribute_id}:{field}"),
+    })?;
+    value
+        .parse::<i64>()
+        .map_err(|_| ValidationError::BlockedChoice {
+            capability_id: "firmware_attributes".to_owned(),
+            requested: value.to_owned(),
+            reason: format!("{field} must be an integer for {attribute_id}"),
+        })
+}
+
+fn firmware_integer_choices(min_value: i64, max_value: i64, step: i64) -> Vec<String> {
+    let mut choices = Vec::new();
+    let mut value = min_value;
+    while value <= max_value && choices.len() < 256 {
+        choices.push(value.to_string());
+        value += step;
+    }
+    choices
+}
+
+fn curve_optimizer_offset_choices() -> Vec<String> {
+    (-30..=0).map(|value| value.to_string()).collect()
 }
 
 fn find_fan_preset<'a>(presets: &'a [FanPreset], requested: &str) -> Option<&'a FanPreset> {
@@ -1666,6 +2668,68 @@ mod tests {
     }
 
     #[test]
+    fn format_hardware_profile_apply_run_summary_reports_completion_and_stop_reason() {
+        assert_eq!(format_hardware_profile_apply_run_summary(None), "none");
+
+        let plan = WriteDryRunPlan {
+            method: "SetCurveOptimizerAllCore".to_owned(),
+            capability_id: "curve_optimizer_all_core".to_owned(),
+            polkit_action: "org.ratvantage.LegionControl1.set-curve-optimizer".to_owned(),
+            path: "ryzenadj:/usr/local/bin/ryzenadj".to_owned(),
+            previous_value: "unknown".to_owned(),
+            requested_value: "-20 (encoded 4294967276)".to_owned(),
+            readback_required: false,
+            rollback_value: "0".to_owned(),
+            rollback_instructions: Vec::new(),
+            reboot_required: false,
+            safety_notes: Vec::new(),
+            steps: Vec::new(),
+        };
+        let applied = HardwareProfileApplyRun {
+            profile_id: "co_test".to_owned(),
+            profile_label: "CO test".to_owned(),
+            timestamp_unix_secs: 1,
+            completed: true,
+            message: "hardware profile applied".to_owned(),
+            results: vec![HardwareProfileApplyActionResult {
+                action_id: "curve_optimizer_all_core".to_owned(),
+                result: WriteExecutionResult::applied(plan.clone(), "applied", None),
+            }],
+        };
+        assert_eq!(
+            format_hardware_profile_apply_run_summary(Some(&applied)),
+            "co_test completed; 1 action applied"
+        );
+
+        let stopped = HardwareProfileApplyRun {
+            completed: false,
+            message: "hardware profile apply stopped after first non-applied action".to_owned(),
+            results: vec![HardwareProfileApplyActionResult {
+                action_id: "curve_optimizer_all_core".to_owned(),
+                result: WriteExecutionResult::blocked_by_policy(
+                    plan,
+                    "Curve Optimizer writes are disabled by daemon policy",
+                ),
+            }],
+            ..applied
+        };
+        assert_eq!(
+            format_hardware_profile_apply_run_summary(Some(&stopped)),
+            "co_test stopped at curve_optimizer_all_core: blocked_by_policy - Curve Optimizer writes are disabled by daemon policy"
+        );
+    }
+
+    #[test]
+    fn hardware_profile_trigger_ids_are_allowlisted() {
+        assert!(validate_hardware_profile_trigger_id("ac_connected").is_ok());
+        assert!(validate_hardware_profile_trigger_id("resume").is_ok());
+        assert!(matches!(
+            validate_hardware_profile_trigger_id("lid_open"),
+            Err(ValidationError::BlockedChoice { .. })
+        ));
+    }
+
+    #[test]
     fn write_contracts_are_drafted_but_disabled() {
         let methods = WRITE_METHOD_CONTRACTS
             .iter()
@@ -1681,7 +2745,14 @@ mod tests {
                 "SetIdeapadToggle",
                 "SetGpuMode",
                 "ApplyFanPreset",
-                "RestoreAutoFan"
+                "RestoreAutoFan",
+                "SetCpuGovernor",
+                "SetCpuEpp",
+                "SetFirmwareAttribute",
+                "SetCpuBoost",
+                "SetConservationMode",
+                "SetAmdGpuDpmForceLevel",
+                "SetCurveOptimizerAllCore"
             ]
         );
         assert!(WRITE_METHOD_CONTRACTS
@@ -1961,7 +3032,7 @@ mod tests {
                 &[],
                 "fan_mode"
             ),
-            Err(ValidationError::BlockedChoice { .. })
+            Ok(())
         ));
         assert!(matches!(
             validate_ideapad_toggle_request(
@@ -2261,7 +3332,7 @@ mod tests {
         assert!(plan
             .safety_notes
             .iter()
-            .any(|note| note.contains("fn_lock, camera_power, and usb_charging")));
+            .any(|note| note.contains("fn_lock, camera_power, usb_charging, and fan_mode")));
         assert!(plan.readback_required);
     }
 
@@ -2663,6 +3734,105 @@ mod tests {
             plan_fan_preset_write(&[], &[fan_preset("balanced-daily")], "balanced-daily"),
             Err(ValidationError::MissingCapability { .. })
         ));
+    }
+
+    #[test]
+    fn firmware_attribute_validator_accepts_allowlisted_scalar_range() {
+        let attrs = vec![FirmwareAttributeCapability {
+            name: "ppt_pl1_spl".to_owned(),
+            current_value: Some("70".to_owned()),
+            display_name: Some("Set the CPU sustained power limit".to_owned()),
+            path: "/sys/class/firmware-attributes/lenovo-wmi-other-0/attributes/ppt_pl1_spl"
+                .to_owned(),
+            min_value: Some("50".to_owned()),
+            max_value: Some("85".to_owned()),
+            scalar_increment: Some("5".to_owned()),
+        }];
+
+        assert_eq!(
+            validate_firmware_scalar_attribute_request(&attrs, "ppt_pl1_spl", "75"),
+            Ok(())
+        );
+        assert!(matches!(
+            validate_firmware_scalar_attribute_request(&attrs, "other", "75"),
+            Err(ValidationError::BlockedChoice { .. })
+        ));
+        assert!(matches!(
+            validate_firmware_scalar_attribute_request(&attrs, "ppt_pl1_spl", "90"),
+            Err(ValidationError::UnsupportedChoice { .. })
+        ));
+        assert!(matches!(
+            validate_firmware_scalar_attribute_request(&attrs, "ppt_pl1_spl", "76"),
+            Err(ValidationError::BlockedChoice { .. })
+        ));
+        assert!(matches!(
+            validate_firmware_scalar_attribute_request(&attrs, "ppt_pl1_spl", "fast"),
+            Err(ValidationError::BlockedChoice { .. })
+        ));
+    }
+
+    #[test]
+    fn firmware_attribute_dry_run_plan_uses_validator_and_contract_metadata() {
+        let attrs = vec![FirmwareAttributeCapability {
+            name: "ppt_pl2_sppt".to_owned(),
+            current_value: Some("85".to_owned()),
+            display_name: None,
+            path: "/sys/class/firmware-attributes/lenovo-wmi-other-0/attributes/ppt_pl2_sppt"
+                .to_owned(),
+            min_value: Some("60".to_owned()),
+            max_value: Some("130".to_owned()),
+            scalar_increment: Some("1".to_owned()),
+        }];
+
+        let plan = plan_firmware_attribute_write(&attrs, "ppt_pl2_sppt", "90").unwrap();
+
+        assert_eq!(plan.method, "SetFirmwareAttribute");
+        assert_eq!(plan.capability_id, "firmware_attributes");
+        assert_eq!(
+            plan.polkit_action,
+            "org.ratvantage.LegionControl1.set-firmware-attribute"
+        );
+        assert_eq!(
+            plan.path,
+            "/sys/class/firmware-attributes/lenovo-wmi-other-0/attributes/ppt_pl2_sppt/current_value"
+        );
+        assert_eq!(plan.previous_value, "85");
+        assert_eq!(plan.requested_value, "90");
+        assert_eq!(plan.rollback_value, "85");
+        assert!(plan.readback_required);
+    }
+
+    #[test]
+    fn curve_optimizer_offset_encoding_matches_ryzenadj_u32_values() {
+        assert_eq!(encode_curve_optimizer_offset(0).unwrap(), 0);
+        assert_eq!(encode_curve_optimizer_offset(-10).unwrap(), 4_294_967_286);
+        assert_eq!(encode_curve_optimizer_offset(-15).unwrap(), 4_294_967_281);
+        assert_eq!(encode_curve_optimizer_offset(-20).unwrap(), 4_294_967_276);
+        assert_eq!(encode_curve_optimizer_offset(-25).unwrap(), 4_294_967_271);
+        assert_eq!(encode_curve_optimizer_offset(-30).unwrap(), 4_294_967_266);
+        assert!(matches!(
+            encode_curve_optimizer_offset(-40),
+            Err(ValidationError::UnsupportedChoice { .. })
+        ));
+        assert!(matches!(
+            validate_curve_optimizer_all_core_offset("fast"),
+            Err(ValidationError::BlockedChoice { .. })
+        ));
+    }
+
+    #[test]
+    fn curve_optimizer_dry_run_plan_is_write_only_and_experimental() {
+        let plan = plan_curve_optimizer_all_core_write("-20").unwrap();
+
+        assert_eq!(plan.method, "SetCurveOptimizerAllCore");
+        assert_eq!(plan.capability_id, "curve_optimizer_all_core");
+        assert_eq!(plan.requested_value, "-20 (encoded 4294967276)");
+        assert_eq!(plan.rollback_value, "0");
+        assert!(!plan.readback_required);
+        assert!(plan
+            .safety_notes
+            .iter()
+            .any(|note| note.contains("read-back is unavailable")));
     }
 
     fn fan_preset(id: &str) -> FanPreset {

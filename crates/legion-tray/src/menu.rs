@@ -1,5 +1,8 @@
-use legion_common::{CapabilityRegistry, FanCurveSnapshot, GpuModePending, HwmonSensor};
+use legion_common::{
+    CapabilityRegistry, FanCurveSnapshot, GpuModePending, HardwareProfileApplyRun, HwmonSensor,
+};
 use legion_control_ui::UiStatus;
+use std::str::FromStr;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum TrayAction {
@@ -14,7 +17,7 @@ pub enum TrayAction {
 }
 
 impl TrayAction {
-    fn as_str(&self) -> String {
+    pub fn as_str(&self) -> String {
         match self {
             Self::NoOp => "noop".to_owned(),
             Self::SetPlatformProfile(profile) => format!("set_platform_profile:{profile}"),
@@ -38,6 +41,65 @@ impl TrayAction {
             Self::Quit => "quit".to_owned(),
         }
     }
+}
+
+impl FromStr for TrayAction {
+    type Err = String;
+
+    fn from_str(value: &str) -> Result<Self, Self::Err> {
+        if value == "noop" {
+            return Ok(Self::NoOp);
+        }
+        if value == "open_dashboard" {
+            return Ok(Self::OpenDashboard);
+        }
+        if value == "refresh_status" {
+            return Ok(Self::RefreshStatus);
+        }
+        if value == "quit" {
+            return Ok(Self::Quit);
+        }
+        if let Some(profile) = value.strip_prefix("set_platform_profile:") {
+            return non_empty_arg(value, profile).map(Self::SetPlatformProfile);
+        }
+        if let Some(charge_type) = value.strip_prefix("set_battery_charge_type:") {
+            return non_empty_arg(value, charge_type).map(Self::SetBatteryChargeType);
+        }
+        if let Some(spec) = value.strip_prefix("set_led_state:") {
+            let (led_id, enabled) = parse_enabled_spec(value, spec)?;
+            return Ok(Self::SetLedState(led_id, enabled));
+        }
+        if let Some(spec) = value.strip_prefix("set_ideapad_toggle:") {
+            let (toggle_id, enabled) = parse_enabled_spec(value, spec)?;
+            return Ok(Self::SetIdeapadToggle(toggle_id, enabled));
+        }
+        Err(format!("unknown tray action `{value}`"))
+    }
+}
+
+fn non_empty_arg(action: &str, value: &str) -> Result<String, String> {
+    if value.is_empty() {
+        Err(format!("tray action `{action}` is missing a value"))
+    } else {
+        Ok(value.to_owned())
+    }
+}
+
+fn parse_enabled_spec(action: &str, spec: &str) -> Result<(String, bool), String> {
+    let (id, state) = spec
+        .rsplit_once(':')
+        .ok_or_else(|| format!("tray action `{action}` must end in `:on` or `:off`"))?;
+    let id = non_empty_arg(action, id)?;
+    let enabled = match state {
+        "on" => true,
+        "off" => false,
+        _ => {
+            return Err(format!(
+                "tray action `{action}` must end in `:on` or `:off`"
+            ))
+        }
+    };
+    Ok((id, enabled))
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -64,6 +126,7 @@ impl TrayMenu {
         report: &CapabilityRegistry,
         gpu_pending: Option<&GpuModePending>,
         _fan_snapshot: Option<&FanCurveSnapshot>,
+        hardware_profile_apply: Option<&HardwareProfileApplyRun>,
     ) -> Self {
         let mut entries = Vec::new();
 
@@ -102,6 +165,10 @@ impl TrayMenu {
             ))));
         }
 
+        if let Some(cpu_row) = cpu_row(report) {
+            entries.push(TrayMenuEntry::Item(info_item(cpu_row)));
+        }
+
         if let Some(battery_row) = battery_row(report) {
             entries.push(TrayMenuEntry::Item(info_item(battery_row)));
         }
@@ -118,6 +185,13 @@ impl TrayMenu {
 
         if let Some(gpu_row) = gpu_row(report, gpu_pending) {
             entries.push(TrayMenuEntry::Item(info_item(gpu_row)));
+        }
+
+        if let Some(profile_apply) = hardware_profile_apply {
+            entries.push(TrayMenuEntry::Item(info_item(format!(
+                "Last profile apply: {}",
+                legion_common::format_hardware_profile_apply_run_summary(Some(profile_apply))
+            ))));
         }
 
         let missing_capabilities = status
@@ -190,6 +264,25 @@ fn machine_label(status: &UiStatus) -> String {
         ("", version) => version.to_owned(),
         (name, "") => name.to_owned(),
         (name, version) => format!("{name} {version}"),
+    }
+}
+
+fn cpu_row(report: &CapabilityRegistry) -> Option<String> {
+    let cpu = report.cpu_power.as_ref()?;
+    let mut parts = Vec::new();
+    if let Some(governor) = cpu.governor.as_deref() {
+        parts.push(humanize_choice(governor));
+    }
+    if let Some(epp) = cpu.epp.as_deref() {
+        parts.push(format!("EPP {}", humanize_choice(epp)));
+    }
+    if let Some(boost) = cpu.boost {
+        parts.push(format!("boost {}", if boost { "on" } else { "off" }));
+    }
+    if parts.is_empty() {
+        None
+    } else {
+        Some(format!("CPU: {}", parts.join(" / ")))
     }
 }
 
@@ -552,9 +645,9 @@ fn gpu_row(report: &CapabilityRegistry, gpu_pending: Option<&GpuModePending>) ->
 mod tests {
     use legion_common::{
         BatteryChargeTypeCapability, BatteryTelemetry, Capability, CapabilityRegistry,
-        CapabilityStatus, FanCurvePointSnapshot, FanCurveSnapshot, GpuModePending, HardwareSummary,
-        HwmonSensor, IdeapadToggleCapability, LedCapability, PlatformProfileCapability,
-        PowerProfilesCapability, RiskLevel,
+        CapabilityStatus, FanCurvePointSnapshot, FanCurveSnapshot, GpuModePending,
+        HardwareProfileApplyRun, HardwareSummary, HwmonSensor, IdeapadToggleCapability,
+        LedCapability, PlatformProfileCapability, PowerProfilesCapability, RiskLevel,
     };
 
     use super::*;
@@ -619,7 +712,11 @@ mod tests {
                     capacity_percent: Some(79),
                     status: Some("Charging".to_owned()),
                     health: Some("Good".to_owned()),
+                    power_now_uw: None,
+                    cycle_count: None,
+                    ..Default::default()
                 }),
+                ac_adapters: Vec::new(),
             },
             leds: vec![
                 LedCapability {
@@ -682,12 +779,21 @@ mod tests {
                 value: "42000".to_owned(),
             }],
         };
+        let profile_apply = HardwareProfileApplyRun {
+            profile_id: "co_test".to_owned(),
+            profile_label: "CO test".to_owned(),
+            timestamp_unix_secs: 1,
+            completed: false,
+            message: "hardware profile apply stopped after first non-applied action".to_owned(),
+            results: Vec::new(),
+        };
 
         let menu = TrayMenu::from_status_and_report(
             &status,
             &report,
             Some(&gpu_pending),
             Some(&fan_snapshot),
+            Some(&profile_apply),
         );
 
         assert_eq!(
@@ -704,6 +810,7 @@ mod tests {
                 "USB charging: off",
                 "Fan: CPU Fan 2410 RPM",
                 "GPU: switch to hybrid pending (was nvidia) — reboot required",
+                "Last profile apply: co_test stopped: hardware profile apply stopped after first non-applied action",
                 "Unavailable: gpu",
                 "Platform profile (current: Balanced)",
                 "Balanced (current)",
@@ -764,8 +871,13 @@ mod tests {
         )
         .unwrap();
 
-        let menu =
-            TrayMenu::from_status_and_report(&status, &CapabilityRegistry::default(), None, None);
+        let menu = TrayMenu::from_status_and_report(
+            &status,
+            &CapabilityRegistry::default(),
+            None,
+            None,
+            None,
+        );
 
         assert_eq!(disabled_labels(&menu), ["82WM Legion Pro 5 16ARX8"]);
         assert_eq!(enabled_labels(&menu), ["Dashboard", "Refresh", "Quit"]);
@@ -818,7 +930,7 @@ mod tests {
             ..Default::default()
         };
 
-        let menu = TrayMenu::from_status_and_report(&status, &report, None, None);
+        let menu = TrayMenu::from_status_and_report(&status, &report, None, None, None);
 
         assert!(!menu_labels(&menu)
             .iter()
@@ -931,7 +1043,7 @@ mod tests {
             ..Default::default()
         };
 
-        TrayMenu::from_status_and_report(&status, &report, None, None)
+        TrayMenu::from_status_and_report(&status, &report, None, None, None)
     }
 
     fn disabled_labels(menu: &TrayMenu) -> Vec<&str> {

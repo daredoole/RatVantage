@@ -49,4 +49,85 @@
       <allow_active>auth_admin_keep</allow_active>
     </defaults>
   </action>
+  <action id="org.ratvantage.LegionControl1.set-gpu-mode">
+    <description>Set GPU mode with EnvyControl</description>
+    <message>Authentication is required to change GPU mode with EnvyControl.</message>
+    <defaults>
+      <allow_any>no</allow_any>
+      <allow_inactive>no</allow_inactive>
+      <allow_active>auth_admin_keep</allow_active>
+    </defaults>
+  </action>
+  <action id="org.ratvantage.LegionControl1.set-cpu-governor">
+    <description>Set Legion CPU governor</description>
+    <message>Authentication is required to change the Legion CPU governor.</message>
+    <defaults>
+      <allow_any>no</allow_any>
+      <allow_inactive>no</allow_inactive>
+      <allow_active>auth_admin_keep</allow_active>
+    </defaults>
+  </action>
+  <action id="org.ratvantage.LegionControl1.set-cpu-epp">
+    <description>Set Legion CPU energy performance preference</description>
+    <message>Authentication is required to change the Legion CPU energy performance preference.</message>
+    <defaults>
+      <allow_any>no</allow_any>
+      <allow_inactive>no</allow_inactive>
+      <allow_active>auth_admin_keep</allow_active>
+    </defaults>
+  </action>
+  <action id="org.ratvantage.LegionControl1.set-firmware-attribute">
+    <description>Set Legion firmware power limit</description>
+    <message>Authentication is required to change a Legion firmware power limit.</message>
+    <defaults>
+      <allow_any>no</allow_any>
+      <allow_inactive>no</allow_inactive>
+      <allow_active>auth_admin_keep</allow_active>
+    </defaults>
+  </action>
+  <action id="org.ratvantage.LegionControl1.set-cpu-boost">
+    <description>Set Legion CPU boost</description>
+    <message>Authentication is required to change Legion CPU boost.</message>
+    <defaults>
+      <allow_any>no</allow_any>
+      <allow_inactive>no</allow_inactive>
+      <allow_active>auth_admin_keep</allow_active>
+    </defaults>
+  </action>
+  <action id="org.ratvantage.LegionControl1.set-conservation-mode">
+    <description>Set Legion battery conservation mode</description>
+    <message>Authentication is required to change Legion battery conservation mode.</message>
+    <defaults>
+      <allow_any>no</allow_any>
+      <allow_inactive>no</allow_inactive>
+      <allow_active>auth_admin_keep</allow_active>
+    </defaults>
+  </action>
+  <action id="org.ratvantage.LegionControl1.set-amd-gpu-dpm-force-level">
+    <description>Set AMD GPU DPM force level</description>
+    <message>Authentication is required to change the AMD GPU DPM force level.</message>
+    <defaults>
+      <allow_any>no</allow_any>
+      <allow_inactive>no</allow_inactive>
+      <allow_active>auth_admin_keep</allow_active>
+    </defaults>
+  </action>
+  <action id="org.ratvantage.LegionControl1.set-curve-optimizer">
+    <description>Set AMD Curve Optimizer offset</description>
+    <message>Authentication is required to change the AMD Curve Optimizer offset.</message>
+    <defaults>
+      <allow_any>no</allow_any>
+      <allow_inactive>no</allow_inactive>
+      <allow_active>auth_admin_keep</allow_active>
+    </defaults>
+  </action>
+  <action id="org.ratvantage.LegionControl1.apply-hardware-profile">
+    <description>Apply RatVantage hardware profile</description>
+    <message>Authentication is required to apply a RatVantage hardware profile.</message>
+    <defaults>
+      <allow_any>no</allow_any>
+      <allow_inactive>no</allow_inactive>
+      <allow_active>auth_admin_keep</allow_active>
+    </defaults>
+  </action>
 </policyconfig>

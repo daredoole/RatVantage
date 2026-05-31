@@ -10,9 +10,8 @@ Capture a validation bundle for the currently implemented reversible write surfa
 Default mode is plan-only:
 - starts a private session bus and read-mostly daemon
 - captures status, overview, diagnostics, tray/menu evidence, and write plans
-- also captures dry-run plans for fan preset apply, restore-to-auto, and GPU mode
-  when EnvyControl exposes a switchable mode (read-only; fan and GPU execution are
-  never driven by this script, even in --execute mode)
+- also captures dry-run plans for fan preset apply, restore-to-auto, GPU mode,
+  CPU/PPT controls, Curve Optimizer, and saved profile apply when available
 - never attempts hardware-changing writes
 
 Execute mode is explicit and requires an already-running privileged daemon:
@@ -21,6 +20,7 @@ Execute mode is explicit and requires an already-running privileged daemon:
 - the script records set/revert results, but still expects operator review
 - prefer --execute-only <control_id> so each PR/evidence bundle exercises one
   write family at a time (still captures plans for other controls)
+- advanced controls only execute when --execute-only names their exact control_id
 
 Options:
   --output <dir>         Required bundle directory.
@@ -31,6 +31,11 @@ Options:
   --execute-only <id>    With --execute, only apply/revert this control id
                          (see docs/live-write-validation.md). Plans for all
                          controls still run when available.
+  --seed-hardware-profile <PROFILE_ID=JSON>
+                         Store a daemon hardware profile before capture.
+                         Prefix JSON with @ to read it from a file.
+  --seed-hardware-profile-trigger <TRIGGER_ID=PROFILE_ID>
+                         Store a daemon trigger mapping before capture.
   --skip-compat-bundle   Skip nested compatibility/fixture capture evidence.
   --skip-tray-smoke      Skip StatusNotifier tray smoke/report capture.
   --hold-seconds <n>     Hold window for tray smoke reports. Default: 1
@@ -63,6 +68,8 @@ bus_address=""
 use_system_bus=0
 execute_writes=0
 execute_only=""
+seed_hardware_profiles=()
+seed_hardware_profile_triggers=()
 capture_compat_bundle=1
 capture_tray_smoke=1
 hold_seconds=1
@@ -91,6 +98,14 @@ while (($#)); do
       ;;
     --execute-only)
       execute_only="${2:?missing value for --execute-only}"
+      shift 2
+      ;;
+    --seed-hardware-profile)
+      seed_hardware_profiles+=("${2:?missing value for --seed-hardware-profile}")
+      shift 2
+      ;;
+    --seed-hardware-profile-trigger)
+      seed_hardware_profile_triggers+=("${2:?missing value for --seed-hardware-profile-trigger}")
       shift 2
       ;;
     --skip-compat-bundle)
@@ -226,6 +241,31 @@ run_ui_capture() {
   run_capture "$destination" "${cmd[@]}"
 }
 
+expand_hardware_profile_seed() {
+  local spec="$1"
+  local profile_id="${spec%%=*}"
+  local profile_json="${spec#*=}"
+  if [[ "$profile_id" == "$spec" || -z "$profile_id" || -z "$profile_json" ]]; then
+    echo "invalid --seed-hardware-profile value; expected PROFILE_ID=JSON or PROFILE_ID=@PATH" >&2
+    exit 2
+  fi
+  if [[ "$profile_json" == @* ]]; then
+    local profile_path="${profile_json#@}"
+    if [[ ! -f "$profile_path" ]]; then
+      echo "hardware profile seed file not found: $profile_path" >&2
+      exit 2
+    fi
+    profile_json="$(python3 - "$profile_path" <<'PY'
+import pathlib
+import sys
+
+print(pathlib.Path(sys.argv[1]).read_text().strip())
+PY
+)"
+  fi
+  printf '%s=%s' "$profile_id" "$profile_json"
+}
+
 run_tray_capture() {
   local destination="$1"
   shift
@@ -320,8 +360,30 @@ if (( execute_writes )) && [[ -z "$execute_only" ]]; then
   echo "note: for PR-quality evidence, pass --execute-only <control_id> so only one write family runs apply+revert (see docs/live-write-validation.md)." >&2
 fi
 
+seed_index=1
+for seed_profile in "${seed_hardware_profiles[@]}"; do
+  printf -v seed_prefix '%02d' "$seed_index"
+  expanded_seed_profile="$(expand_hardware_profile_seed "$seed_profile")"
+  run_ui_capture "$output/logs/seed-${seed_prefix}-hardware-profile.json" \
+    --set-hardware-profile "$expanded_seed_profile"
+  seed_index=$((seed_index + 1))
+done
+
+seed_trigger_index=1
+for seed_trigger in "${seed_hardware_profile_triggers[@]}"; do
+  printf -v seed_prefix '%02d' "$seed_trigger_index"
+  if [[ "$seed_trigger" != *=* ]]; then
+    echo "invalid --seed-hardware-profile-trigger value; expected TRIGGER_ID=PROFILE_ID" >&2
+    exit 2
+  fi
+  run_ui_capture "$output/logs/seed-${seed_prefix}-hardware-profile-trigger.json" \
+    --set-hardware-profile-trigger "$seed_trigger"
+  seed_trigger_index=$((seed_trigger_index + 1))
+done
+
 python3 - "$metadata_json" "$environment_txt" "$target_bus_mode" "$bus_address" \
-  "$sysfs_root" "$execute_writes" "$capture_compat_bundle" "$capture_tray_smoke" "$execute_only" <<'PY'
+  "$sysfs_root" "$execute_writes" "$capture_compat_bundle" "$capture_tray_smoke" "$execute_only" \
+  "${#seed_hardware_profiles[@]}" "${#seed_hardware_profile_triggers[@]}" <<'PY'
 import json
 import pathlib
 import sys
@@ -336,6 +398,8 @@ import sys
     capture_compat_bundle,
     capture_tray_smoke,
     execute_only,
+    seed_hardware_profile_count,
+    seed_hardware_profile_trigger_count,
 ) = sys.argv[1:]
 
 environment = {}
@@ -354,6 +418,8 @@ metadata = {
     "capture_compat_bundle": capture_compat_bundle == "1",
     "capture_tray_smoke": capture_tray_smoke == "1",
     "execute_only": execute_only or None,
+    "seed_hardware_profile_count": int(seed_hardware_profile_count),
+    "seed_hardware_profile_trigger_count": int(seed_hardware_profile_trigger_count),
     "environment": environment,
 }
 
@@ -534,6 +600,7 @@ for toggle_id, label, note, paired_led_required in [
     ("fn_lock", "Fn-lock", "Confirm the indicator LED and actual Fn key behavior both change, then revert.", True),
     ("camera_power", "Camera power", "Confirm camera apps lose and regain the device as expected; restart apps if needed.", False),
     ("usb_charging", "USB charging", "Confirm sysfs read-back first; separate off-state charging behavior is still a slower manual check.", False),
+    ("fan_mode", "Fan mode", "Confirm `fan_mode` Auto (0) / Full speed (1) behavior, thermal response, and whether read-back changes or remains unchanged.", False),
 ]:
     toggle = toggles.get(toggle_id) or {}
     current = toggle.get("current_value")
@@ -558,6 +625,144 @@ for toggle_id, label, note, paired_led_required in [
         "manual_check": note,
     })
 
+conservation = toggles.get("conservation_mode") or {}
+conservation_current = conservation.get("current_value")
+conservation_available = conservation_current in ("0", "1") and bool(conservation.get("path"))
+conservation_requested = "0" if conservation_current == "1" else "1" if conservation_current == "0" else "unknown"
+controls.append({
+    "id": "conservation_mode",
+    "label": "Battery conservation mode",
+    "kind": "conservation_mode",
+    "available": conservation_available,
+    "current": conservation_current or "unknown",
+    "requested": conservation_requested,
+    "set_spec": conservation_requested if conservation_available else "",
+    "revert_spec": conservation_current if conservation_available else "",
+    "reason": "" if conservation_available else "conservation_mode is missing, non-binary, or unreadable.",
+    "manual_check": "Confirm conservation_mode read-back changes and battery charge behavior remains sane before reverting.",
+})
+
+cpu = raw.get("cpu_power") or {}
+
+def alternate_choice(current, choices, preferred=()):
+    if not current or not isinstance(choices, list):
+        return ""
+    normalized = [str(choice) for choice in choices if str(choice)]
+    for choice in preferred:
+        if choice in normalized and choice != current:
+            return choice
+    for choice in normalized:
+        if choice != current:
+            return choice
+    return ""
+
+governor_current = str(cpu.get("governor") or "")
+governor_choices = cpu.get("available_governors") or []
+governor_requested = alternate_choice(governor_current, governor_choices, ("powersave", "performance"))
+governor_available = bool(governor_current and governor_requested and cpu.get("governor_path"))
+controls.append({
+    "id": "cpu_governor",
+    "label": "CPU governor",
+    "kind": "cpu_governor",
+    "available": governor_available,
+    "current": governor_current or "unknown",
+    "requested": governor_requested or "unknown",
+    "set_spec": governor_requested if governor_available else "",
+    "revert_spec": governor_current if governor_available else "",
+    "reason": "" if governor_available else "cpu_power.governor, available_governors, alternate choice, or governor_path is missing.",
+    "manual_check": "Confirm scaling_governor read-back changes and returns; note active amd-pstate mode and desktop power profile context.",
+})
+
+epp_current = str(cpu.get("epp") or "")
+epp_choices = cpu.get("available_epp") or []
+epp_requested = alternate_choice(epp_current, epp_choices, ("balance_power", "balance_performance", "power", "performance", "default"))
+epp_available = bool(epp_current and epp_requested and cpu.get("epp_path"))
+controls.append({
+    "id": "cpu_epp",
+    "label": "CPU EPP",
+    "kind": "cpu_epp",
+    "available": epp_available,
+    "current": epp_current or "unknown",
+    "requested": epp_requested or "unknown",
+    "set_spec": epp_requested if epp_available else "",
+    "revert_spec": epp_current if epp_available else "",
+    "reason": "" if epp_available else "cpu_power.epp, available_epp, alternate choice, or epp_path is missing.",
+    "manual_check": "Confirm energy_performance_preference read-back changes and returns under amd-pstate-epp.",
+})
+
+boost_current_bool = cpu.get("boost")
+boost_available = isinstance(boost_current_bool, bool) and bool(cpu.get("boost_path"))
+boost_current = "1" if boost_current_bool is True else "0" if boost_current_bool is False else "unknown"
+boost_requested = "0" if boost_current == "1" else "1" if boost_current == "0" else "unknown"
+controls.append({
+    "id": "cpu_boost",
+    "label": "CPU boost",
+    "kind": "cpu_boost",
+    "available": boost_available,
+    "current": boost_current,
+    "requested": boost_requested,
+    "set_spec": boost_requested if boost_available else "",
+    "revert_spec": boost_current if boost_available else "",
+    "reason": "" if boost_available else "cpu_power.boost or boost_path is missing.",
+    "manual_check": "Confirm CPU boost read-back changes and returns; note scheduler/governor context in the bundle.",
+})
+
+def next_scalar_value(attr):
+    try:
+        current = int(str(attr.get("current_value")))
+        minimum = int(str(attr.get("min_value")))
+        maximum = int(str(attr.get("max_value")))
+        step = int(str(attr.get("scalar_increment") or "1"))
+    except Exception:
+        return None
+    if step <= 0:
+        return None
+    candidate = current + step
+    if candidate > maximum:
+        candidate = current - step
+    if candidate < minimum or candidate > maximum or candidate == current:
+        return None
+    return str(candidate)
+
+firmware_attrs = {attr.get("name"): attr for attr in raw.get("firmware_attributes", [])}
+for attr_id, label in [
+    ("ppt_pl1_spl", "Firmware PPT PL1/SPL"),
+    ("ppt_pl2_sppt", "Firmware PPT PL2/SPPT"),
+    ("ppt_pl3_fppt", "Firmware PPT PL3/FPPT"),
+]:
+    attr = firmware_attrs.get(attr_id) or {}
+    current = attr.get("current_value")
+    requested = next_scalar_value(attr)
+    available = requested is not None and bool(attr.get("path"))
+    controls.append({
+        "id": f"firmware_attribute:{attr_id}",
+        "label": label,
+        "kind": "firmware_attribute",
+        "available": available,
+        "current": current or "unknown",
+        "requested": requested or "unknown",
+        "set_spec": f"{attr_id}={requested}" if available else "",
+        "revert_spec": f"{attr_id}={current}" if available else "",
+        "reason": "" if available else "PPT firmware attribute is missing or lacks integer min/max/current metadata.",
+        "manual_check": "Confirm firmware attribute read-back changes and reverts; record thermal/performance observations separately.",
+    })
+
+amd_dpm = raw.get("amd_gpu_power_dpm") or {}
+dpm_current = amd_dpm.get("current_force_performance_level")
+dpm_requested = first_alternative(amd_dpm.get("choices", []), dpm_current)
+controls.append({
+    "id": "amd_gpu_dpm_force_level",
+    "label": "AMD GPU DPM force level",
+    "kind": "amd_gpu_dpm_force_level",
+    "available": bool(dpm_requested and amd_dpm.get("force_performance_level_path")),
+    "current": dpm_current or "unknown",
+    "requested": dpm_requested or "unknown",
+    "set_spec": dpm_requested or "",
+    "revert_spec": dpm_current or "",
+    "reason": "" if dpm_requested else "AMD GPU DPM force-level capability or alternate choice is missing.",
+    "manual_check": "Confirm DPM force-level read-back changes and GPU clocks/power state remain coherent before reverting.",
+})
+
 gpu = raw.get("gpu") or {}
 gpu_provider = (gpu.get("provider") or "").strip()
 gpu_status = (gpu.get("status") or "").strip()
@@ -573,7 +778,7 @@ if gpu_provider == "envycontrol" and gpu_status == "probe_only" and gpu_mode in 
 gpu_available = gpu_requested is not None
 controls.append({
     "id": "gpu_mode",
-    "label": "GPU mode (dry-run plan)",
+    "label": "GPU mode",
     "kind": "gpu_mode",
     "available": gpu_available,
     "current": gpu_mode or "unknown",
@@ -584,8 +789,51 @@ controls.append({
         "GPU mode planning unavailable (missing EnvyControl probe, non-probe status, or unknown current mode)."
     ),
     "manual_check": (
-        "Inspect plan JSON only; SetGpuMode is not exposed for execution and is not run by this harness."
+        "`gpu_mode`: EnvyControl mode changes may require reboot/logout and are not auto-reverted; record envycontrol success, reboot guidance, and recovery steps."
     ),
+})
+
+controls.append({
+    "id": "curve_optimizer_all_core",
+    "label": "Curve Optimizer all-core",
+    "kind": "curve_optimizer_all_core",
+    "available": True,
+    "current": "write-only",
+    "requested": "-20",
+    "set_spec": "-20",
+    "revert_spec": "0",
+    "reason": "",
+    "manual_check": "Confirm RyzenAdj reports success, record write-only state, then reset to 0 and run a stability check outside the harness.",
+})
+
+profiles = diagnostics.get("hardware_profiles") or {}
+profile_id = next(iter(profiles.keys()), None) if isinstance(profiles, dict) else None
+controls.append({
+    "id": "hardware_profile",
+    "label": "Saved hardware profile apply",
+    "kind": "hardware_profile",
+    "available": bool(profile_id),
+    "current": "n/a",
+    "requested": profile_id or "unknown",
+    "set_spec": profile_id or "",
+    "revert_spec": "",
+    "reason": "" if profile_id else "No saved hardware profiles are present in daemon state.",
+    "manual_check": "Inspect the per-action profile apply result; profile actions perform their own rollback/read-back where supported.",
+})
+
+triggers = diagnostics.get("hardware_profile_triggers") or {}
+trigger_id = next(iter(triggers.keys()), None) if isinstance(triggers, dict) else None
+controls.append({
+    "id": "hardware_profile_trigger",
+    "label": "Hardware profile trigger apply",
+    "kind": "hardware_profile_trigger",
+    "available": bool(trigger_id),
+    "current": "n/a",
+    "requested": trigger_id or "unknown",
+    "set_spec": trigger_id or "",
+    "revert_spec": "",
+    "reason": "" if trigger_id else "No hardware profile trigger mappings are present in daemon state.",
+    "manual_check": "Inspect the resolved trigger preview and per-action apply result; automatic OS observers are not part of this capture.",
 })
 
 fan_curves = raw.get("fan_curves") or []
@@ -626,7 +874,7 @@ PY
 
 step_index=1
 {
-  printf 'control_id\tlabel\tkind\tavailable\tcurrent\trequested\tmanual_check\treason\tplan_file\tplan_exit\tset_file\tset_exit\trevert_file\trevert_exit\tbefore_overview_file\tafter_overview_file\treverted_overview_file\n'
+  printf 'control_id\tlabel\tkind\tavailable\tcurrent\trequested\tmanual_check\treason\tplan_file\tplan_exit\tset_file\tset_exit\trevert_file\trevert_exit\tbefore_overview_file\tafter_overview_file\treverted_overview_file\tcurve_state_after_apply_file\tcurve_state_after_revert_file\n'
 } >"$results_tsv"
 
 while IFS=$'\t' read -r control_id label kind available current requested manual_check reason set_spec revert_spec; do
@@ -642,6 +890,8 @@ while IFS=$'\t' read -r control_id label kind available current requested manual
   before_overview_file=""
   after_overview_file=""
   reverted_overview_file=""
+  curve_state_after_apply_file=""
+  curve_state_after_revert_file=""
 
   if [[ "$available" == "true" ]]; then
     printf -v prefix '%02d' "$step_index"
@@ -661,6 +911,27 @@ while IFS=$'\t' read -r control_id label kind available current requested manual
       ideapad_toggle)
         run_ui_capture "$plan_file" --plan-ideapad-toggle "$set_spec" || true
         ;;
+      conservation_mode)
+        run_ui_capture "$plan_file" --plan-conservation-mode "$set_spec" || true
+        ;;
+      cpu_governor)
+        run_ui_capture "$plan_file" --plan-cpu-governor "$set_spec" || true
+        ;;
+      cpu_epp)
+        run_ui_capture "$plan_file" --plan-cpu-epp "$set_spec" || true
+        ;;
+      cpu_boost)
+        run_ui_capture "$plan_file" --plan-cpu-boost "$set_spec" || true
+        ;;
+      firmware_attribute)
+        run_ui_capture "$plan_file" --plan-firmware-attribute "$set_spec" || true
+        ;;
+      amd_gpu_dpm_force_level)
+        run_ui_capture "$plan_file" --plan-amd-gpu-dpm-force-level "$set_spec" || true
+        ;;
+      curve_optimizer_all_core)
+        run_ui_capture "$plan_file" "--plan-curve-optimizer-all-core=$set_spec" || true
+        ;;
       fan_preset)
         run_ui_capture "$plan_file" --plan-fan-preset "$set_spec" || true
         ;;
@@ -670,6 +941,12 @@ while IFS=$'\t' read -r control_id label kind available current requested manual
       gpu_mode)
         run_ui_capture "$plan_file" --plan-gpu-mode "$set_spec" || true
         ;;
+      hardware_profile)
+        run_ui_capture "$plan_file" --plan-hardware-profile "$set_spec" || true
+        ;;
+      hardware_profile_trigger)
+        run_ui_capture "$plan_file" --plan-hardware-profile-trigger "$set_spec" || true
+        ;;
     esac
     plan_exit="$(cat "${plan_file}.exit")"
 
@@ -677,8 +954,11 @@ while IFS=$'\t' read -r control_id label kind available current requested manual
     if [[ -n "$execute_only" && "$control_id" != "$execute_only" ]]; then
       execute_this=0
     fi
+    if [[ -z "$execute_only" && ( "$kind" == "firmware_attribute" || "$kind" == "conservation_mode" || "$kind" == "cpu_governor" || "$kind" == "cpu_epp" || "$kind" == "cpu_boost" || "$kind" == "amd_gpu_dpm_force_level" || "$kind" == "gpu_mode" || "$kind" == "curve_optimizer_all_core" || "$kind" == "hardware_profile" || "$kind" == "hardware_profile_trigger" ) ]]; then
+      execute_this=0
+    fi
 
-    if (( execute_writes )) && (( execute_this )) && [[ "$plan_exit" == "0" ]] && [[ "$kind" == "platform_profile" || "$kind" == "battery_charge_type" || "$kind" == "led_state" || "$kind" == "ideapad_toggle" ]]; then
+    if (( execute_writes )) && (( execute_this )) && [[ "$plan_exit" == "0" ]] && [[ "$kind" == "platform_profile" || "$kind" == "battery_charge_type" || "$kind" == "led_state" || "$kind" == "ideapad_toggle" || "$kind" == "firmware_attribute" || "$kind" == "conservation_mode" || "$kind" == "cpu_governor" || "$kind" == "cpu_epp" || "$kind" == "cpu_boost" || "$kind" == "amd_gpu_dpm_force_level" || "$kind" == "gpu_mode" || "$kind" == "curve_optimizer_all_core" || "$kind" == "hardware_profile" || "$kind" == "hardware_profile_trigger" ]]; then
       before_overview_file="$output/steps/${prefix}-${safe_id}-before-overview.txt"
       run_ui_capture "$before_overview_file" --overview || true
 
@@ -698,37 +978,98 @@ while IFS=$'\t' read -r control_id label kind available current requested manual
         ideapad_toggle)
           run_ui_capture "$set_file" --set-ideapad-toggle "$set_spec" || true
           ;;
+        conservation_mode)
+          run_ui_capture "$set_file" --set-conservation-mode "$set_spec" || true
+          ;;
+        cpu_governor)
+          run_ui_capture "$set_file" --set-cpu-governor "$set_spec" || true
+          ;;
+        cpu_epp)
+          run_ui_capture "$set_file" --set-cpu-epp "$set_spec" || true
+          ;;
+        cpu_boost)
+          run_ui_capture "$set_file" --set-cpu-boost "$set_spec" || true
+          ;;
+        firmware_attribute)
+          run_ui_capture "$set_file" --set-firmware-attribute "$set_spec" || true
+          ;;
+        amd_gpu_dpm_force_level)
+          run_ui_capture "$set_file" --set-amd-gpu-dpm-force-level "$set_spec" || true
+          ;;
+        gpu_mode)
+          run_ui_capture "$set_file" --set-gpu-mode "$set_spec" || true
+          ;;
+        curve_optimizer_all_core)
+          run_ui_capture "$set_file" "--set-curve-optimizer-all-core=$set_spec" || true
+          ;;
+        hardware_profile)
+          run_ui_capture "$set_file" --apply-hardware-profile "$set_spec" || true
+          ;;
+        hardware_profile_trigger)
+          run_ui_capture "$set_file" --apply-hardware-profile-trigger "$set_spec" || true
+          ;;
       esac
       set_exit="$(cat "${set_file}.exit")"
 
       after_overview_file="$output/steps/${prefix}-${safe_id}-after-overview.txt"
       run_ui_capture "$after_overview_file" --overview || true
+      if [[ "$kind" == "curve_optimizer_all_core" ]]; then
+        curve_state_after_apply_file="$output/steps/${prefix}-${safe_id}-last-state-after-apply.json"
+        run_ui_capture "$curve_state_after_apply_file" --last-curve-optimizer-all-core || true
+      fi
 
-      printf -v prefix '%02d' "$step_index"
-      revert_file="$output/steps/${prefix}-${safe_id}-revert.json"
-      step_index=$((step_index + 1))
-      case "$kind" in
-        platform_profile)
-          run_ui_capture "$revert_file" --set-platform-profile "$revert_spec" || true
-          ;;
-        battery_charge_type)
-          run_ui_capture "$revert_file" --set-battery-charge-type "$revert_spec" || true
-          ;;
-        led_state)
-          run_ui_capture "$revert_file" --set-led-state "$revert_spec" || true
-          ;;
-        ideapad_toggle)
-          run_ui_capture "$revert_file" --set-ideapad-toggle "$revert_spec" || true
-          ;;
-      esac
-      revert_exit="$(cat "${revert_file}.exit")"
+      if [[ -n "$revert_spec" && "$kind" != "gpu_mode" && "$kind" != "hardware_profile" && "$kind" != "hardware_profile_trigger" ]]; then
+        printf -v prefix '%02d' "$step_index"
+        revert_file="$output/steps/${prefix}-${safe_id}-revert.json"
+        step_index=$((step_index + 1))
+        case "$kind" in
+          platform_profile)
+            run_ui_capture "$revert_file" --set-platform-profile "$revert_spec" || true
+            ;;
+          battery_charge_type)
+            run_ui_capture "$revert_file" --set-battery-charge-type "$revert_spec" || true
+            ;;
+          led_state)
+            run_ui_capture "$revert_file" --set-led-state "$revert_spec" || true
+            ;;
+          ideapad_toggle)
+            run_ui_capture "$revert_file" --set-ideapad-toggle "$revert_spec" || true
+            ;;
+          conservation_mode)
+            run_ui_capture "$revert_file" --set-conservation-mode "$revert_spec" || true
+            ;;
+          cpu_governor)
+            run_ui_capture "$revert_file" --set-cpu-governor "$revert_spec" || true
+            ;;
+          cpu_epp)
+            run_ui_capture "$revert_file" --set-cpu-epp "$revert_spec" || true
+            ;;
+          cpu_boost)
+            run_ui_capture "$revert_file" --set-cpu-boost "$revert_spec" || true
+            ;;
+          firmware_attribute)
+            run_ui_capture "$revert_file" --set-firmware-attribute "$revert_spec" || true
+            ;;
+          amd_gpu_dpm_force_level)
+            run_ui_capture "$revert_file" --set-amd-gpu-dpm-force-level "$revert_spec" || true
+            ;;
+          curve_optimizer_all_core)
+            run_ui_capture "$revert_file" --reset-curve-optimizer-all-core || true
+            ;;
+        esac
+        revert_exit="$(cat "${revert_file}.exit")"
 
-      reverted_overview_file="$output/steps/${prefix}-${safe_id}-reverted-overview.txt"
-      run_ui_capture "$reverted_overview_file" --overview || true
+        reverted_overview_file="$output/steps/${prefix}-${safe_id}-reverted-overview.txt"
+        run_ui_capture "$reverted_overview_file" --overview || true
+        if [[ "$kind" == "curve_optimizer_all_core" ]]; then
+          curve_state_after_revert_file="$output/steps/${prefix}-${safe_id}-last-state-after-revert.json"
+          run_ui_capture "$curve_state_after_revert_file" --last-curve-optimizer-all-core || true
+        fi
+      fi
     fi
   fi
 
-  printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' \
+  printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' \
     "$(sanitize_field "$control_id")" \
     "$(sanitize_field "$label")" \
     "$(sanitize_field "$kind")" \
@@ -746,6 +1087,8 @@ while IFS=$'\t' read -r control_id label kind available current requested manual
     "$(sanitize_field "$before_overview_file")" \
     "$(sanitize_field "$after_overview_file")" \
     "$(sanitize_field "$reverted_overview_file")" \
+    "$(sanitize_field "$curve_state_after_apply_file")" \
+    "$(sanitize_field "$curve_state_after_revert_file")" \
     >>"$results_tsv"
 done < <(
   python3 - "$controls_json" <<'PY'
@@ -859,11 +1202,15 @@ for row in rows[1:]:
         before_overview_file,
         after_overview_file,
         reverted_overview_file,
+        curve_state_after_apply_file,
+        curve_state_after_revert_file,
     ) = row.split("\t")
 
     plan_payload = read_json_if_possible(plan_file)
     set_payload = read_json_if_possible(set_file)
     revert_payload = read_json_if_possible(revert_file)
+    curve_state_after_apply_payload = read_json_if_possible(curve_state_after_apply_file)
+    curve_state_after_revert_payload = read_json_if_possible(curve_state_after_revert_file)
 
     final_status = "skipped"
     if available == "true":
@@ -885,6 +1232,16 @@ for row in rows[1:]:
                 final_status = "blocked-by-policy"
             elif set_payload and set_payload.get("status") == "Failed":
                 final_status = "failed"
+            elif set_payload and "completed" in set_payload:
+                message = str(set_payload.get("message") or "").lower()
+                if set_payload.get("completed"):
+                    final_status = "executed"
+                elif "policy" in message:
+                    final_status = "blocked-by-policy"
+                elif "authorization" in message:
+                    final_status = "blocked-by-authorization"
+                else:
+                    final_status = "failed"
             elif set_exit == "0":
                 final_status = "executed"
             else:
@@ -911,6 +1268,10 @@ for row in rows[1:]:
         "before_overview_file": before_overview_file or None,
         "after_overview_file": after_overview_file or None,
         "reverted_overview_file": reverted_overview_file or None,
+        "curve_state_after_apply_file": curve_state_after_apply_file or None,
+        "curve_state_after_apply": curve_state_after_apply_payload,
+        "curve_state_after_revert_file": curve_state_after_revert_file or None,
+        "curve_state_after_revert": curve_state_after_revert_payload,
         "status": final_status,
     }
     results.append(result)

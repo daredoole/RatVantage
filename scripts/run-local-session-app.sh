@@ -175,7 +175,8 @@ if (( dry_run )); then
       print_command cargo run -q -p legion-control-tray -- --menu-check --bus-address '<private-bus>'
       ;;
     tray)
-      print_command cargo run -q -p legion-control-tray -- --bus-address '<private-bus>'
+      print_command env RATVANTAGE_DASHBOARD_BIN=cargo RATVANTAGE_DASHBOARD_ARGS='run -q -p legion-control-ui --features gtk-ui --' \
+        cargo run -q -p legion-control-tray -- --bus-address '<private-bus>'
       ;;
     ui)
       if [[ -n "$gsk_renderer" || -n "$gdk_backend" || -n "$gdk_disable" ]]; then
@@ -258,7 +259,8 @@ case "$frontend" in
     exec cargo run -q -p legion-control-tray -- --menu-check --bus-address "$bus_address"
     ;;
   tray)
-    exec cargo run -q -p legion-control-tray -- --bus-address "$bus_address"
+    exec env RATVANTAGE_DASHBOARD_BIN=cargo RATVANTAGE_DASHBOARD_ARGS='run -q -p legion-control-ui --features gtk-ui --' \
+      cargo run -q -p legion-control-tray -- --bus-address "$bus_address"
     ;;
   ui)
     ui_cmd=(cargo run -q -p legion-control-ui --features gtk-ui -- --bus-address "$bus_address")

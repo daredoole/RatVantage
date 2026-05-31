@@ -190,7 +190,9 @@ pub fn dashboard_page(
     }
     {
         stack.add_titled(
-            &crate::ui::automations::automations_page(),
+            &crate::ui::automations::automations_page(crate::ui::shared::clone_result(
+                &diagnostics,
+            )),
             Some("automations"),
             "Automations",
         );

@@ -253,8 +253,8 @@ mod tests {
                 Some("unix:path=/run/user/1000/bus"),
             ),
             true,
-            true,
-            true,
+            false,
+            false,
         );
 
         assert_eq!(
@@ -270,8 +270,8 @@ mod tests {
                 "prefers_status_notifier=true",
                 "may_need_appindicator_extension=false",
                 "status_notifier_watcher_available=true",
-                "autostart_hidden=true",
-                "gnome_autostart_disabled=true",
+                "autostart_hidden=false",
+                "gnome_autostart_disabled=false",
                 "desktop_guidance=KDE/Plasma should expose StatusNotifier items natively.",
             ]
         );

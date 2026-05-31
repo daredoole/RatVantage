@@ -1,12 +1,12 @@
 use crate::{capability_status_label, DiagnosticsBundle, GpuModePending};
 use adw::prelude::*;
 use anyhow::Result;
-use legion_common::{format_gpu_mode_pending_summary, GpuCapability};
+use legion_common::{format_gpu_mode_pending_summary, AmdGpuPowerDpmCapability, GpuCapability};
 
 use super::shared::{
-    append_error, info_row, make_client, render_dry_run_plan_summary,
-    render_dry_run_recovery_summary, request_dashboard_refresh, section_note,
-    selected_dropdown_value, spawn_dbus_call,
+    append_error, build_confirmed_write_controls, info_row, make_client,
+    render_dry_run_plan_summary, render_dry_run_recovery_summary, request_dashboard_refresh,
+    section_note, selected_dropdown_value, spawn_dbus_call,
 };
 
 const GPU_MODE_CHOICES: &[&str] = &["integrated", "hybrid", "nvidia"];
@@ -33,7 +33,7 @@ fn append_gpu(
     let mode = adw::PreferencesGroup::new();
     mode.set_title("GPU");
     mode.add(&section_note(
-        "Mode execution stays outside RatVantage until live validation is complete.",
+        "GPU mode execution is daemon-only, policy-gated, and records a reboot-pending state after EnvyControl accepts the switch.",
     ));
     if let Some(gpu) = &bundle.raw_probe_report.gpu {
         mode.add(&info_row("Provider", &gpu.provider));
@@ -52,10 +52,60 @@ fn append_gpu(
     mode.add(&pending_row);
     page.add(&mode);
 
+    if let Some(dpm) = &bundle.raw_probe_report.amd_gpu_power_dpm {
+        let dpm_group = adw::PreferencesGroup::new();
+        dpm_group.set_title("AMD GPU DPM");
+        dpm_group.add(&info_row(
+            "Force level",
+            dpm.current_force_performance_level
+                .as_deref()
+                .unwrap_or("unknown"),
+        ));
+        if let Some(state) = &dpm.power_dpm_state {
+            dpm_group.add(&info_row("Power state", state));
+        }
+        if let Some(sclk) = &dpm.current_sclk {
+            dpm_group.add(&info_row("SCLK", sclk));
+        }
+        if let Some(mclk) = &dpm.current_mclk {
+            dpm_group.add(&info_row("MCLK", mclk));
+        }
+        dpm_group.add(&section_note(
+            "Manual SCLK/MCLK clock states are read-only here and are not exposed as write controls. Use DPM force level for the supported GPU power control path.",
+        ));
+        page.add(&dpm_group);
+        page.add(&build_amd_gpu_dpm_controls(Some(dpm)));
+    } else {
+        page.add(&build_amd_gpu_dpm_controls(None));
+    }
+
     page.add(&build_gpu_mode_controls(
         bundle.raw_probe_report.gpu.as_ref(),
         pending_row,
     ));
+}
+
+fn build_amd_gpu_dpm_controls(
+    capability: Option<&AmdGpuPowerDpmCapability>,
+) -> adw::PreferencesGroup {
+    let group = build_confirmed_write_controls(
+        "AMD GPU DPM Control",
+        capability.and_then(|capability| capability.current_force_performance_level.as_deref()),
+        capability.map(|capability| capability.choices.as_slice()),
+        "Requested force level",
+        "Apply force level",
+        "AMD GPU DPM force level",
+        "Confirm DPM force-level write",
+        "I understand this can affect display/GPU stability and that auto restores driver control.",
+        |requested| make_client().and_then(|client| client.set_amd_gpu_dpm_force_level(requested)),
+        move |_| {
+            request_dashboard_refresh();
+        },
+    );
+    group.add(&section_note(
+        "Confirm this is intentional before applying. DPM force-level writes may affect display/GPU stability; use auto to restore driver control.",
+    ));
+    group
 }
 
 fn render_gpu_pending_row(pending: &Result<Option<GpuModePending>>) -> String {
@@ -95,6 +145,11 @@ fn build_gpu_mode_controls(
     let preview = gtk4::Button::with_label("Preview plan");
     preview.add_css_class("pill");
     preview.set_valign(gtk4::Align::Center);
+    let execute = gtk4::Button::with_label("Switch mode");
+    execute.add_css_class("pill");
+    execute.add_css_class("suggested-action");
+    execute.set_valign(gtk4::Align::Center);
+    execute.set_sensitive(false);
     let record_pending = gtk4::Button::with_label("Record pending");
     record_pending.add_css_class("pill");
     record_pending.set_valign(gtk4::Align::Center);
@@ -105,13 +160,26 @@ fn build_gpu_mode_controls(
 
     let chooser_row = adw::ActionRow::builder()
         .title("Target mode")
-        .subtitle("Preview only. No hardware mode execution here.")
+        .subtitle("Preview before switching. Switching requires daemon policy, polkit, EnvyControl, and reboot.")
         .selectable(false)
         .build();
     chooser_row.add_suffix(&chooser);
     chooser_row.add_suffix(&preview);
+    chooser_row.add_suffix(&execute);
     chooser_row.set_activatable_widget(Some(&chooser));
     group.add(&chooser_row);
+
+    let confirm_row = adw::ActionRow::builder()
+        .title("Confirm GPU switch")
+        .subtitle(
+            "I have reviewed the plan/recovery guidance and understand a reboot may be required.",
+        )
+        .selectable(false)
+        .build();
+    let confirm = gtk4::CheckButton::new();
+    confirm.set_valign(gtk4::Align::Center);
+    confirm_row.add_suffix(&confirm);
+    group.add(&confirm_row);
 
     let pending_controls = adw::ActionRow::builder()
         .title("Pending reboot state")
@@ -132,7 +200,7 @@ fn build_gpu_mode_controls(
     let recovery_row = adw::ActionRow::builder()
         .title("Recovery guidance")
         .subtitle(
-            "Preview a plan to see the rollback path. GPU mode changes remain dry-run only in the dashboard for now.",
+            "Preview a plan to see the rollback path before running a gated EnvyControl switch.",
         )
         .selectable(false)
         .build();
@@ -218,6 +286,65 @@ fn build_gpu_mode_controls(
                 Err(error) => {
                     plan_row_for_record.set_title("Pending reboot not recorded");
                     plan_row_for_record.set_subtitle(&format!("App-state update failed: {error}"));
+                }
+            },
+        );
+    });
+
+    let chooser_for_execute = chooser.clone();
+    let confirm_for_execute = confirm.clone();
+    let pending_row_for_execute = pending_row.clone();
+    let plan_row_for_execute = plan_row.clone();
+    let recovery_row_for_execute = recovery_row.clone();
+    let execute_for_confirm = execute.clone();
+    confirm.connect_toggled(move |confirm| {
+        execute_for_confirm.set_sensitive(confirm.is_active());
+    });
+
+    execute.connect_clicked(move |_| {
+        if !confirm_for_execute.is_active() {
+            plan_row_for_execute.set_title("GPU mode switch not confirmed");
+            plan_row_for_execute
+                .set_subtitle("Review the plan/recovery guidance and check Confirm GPU switch.");
+            return;
+        }
+
+        let Some(requested) = selected_dropdown_value(&chooser_for_execute) else {
+            plan_row_for_execute.set_title("GPU mode switch not started");
+            plan_row_for_execute.set_subtitle("No target GPU mode was selected.");
+            return;
+        };
+
+        let pending_row_for_execute = pending_row_for_execute.clone();
+        let plan_row_for_execute = plan_row_for_execute.clone();
+        let recovery_row_for_execute = recovery_row_for_execute.clone();
+        plan_row_for_execute.set_title("GPU mode switch requested");
+        plan_row_for_execute.set_subtitle(
+            "The daemon is executing EnvyControl if policy and authorization allow it.",
+        );
+        recovery_row_for_execute
+            .set_subtitle("If the switch succeeds, reboot and verify the requested GPU mode.");
+        spawn_dbus_call(
+            move || make_client().and_then(|client| client.set_gpu_mode(&requested)),
+            move |result| match result {
+                Ok(result) if result.applied => {
+                    pending_row_for_execute
+                        .set_subtitle(result.readback_value.as_deref().unwrap_or("reboot pending"));
+                    plan_row_for_execute.set_title("GPU mode switch accepted");
+                    plan_row_for_execute.set_subtitle(&result.message);
+                    recovery_row_for_execute
+                        .set_subtitle(&render_dry_run_recovery_summary(&result.plan));
+                    let _ = request_dashboard_refresh();
+                }
+                Ok(result) => {
+                    plan_row_for_execute.set_title("GPU mode switch blocked");
+                    plan_row_for_execute.set_subtitle(&result.message);
+                    recovery_row_for_execute
+                        .set_subtitle(&render_dry_run_recovery_summary(&result.plan));
+                }
+                Err(error) => {
+                    plan_row_for_execute.set_title("GPU mode switch failed");
+                    plan_row_for_execute.set_subtitle(&format!("Daemon call failed: {error}"));
                 }
             },
         );

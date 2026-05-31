@@ -3,10 +3,11 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 
 use legion_common::{
-    BatteryChargeTypeCapability, BatteryTelemetry, Capability, CapabilityRegistry,
-    CapabilityStatus, FanCurveCapability, FirmwareAttributeCapability, GpuCapability,
-    HardwareSummary, HwmonSensor, IdeapadToggleCapability, LedCapability,
-    PlatformProfileCapability, RiskLevel, TelemetrySnapshot,
+    AcAdapterTelemetry, AmdGpuPowerDpmCapability, BatteryChargeTypeCapability, BatteryTelemetry,
+    Capability, CapabilityRegistry, CapabilityStatus, CpuPowerCapability, FanCurveCapability,
+    FirmwareAttributeCapability, GpuCapability, HardwareSummary, HwmonSensor,
+    IdeapadToggleCapability, LedCapability, PlatformProfileCapability, RiskLevel,
+    TelemetrySnapshot, ThermalZone,
 };
 
 mod power_profiles;
@@ -34,6 +35,10 @@ pub fn probe(options: &ProbeOptions) -> CapabilityRegistry {
     let firmware_attributes = detect_firmware_attributes(&options.sysfs_root);
     let ideapad_toggles = detect_ideapad_toggles(&options.sysfs_root);
     let gpu = detect_envycontrol_gpu(&options.sysfs_root);
+    let amd_gpu_power_dpm = detect_amd_gpu_power_dpm(&options.sysfs_root);
+    let cpu_power = detect_cpu_power(&options.sysfs_root);
+    let thermal_zones = detect_thermal_zones(&options.sysfs_root);
+    let ac_adapters = detect_ac_adapters(&options.sysfs_root);
     let power_profiles = power_profiles::detect_power_profiles(&options.sysfs_root);
 
     let mut capabilities = Vec::new();
@@ -77,6 +82,24 @@ pub fn probe(options: &ProbeOptions) -> CapabilityRegistry {
     push_capability(&mut capabilities, "gpu", "GPU mode", gpu.is_some());
     push_capability(
         &mut capabilities,
+        "amd_gpu_power_dpm",
+        "AMD GPU power DPM",
+        amd_gpu_power_dpm.is_some(),
+    );
+    push_capability(
+        &mut capabilities,
+        "cpu_power",
+        "CPU frequency scaling",
+        cpu_power.is_some(),
+    );
+    push_capability(
+        &mut capabilities,
+        "thermal_zones",
+        "ACPI thermal zones",
+        !thermal_zones.is_empty(),
+    );
+    push_capability(
+        &mut capabilities,
         "power_profiles",
         "Desktop PowerProfiles",
         power_profiles
@@ -93,6 +116,7 @@ pub fn probe(options: &ProbeOptions) -> CapabilityRegistry {
         telemetry: TelemetrySnapshot {
             sensors: hwmon_sensors.clone(),
             battery: battery_telemetry,
+            ac_adapters,
         },
         hwmon_sensors,
         fan_curves,
@@ -100,6 +124,9 @@ pub fn probe(options: &ProbeOptions) -> CapabilityRegistry {
         firmware_attributes,
         ideapad_toggles,
         gpu,
+        amd_gpu_power_dpm,
+        cpu_power,
+        thermal_zones,
         power_profiles,
     }
 }
@@ -196,8 +223,25 @@ fn detect_battery_telemetry(root: &Path) -> Option<BatteryTelemetry> {
     let capacity_percent = read_i64(path.join("capacity"));
     let status = read_trim(path.join("status"));
     let health = read_trim(path.join("health"));
+    let power_now_uw = read_i64(path.join("power_now"));
+    let cycle_count = read_i64(path.join("cycle_count"));
+    let energy_full_uwh = read_i64(path.join("energy_full"));
+    let energy_full_design_uwh = read_i64(path.join("energy_full_design"));
+    let energy_now_uwh = read_i64(path.join("energy_now"));
+    let voltage_now_uv = read_i64(path.join("voltage_now"));
+    let capacity_level = read_trim(path.join("capacity_level"));
+    let technology = read_trim(path.join("technology"));
+    let model_name = read_trim(path.join("model_name"));
+    let manufacturer = read_trim(path.join("manufacturer"));
 
-    if capacity_percent.is_none() && status.is_none() && health.is_none() {
+    if capacity_percent.is_none()
+        && status.is_none()
+        && health.is_none()
+        && power_now_uw.is_none()
+        && cycle_count.is_none()
+        && energy_full_uwh.is_none()
+        && energy_now_uwh.is_none()
+    {
         return None;
     }
 
@@ -207,7 +251,175 @@ fn detect_battery_telemetry(root: &Path) -> Option<BatteryTelemetry> {
         capacity_percent,
         status,
         health,
+        power_now_uw,
+        cycle_count,
+        energy_full_uwh,
+        energy_full_design_uwh,
+        energy_now_uwh,
+        voltage_now_uv,
+        capacity_level,
+        technology,
+        model_name,
+        manufacturer,
     })
+}
+
+fn detect_ac_adapters(root: &Path) -> Vec<AcAdapterTelemetry> {
+    let supply_root = root.join("sys/class/power_supply");
+    let Ok(entries) = fs::read_dir(supply_root) else {
+        return Vec::new();
+    };
+
+    let mut adapters = Vec::new();
+    for entry in entries.flatten() {
+        let dir = entry.path();
+        if read_trim(dir.join("type")).as_deref() != Some("Mains") {
+            continue;
+        }
+        let Some(name) = dir
+            .file_name()
+            .and_then(|name| name.to_str())
+            .map(str::to_owned)
+        else {
+            continue;
+        };
+        adapters.push(AcAdapterTelemetry {
+            name,
+            path: dir.display().to_string(),
+            online: read_i64(dir.join("online")).map(|value| value != 0),
+        });
+    }
+    adapters.sort_by(|left, right| left.name.cmp(&right.name));
+    adapters
+}
+
+fn detect_thermal_zones(root: &Path) -> Vec<ThermalZone> {
+    let thermal_root = root.join("sys/class/thermal");
+    let Ok(entries) = fs::read_dir(thermal_root) else {
+        return Vec::new();
+    };
+
+    let mut zones = Vec::new();
+    for entry in entries.flatten() {
+        let dir = entry.path();
+        let Some(name) = dir.file_name().and_then(|name| name.to_str()) else {
+            continue;
+        };
+        if !name.starts_with("thermal_zone") {
+            continue;
+        }
+        let temp_path = dir.join("temp");
+        if !temp_path.exists() {
+            continue;
+        }
+        zones.push(ThermalZone {
+            name: name.to_owned(),
+            zone_type: read_trim(dir.join("type")),
+            temp_millicelsius: read_i64(&temp_path),
+            path: dir.display().to_string(),
+        });
+    }
+    zones.sort_by(|left, right| left.name.cmp(&right.name));
+    zones
+}
+
+fn detect_cpu_power(root: &Path) -> Option<CpuPowerCapability> {
+    let cpufreq = root.join("sys/devices/system/cpu/cpufreq");
+    let policy = cpufreq.join("policy0");
+    if !policy.is_dir() {
+        return None;
+    }
+
+    let governor_path = policy.join("scaling_governor");
+    let epp_path = policy.join("energy_performance_preference");
+    let boost_path = cpufreq.join("boost");
+    let amd_status_path = root.join("sys/devices/system/cpu/amd_pstate/status");
+
+    let governor = read_trim(&governor_path);
+    let available_governors = read_trim(policy.join("scaling_available_governors"))
+        .map_or_else(Vec::new, |value| parse_choices(&value));
+    let epp = read_trim(&epp_path);
+    let available_epp = read_trim(policy.join("energy_performance_available_preferences"))
+        .map_or_else(Vec::new, |value| parse_choices(&value));
+    let boost = read_i64(&boost_path).map(|value| value != 0);
+
+    if governor.is_none() && epp.is_none() && boost.is_none() {
+        return None;
+    }
+
+    Some(CpuPowerCapability {
+        status: CapabilityStatus::ProbeOnly,
+        scaling_driver: read_trim(policy.join("scaling_driver")),
+        amd_pstate_status: read_trim(&amd_status_path),
+        governor,
+        available_governors,
+        epp,
+        available_epp,
+        boost,
+        scaling_min_khz: read_i64(policy.join("scaling_min_freq")),
+        scaling_max_khz: read_i64(policy.join("scaling_max_freq")),
+        scaling_cur_khz: read_i64(policy.join("scaling_cur_freq")),
+        cpuinfo_min_khz: read_i64(policy.join("cpuinfo_min_freq")),
+        cpuinfo_max_khz: read_i64(policy.join("cpuinfo_max_freq")),
+        governor_path: path_if_exists(&governor_path),
+        epp_path: path_if_exists(&epp_path),
+        boost_path: path_if_exists(&boost_path),
+    })
+}
+
+fn path_if_exists(path: &Path) -> String {
+    if path.exists() {
+        path.display().to_string()
+    } else {
+        String::new()
+    }
+}
+
+fn detect_amd_gpu_power_dpm(root: &Path) -> Option<AmdGpuPowerDpmCapability> {
+    let drm_root = root.join("sys/class/drm");
+    let Ok(entries) = fs::read_dir(drm_root) else {
+        return None;
+    };
+
+    let mut cards = entries
+        .flatten()
+        .filter_map(|entry| {
+            let card = entry.file_name().to_string_lossy().to_string();
+            if !card.starts_with("card") || card.contains('-') {
+                return None;
+            }
+            Some((card, entry.path().join("device")))
+        })
+        .collect::<Vec<_>>();
+    cards.sort_by(|a, b| a.0.cmp(&b.0));
+
+    for (card, device) in cards {
+        let Some(vendor) = read_trim(device.join("vendor")) else {
+            continue;
+        };
+        if !vendor.eq_ignore_ascii_case("0x1002") {
+            continue;
+        }
+
+        let force_path = device.join("power_dpm_force_performance_level");
+        if !force_path.exists() {
+            continue;
+        }
+
+        return Some(AmdGpuPowerDpmCapability {
+            card,
+            status: CapabilityStatus::ProbeOnly,
+            vendor,
+            force_performance_level_path: force_path.display().to_string(),
+            current_force_performance_level: read_trim(&force_path),
+            power_dpm_state: read_trim(device.join("power_dpm_state")),
+            current_sclk: read_marked_dpm_clock(device.join("pp_dpm_sclk")),
+            current_mclk: read_marked_dpm_clock(device.join("pp_dpm_mclk")),
+            choices: vec!["auto".to_owned(), "low".to_owned()],
+        });
+    }
+
+    None
 }
 
 fn detect_hwmon_sensors(root: &Path) -> Vec<HwmonSensor> {
@@ -355,6 +567,9 @@ fn detect_firmware_attributes(root: &Path) -> Vec<FirmwareAttributeCapability> {
                 name,
                 current_value: read_trim(path.join("current_value")),
                 display_name: read_trim(path.join("display_name")),
+                min_value: read_trim(path.join("min_value")),
+                max_value: read_trim(path.join("max_value")),
+                scalar_increment: read_trim(path.join("scalar_increment")),
                 path: path.display().to_string(),
             });
         }
@@ -422,6 +637,14 @@ fn detect_envycontrol_gpu(root: &Path) -> Option<GpuCapability> {
 
 fn read_i64(path: impl AsRef<Path>) -> Option<i64> {
     read_trim(path).and_then(|value| value.parse().ok())
+}
+
+fn read_marked_dpm_clock(path: impl AsRef<Path>) -> Option<String> {
+    let raw = read_trim(path)?;
+    raw.lines()
+        .map(str::trim)
+        .find(|line| line.ends_with('*'))
+        .map(str::to_owned)
 }
 
 fn read_trim(path: impl AsRef<Path>) -> Option<String> {
@@ -527,12 +750,43 @@ mod tests {
             toggle.name == "conservation_mode" && toggle.current_value.as_deref() == Some("1")
         }));
         assert!(registry.gpu.is_none());
+        let amd_gpu_power_dpm = registry.amd_gpu_power_dpm.as_ref().unwrap();
+        assert_eq!(amd_gpu_power_dpm.card, "card1");
+        assert_eq!(
+            amd_gpu_power_dpm.current_force_performance_level.as_deref(),
+            Some("auto")
+        );
+        assert!(amd_gpu_power_dpm
+            .choices
+            .iter()
+            .any(|choice| choice == "low"));
         assert!(registry.power_profiles.is_none());
         let battery = registry.telemetry.battery.as_ref().unwrap();
         assert_eq!(battery.name, "BAT0");
         assert_eq!(battery.capacity_percent, Some(79));
         assert_eq!(battery.status.as_deref(), Some("Charging"));
         assert_eq!(battery.health.as_deref(), Some("Good"));
+        assert_eq!(battery.energy_full_uwh, Some(70_970_000));
+        assert_eq!(battery.technology.as_deref(), Some("Li-poly"));
+        assert_eq!(battery.capacity_level.as_deref(), Some("Normal"));
+
+        let cpu = registry.cpu_power.as_ref().unwrap();
+        assert_eq!(cpu.scaling_driver.as_deref(), Some("amd-pstate-epp"));
+        assert_eq!(cpu.amd_pstate_status.as_deref(), Some("active"));
+        assert_eq!(cpu.governor.as_deref(), Some("powersave"));
+        assert_eq!(cpu.epp.as_deref(), Some("balance_power"));
+        assert!(cpu.available_epp.iter().any(|e| e == "balance_performance"));
+        assert_eq!(cpu.boost, Some(true));
+        assert!(cpu.governor_path.ends_with("policy0/scaling_governor"));
+
+        assert!(registry.thermal_zones.iter().any(
+            |z| z.zone_type.as_deref() == Some("acpitz") && z.temp_millicelsius == Some(52000)
+        ));
+        assert!(registry
+            .telemetry
+            .ac_adapters
+            .iter()
+            .any(|a| a.name == "ADP0" && a.online == Some(true)));
     }
 
     #[test]
@@ -608,6 +862,39 @@ mod tests {
     }
 
     #[test]
+    fn detects_amd_gpu_power_dpm_without_hardcoded_card_number() {
+        let root = std::env::temp_dir().join(format!(
+            "legion-probe-amdgpu-dpm-{}",
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        let device = root.join("sys/class/drm/card7/device");
+        fs::create_dir_all(&device).unwrap();
+        fs::write(device.join("vendor"), "0x1002\n").unwrap();
+        fs::write(device.join("power_dpm_force_performance_level"), "auto\n").unwrap();
+        fs::write(device.join("power_dpm_state"), "performance\n").unwrap();
+        fs::write(device.join("pp_dpm_sclk"), "0: 400Mhz\n1: 700Mhz *\n").unwrap();
+        fs::write(device.join("pp_dpm_mclk"), "0: 1000Mhz *\n1: 1600Mhz\n").unwrap();
+
+        let registry = probe(&ProbeOptions {
+            sysfs_root: root.clone(),
+        });
+        let capability = registry.amd_gpu_power_dpm.as_ref().unwrap();
+        assert_eq!(capability.card, "card7");
+        assert_eq!(
+            capability.current_force_performance_level.as_deref(),
+            Some("auto")
+        );
+        assert_eq!(capability.power_dpm_state.as_deref(), Some("performance"));
+        assert_eq!(capability.current_sclk.as_deref(), Some("1: 700Mhz *"));
+        assert_eq!(capability.current_mclk.as_deref(), Some("0: 1000Mhz *"));
+
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
     fn handles_missing_sysfs_paths_cleanly() {
         let root = std::env::temp_dir().join(format!(
             "legion-probe-empty-{}",
@@ -628,6 +915,10 @@ mod tests {
         assert!(registry.leds.is_empty());
         assert!(registry.ideapad_toggles.is_empty());
         assert!(registry.telemetry.battery.is_none());
+        assert!(registry.telemetry.ac_adapters.is_empty());
+        assert!(registry.amd_gpu_power_dpm.is_none());
+        assert!(registry.cpu_power.is_none());
+        assert!(registry.thermal_zones.is_empty());
         assert!(registry.power_profiles.is_none());
 
         fs::remove_dir_all(root).unwrap();

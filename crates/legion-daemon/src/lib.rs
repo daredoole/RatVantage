@@ -8,14 +8,25 @@ use std::{
 
 use anyhow::Result;
 use legion_common::{
+    encode_curve_optimizer_offset, format_gpu_mode_pending_summary,
+    plan_amd_gpu_dpm_force_level_write as plan_amd_gpu_dpm_force_level,
     plan_battery_charge_type_write as plan_battery_charge_type,
-    plan_fan_preset_write as plan_fan_preset, plan_gpu_mode_write as plan_gpu_mode,
+    plan_conservation_mode_write as plan_conservation_mode, plan_cpu_boost_write as plan_cpu_boost,
+    plan_cpu_epp_write as plan_cpu_epp, plan_cpu_governor_write as plan_cpu_governor,
+    plan_curve_optimizer_all_core_write as plan_curve_optimizer_all_core,
+    plan_fan_preset_write as plan_fan_preset,
+    plan_firmware_attribute_write as plan_firmware_attribute, plan_gpu_mode_write as plan_gpu_mode,
     plan_ideapad_toggle_write as plan_ideapad_toggle, plan_led_state_write as plan_led_state,
     plan_platform_profile_write as plan_platform_profile,
-    plan_restore_auto_fan_write as plan_restore_auto_fan,
-    validate_fan_preset_platform_profile_entry, validate_gpu_mode_choice, CapabilityRegistry,
-    DaemonState, FanCurveSnapshot, FanPreset, GpuModePending, IdeapadToggleCapability,
-    LedCapability, ValidationError, WriteDryRunPlan, WriteExecutionResult,
+    plan_restore_auto_fan_write as plan_restore_auto_fan, validate_automation_rule,
+    validate_automation_rule_id, validate_curve_optimizer_all_core_offset,
+    validate_fan_preset_platform_profile_entry, validate_gpu_mode_choice,
+    validate_hardware_profile_id, validate_hardware_profile_trigger_id, AutomationRule,
+    AutomationRuleApplyRun, AutomationRuleEvaluation, AutomationRuleKind, CapabilityRegistry,
+    CurveOptimizerReadbackStatus, CurveOptimizerWriteState, DaemonState, FanCurveSnapshot,
+    FanPreset, GpuModePending, HardwareProfile, HardwareProfileActions,
+    HardwareProfileApplyActionResult, HardwareProfileApplyPreview, HardwareProfileApplyRun,
+    IdeapadToggleCapability, LedCapability, ValidationError, WriteDryRunPlan, WriteExecutionResult,
 };
 use legion_probe::{probe, ProbeOptions};
 use serde::Serialize;
@@ -28,10 +39,11 @@ use zbus::{
 
 pub const DBUS_INTERFACE: &str = "org.ratvantage.LegionControl1";
 pub const DBUS_PATH: &str = "/org/ratvantage/LegionControl1";
-pub const READ_ONLY_METHODS: &str = "CaptureLastKnownGoodFanCurve,ClearFanPresetProfileMap,ClearGpuModePending,GetCapabilities,GetFanPresetProfileMap,GetFanPresetReapplyAfterResume,GetGpuModePending,GetHardwareSummary,GetLastKnownGoodFanCurve,GetLiveFanCurveReadings,GetRawProbeReport,GetTelemetry,PlanBatteryChargeTypeWrite,PlanFanPresetWrite,PlanGpuModeWrite,PlanIdeapadToggleWrite,PlanLedStateWrite,PlanPlatformProfileWrite,PlanRestoreAutoFanWrite,RefreshCapabilities,RemoveFanPresetProfileMapEntry,SetFanPresetProfileMapEntry,SetFanPresetReapplyAfterResume,SetGpuModePending";
+pub const READ_ONLY_METHODS: &str = "CaptureLastKnownGoodFanCurve,ClearAutomationRules,ClearFanPresetProfileMap,ClearGpuModePending,ClearHardwareProfileTriggers,ClearHardwareProfiles,GetAutomationRulePreview,GetAutomationRules,GetCapabilities,GetFanPresetProfileMap,GetFanPresetReapplyAfterResume,GetGpuModePending,GetHardwareProfileApplyPreview,GetHardwareProfileTriggerApplyPreview,GetHardwareProfileTriggers,GetHardwareProfiles,GetHardwareSummary,GetLastCurveOptimizerAllCore,GetLastHardwareProfileApply,GetLastKnownGoodFanCurve,GetLiveFanCurveReadings,GetRawProbeReport,GetTelemetry,PlanAmdGpuDpmForceLevelWrite,PlanBatteryChargeTypeWrite,PlanConservationModeWrite,PlanCpuBoostWrite,PlanCpuEppWrite,PlanCpuGovernorWrite,PlanCurveOptimizerAllCoreWrite,PlanFanPresetWrite,PlanFirmwareAttributeWrite,PlanGpuModeWrite,PlanIdeapadToggleWrite,PlanLedStateWrite,PlanPlatformProfileWrite,PlanRestoreAutoFanWrite,RefreshCapabilities,RemoveAutomationRule,RemoveFanPresetProfileMapEntry,RemoveHardwareProfile,RemoveHardwareProfileTrigger,SetAutomationRule,SetFanPresetProfileMapEntry,SetFanPresetReapplyAfterResume,SetGpuModePending,SetHardwareProfile,SetHardwareProfileTrigger";
 pub const GATED_WRITE_METHODS: &str =
-    "SetPlatformProfile,SetBatteryChargeType,SetLedState,SetIdeapadToggle";
+    "SetPlatformProfile,SetBatteryChargeType,SetLedState,SetIdeapadToggle,SetGpuMode,SetCpuGovernor,SetCpuEpp,SetFirmwareAttribute,SetCpuBoost,SetConservationMode,SetAmdGpuDpmForceLevel,SetCurveOptimizerAllCore,ApplyHardwareProfile,ApplyHardwareProfileTrigger,ApplyAutomationRule";
 pub const DEFAULT_STATE_PATH: &str = "/var/lib/legion-control/state.toml";
+const AMD_GPU_POWER_PROFILE_SYNC_INTERVAL: std::time::Duration = std::time::Duration::from_secs(5);
 
 const PACKAGED_FAN_PRESETS: &[&str] = &[
     include_str!("../../../data/presets/quiet-office.toml"),
@@ -44,7 +56,20 @@ const PLATFORM_PROFILE_WRITE_METHOD: &str = "SetPlatformProfile";
 const BATTERY_CHARGE_TYPE_WRITE_METHOD: &str = "SetBatteryChargeType";
 const LED_STATE_WRITE_METHOD: &str = "SetLedState";
 const IDEAPAD_TOGGLE_WRITE_METHOD: &str = "SetIdeapadToggle";
+const GPU_MODE_WRITE_METHOD: &str = "SetGpuMode";
+const CPU_GOVERNOR_WRITE_METHOD: &str = "SetCpuGovernor";
+const CPU_EPP_WRITE_METHOD: &str = "SetCpuEpp";
+const FIRMWARE_ATTRIBUTE_WRITE_METHOD: &str = "SetFirmwareAttribute";
+const CPU_BOOST_WRITE_METHOD: &str = "SetCpuBoost";
+const CONSERVATION_MODE_WRITE_METHOD: &str = "SetConservationMode";
+const AMD_GPU_DPM_FORCE_LEVEL_WRITE_METHOD: &str = "SetAmdGpuDpmForceLevel";
+const CURVE_OPTIMIZER_ALL_CORE_WRITE_METHOD: &str = "SetCurveOptimizerAllCore";
+const HARDWARE_PROFILE_APPLY_METHOD: &str = "ApplyHardwareProfile";
+const HARDWARE_PROFILE_TRIGGER_APPLY_METHOD: &str = "ApplyHardwareProfileTrigger";
 const PKCHECK_MISSING: &str = "pkcheck is required for polkit authorization";
+const AUTOMATION_OBSERVER_SENDER: &str = "ratvantage.automation-observer";
+const AUTOMATION_OBSERVER_INTERVAL: std::time::Duration = std::time::Duration::from_secs(60);
+const AUTOMATION_OBSERVER_COOLDOWN_SECS: u64 = 300;
 
 #[derive(Debug, Clone, Default)]
 pub struct WriteAccessPolicy {
@@ -54,6 +79,16 @@ pub struct WriteAccessPolicy {
     pub ideapad_toggle_enabled: bool,
     pub camera_power_enabled: bool,
     pub usb_charging_enabled: bool,
+    pub fan_mode_enabled: bool,
+    pub gpu_mode_enabled: bool,
+    pub cpu_governor_enabled: bool,
+    pub cpu_epp_enabled: bool,
+    pub firmware_attribute_enabled: bool,
+    pub cpu_boost_enabled: bool,
+    pub conservation_mode_enabled: bool,
+    pub amd_gpu_dpm_enabled: bool,
+    pub curve_optimizer_enabled: bool,
+    pub hardware_profile_apply_enabled: bool,
 }
 
 impl WriteAccessPolicy {
@@ -68,8 +103,40 @@ impl WriteAccessPolicy {
         if self.led_state_enabled {
             methods.push(LED_STATE_WRITE_METHOD);
         }
-        if self.ideapad_toggle_enabled || self.camera_power_enabled || self.usb_charging_enabled {
+        if self.ideapad_toggle_enabled
+            || self.camera_power_enabled
+            || self.usb_charging_enabled
+            || self.fan_mode_enabled
+        {
             methods.push(IDEAPAD_TOGGLE_WRITE_METHOD);
+        }
+        if self.gpu_mode_enabled {
+            methods.push(GPU_MODE_WRITE_METHOD);
+        }
+        if self.cpu_governor_enabled {
+            methods.push(CPU_GOVERNOR_WRITE_METHOD);
+        }
+        if self.cpu_epp_enabled {
+            methods.push(CPU_EPP_WRITE_METHOD);
+        }
+        if self.firmware_attribute_enabled {
+            methods.push(FIRMWARE_ATTRIBUTE_WRITE_METHOD);
+        }
+        if self.cpu_boost_enabled {
+            methods.push(CPU_BOOST_WRITE_METHOD);
+        }
+        if self.conservation_mode_enabled {
+            methods.push(CONSERVATION_MODE_WRITE_METHOD);
+        }
+        if self.amd_gpu_dpm_enabled {
+            methods.push(AMD_GPU_DPM_FORCE_LEVEL_WRITE_METHOD);
+        }
+        if self.curve_optimizer_enabled {
+            methods.push(CURVE_OPTIMIZER_ALL_CORE_WRITE_METHOD);
+        }
+        if self.hardware_profile_apply_enabled {
+            methods.push(HARDWARE_PROFILE_APPLY_METHOD);
+            methods.push(HARDWARE_PROFILE_TRIGGER_APPLY_METHOD);
         }
         methods
     }
@@ -112,6 +179,15 @@ impl WriteAuthorizer for PkcheckAuthorizer {
     }
 }
 
+#[derive(Debug, Default)]
+struct InternalAuthorizer;
+
+impl WriteAuthorizer for InternalAuthorizer {
+    fn authorize(&self, _action: &str, _sender: &str) -> std::result::Result<(), String> {
+        Ok(())
+    }
+}
+
 pub trait PlatformProfileWriter: Send + Sync {
     fn write_platform_profile(
         &self,
@@ -134,6 +210,27 @@ pub trait LedStateWriter: Send + Sync {
 
 pub trait IdeapadToggleWriter: Send + Sync {
     fn write_ideapad_toggle(&self, path: &str, enabled: bool) -> std::result::Result<(), String>;
+}
+
+pub trait GpuModeWriter: Send + Sync {
+    fn switch_gpu_mode(&self, requested: &str) -> std::result::Result<String, String>;
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum AmdGpuPowerProfileSyncOutcome {
+    MissingAmdGpuDpmCapability,
+    MissingFedoraPowerProfile,
+    UnsupportedFedoraPowerProfile(String),
+    AlreadyApplied {
+        active_profile: String,
+        force_level: String,
+    },
+    Applied {
+        active_profile: String,
+        previous_force_level: String,
+        force_level: String,
+        path: String,
+    },
 }
 
 #[derive(Debug, Default)]
@@ -180,6 +277,138 @@ impl IdeapadToggleWriter for SysfsIdeapadToggleWriter {
     }
 }
 
+#[derive(Debug, Default)]
+pub struct CommandGpuModeWriter;
+
+impl GpuModeWriter for CommandGpuModeWriter {
+    fn switch_gpu_mode(&self, requested: &str) -> std::result::Result<String, String> {
+        let output = Command::new("envycontrol")
+            .args(["-s", requested])
+            .output()
+            .map_err(|error| {
+                if error.kind() == std::io::ErrorKind::NotFound {
+                    "envycontrol executable was not found".to_owned()
+                } else {
+                    format!("failed to run envycontrol: {error}")
+                }
+            })?;
+
+        let stdout = String::from_utf8_lossy(&output.stdout).trim().to_owned();
+        let stderr = String::from_utf8_lossy(&output.stderr).trim().to_owned();
+        if output.status.success() {
+            Ok(if stdout.is_empty() { stderr } else { stdout })
+        } else if stderr.is_empty() {
+            Err(format!("envycontrol exited with status {}", output.status))
+        } else {
+            Err(stderr)
+        }
+    }
+}
+
+pub trait CpuGovernorWriter: Send + Sync {
+    fn write_cpu_governor(&self, path: &str, requested: &str) -> std::result::Result<(), String>;
+}
+
+pub trait CpuEppWriter: Send + Sync {
+    fn write_cpu_epp(&self, path: &str, requested: &str) -> std::result::Result<(), String>;
+}
+
+pub trait FirmwareAttributeWriter: Send + Sync {
+    fn write_firmware_attribute(
+        &self,
+        path: &str,
+        requested: &str,
+    ) -> std::result::Result<(), String>;
+}
+
+pub trait CpuBoostWriter: Send + Sync {
+    fn write_cpu_boost(&self, path: &str, requested: &str) -> std::result::Result<(), String>;
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CurveOptimizerCommandOutput {
+    pub stdout: String,
+    pub stderr: String,
+}
+
+pub trait CurveOptimizerAllCoreWriter: Send + Sync {
+    fn set_curve_optimizer_all_core(
+        &self,
+        encoded_value: u32,
+    ) -> std::result::Result<CurveOptimizerCommandOutput, String>;
+}
+
+#[derive(Debug, Default)]
+pub struct SysfsCpuGovernorWriter;
+
+impl CpuGovernorWriter for SysfsCpuGovernorWriter {
+    fn write_cpu_governor(&self, path: &str, requested: &str) -> std::result::Result<(), String> {
+        fs::write(path, requested).map_err(|error| error.to_string())
+    }
+}
+
+#[derive(Debug, Default)]
+pub struct SysfsCpuEppWriter;
+
+impl CpuEppWriter for SysfsCpuEppWriter {
+    fn write_cpu_epp(&self, path: &str, requested: &str) -> std::result::Result<(), String> {
+        fs::write(path, requested).map_err(|error| error.to_string())
+    }
+}
+
+#[derive(Debug, Default)]
+pub struct SysfsFirmwareAttributeWriter;
+
+impl FirmwareAttributeWriter for SysfsFirmwareAttributeWriter {
+    fn write_firmware_attribute(
+        &self,
+        path: &str,
+        requested: &str,
+    ) -> std::result::Result<(), String> {
+        fs::write(path, requested).map_err(|error| error.to_string())
+    }
+}
+
+#[derive(Debug, Default)]
+pub struct SysfsCpuBoostWriter;
+
+impl CpuBoostWriter for SysfsCpuBoostWriter {
+    fn write_cpu_boost(&self, path: &str, requested: &str) -> std::result::Result<(), String> {
+        fs::write(path, requested).map_err(|error| error.to_string())
+    }
+}
+
+#[derive(Debug, Default)]
+pub struct RyzenAdjCurveOptimizerWriter;
+
+impl CurveOptimizerAllCoreWriter for RyzenAdjCurveOptimizerWriter {
+    fn set_curve_optimizer_all_core(
+        &self,
+        encoded_value: u32,
+    ) -> std::result::Result<CurveOptimizerCommandOutput, String> {
+        let output = Command::new("/usr/local/bin/ryzenadj")
+            .arg(format!("--set-coall={encoded_value}"))
+            .output()
+            .map_err(|error| {
+                if error.kind() == std::io::ErrorKind::NotFound {
+                    "ryzenadj executable was not found at /usr/local/bin/ryzenadj".to_owned()
+                } else {
+                    format!("failed to run ryzenadj: {error}")
+                }
+            })?;
+        let stdout = String::from_utf8_lossy(&output.stdout).trim().to_owned();
+        let stderr = String::from_utf8_lossy(&output.stderr).trim().to_owned();
+        if output.status.success() {
+            Ok(CurveOptimizerCommandOutput { stdout, stderr })
+        } else {
+            Err(format!(
+                "ryzenadj exited with status {}; stdout: {}; stderr: {}",
+                output.status, stdout, stderr
+            ))
+        }
+    }
+}
+
 pub struct LegionControl {
     options: ProbeOptions,
     registry: Mutex<CapabilityRegistry>,
@@ -191,6 +420,12 @@ pub struct LegionControl {
     battery_charge_type_writer: Arc<dyn BatteryChargeTypeWriter>,
     led_state_writer: Arc<dyn LedStateWriter>,
     ideapad_toggle_writer: Arc<dyn IdeapadToggleWriter>,
+    gpu_mode_writer: Arc<dyn GpuModeWriter>,
+    cpu_governor_writer: Arc<dyn CpuGovernorWriter>,
+    cpu_epp_writer: Arc<dyn CpuEppWriter>,
+    firmware_attribute_writer: Arc<dyn FirmwareAttributeWriter>,
+    cpu_boost_writer: Arc<dyn CpuBoostWriter>,
+    curve_optimizer_writer: Arc<dyn CurveOptimizerAllCoreWriter>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -215,6 +450,8 @@ impl LegionControl {
             Arc::new(SysfsBatteryChargeTypeWriter),
             Arc::new(SysfsLedStateWriter),
             Arc::new(SysfsIdeapadToggleWriter),
+            Arc::new(SysfsCpuGovernorWriter),
+            Arc::new(SysfsCpuEppWriter),
         )
     }
 
@@ -228,6 +465,8 @@ impl LegionControl {
         battery_charge_type_writer: Arc<dyn BatteryChargeTypeWriter>,
         led_state_writer: Arc<dyn LedStateWriter>,
         ideapad_toggle_writer: Arc<dyn IdeapadToggleWriter>,
+        cpu_governor_writer: Arc<dyn CpuGovernorWriter>,
+        cpu_epp_writer: Arc<dyn CpuEppWriter>,
     ) -> Self {
         let state_path = state_path.into();
         let registry = probe(&options);
@@ -244,7 +483,26 @@ impl LegionControl {
             battery_charge_type_writer,
             led_state_writer,
             ideapad_toggle_writer,
+            gpu_mode_writer: Arc::new(CommandGpuModeWriter),
+            cpu_governor_writer,
+            cpu_epp_writer,
+            firmware_attribute_writer: Arc::new(SysfsFirmwareAttributeWriter),
+            cpu_boost_writer: Arc::new(SysfsCpuBoostWriter),
+            curve_optimizer_writer: Arc::new(RyzenAdjCurveOptimizerWriter),
         }
+    }
+
+    pub fn with_gpu_mode_writer(mut self, writer: Arc<dyn GpuModeWriter>) -> Self {
+        self.gpu_mode_writer = writer;
+        self
+    }
+
+    pub fn with_curve_optimizer_writer(
+        mut self,
+        writer: Arc<dyn CurveOptimizerAllCoreWriter>,
+    ) -> Self {
+        self.curve_optimizer_writer = writer;
+        self
     }
 
     pub fn snapshot(&self) -> fdo::Result<CapabilityRegistry> {
@@ -311,6 +569,761 @@ impl LegionControl {
     pub fn plan_restore_auto_fan_write(&self) -> Result<WriteDryRunPlan, PlanningError> {
         let registry = self.planning_snapshot()?;
         plan_restore_auto_fan(&registry.fan_curves).map_err(PlanningError::Validation)
+    }
+
+    pub fn plan_cpu_governor_write(
+        &self,
+        requested: &str,
+    ) -> Result<WriteDryRunPlan, PlanningError> {
+        let registry = self.planning_snapshot()?;
+        plan_cpu_governor(registry.cpu_power.as_ref(), requested).map_err(PlanningError::Validation)
+    }
+
+    pub fn plan_cpu_epp_write(&self, requested: &str) -> Result<WriteDryRunPlan, PlanningError> {
+        let registry = self.planning_snapshot()?;
+        plan_cpu_epp(registry.cpu_power.as_ref(), requested).map_err(PlanningError::Validation)
+    }
+
+    pub fn plan_cpu_boost_write(&self, requested: &str) -> Result<WriteDryRunPlan, PlanningError> {
+        let registry = self.planning_snapshot()?;
+        plan_cpu_boost(registry.cpu_power.as_ref(), requested).map_err(PlanningError::Validation)
+    }
+
+    pub fn plan_curve_optimizer_all_core_write(
+        &self,
+        requested: &str,
+    ) -> Result<WriteDryRunPlan, PlanningError> {
+        plan_curve_optimizer_all_core(requested).map_err(PlanningError::Validation)
+    }
+
+    pub fn hardware_profile_apply_preview(
+        &self,
+        profile_id: &str,
+    ) -> fdo::Result<HardwareProfileApplyPreview> {
+        validate_hardware_profile_id(profile_id).map_err(validation_to_fdo)?;
+        let profile = self
+            .state
+            .lock()
+            .map_err(|_| fdo::Error::Failed("daemon state lock poisoned".to_owned()))?
+            .hardware_profiles
+            .get(profile_id)
+            .cloned()
+            .ok_or_else(|| {
+                fdo::Error::InvalidArgs(format!("hardware profile `{profile_id}` is not stored"))
+            })?;
+        self.preview_hardware_profile(profile_id, &profile)
+            .map_err(planning_to_fdo)
+    }
+
+    pub fn hardware_profile_trigger_apply_preview(
+        &self,
+        trigger_id: &str,
+    ) -> fdo::Result<HardwareProfileApplyPreview> {
+        validate_hardware_profile_trigger_id(trigger_id).map_err(validation_to_fdo)?;
+        let profile_id = self
+            .state
+            .lock()
+            .map_err(|_| fdo::Error::Failed("daemon state lock poisoned".to_owned()))?
+            .hardware_profile_triggers
+            .get(trigger_id)
+            .cloned()
+            .ok_or_else(|| {
+                fdo::Error::InvalidArgs(format!(
+                    "hardware profile trigger `{trigger_id}` is not configured"
+                ))
+            })?;
+        self.hardware_profile_apply_preview(&profile_id)
+    }
+
+    pub fn apply_hardware_profile(
+        &self,
+        profile_id: &str,
+        sender: &str,
+    ) -> fdo::Result<HardwareProfileApplyRun> {
+        validate_hardware_profile_id(profile_id).map_err(validation_to_fdo)?;
+        let profile = self
+            .state
+            .lock()
+            .map_err(|_| fdo::Error::Failed("daemon state lock poisoned".to_owned()))?
+            .hardware_profiles
+            .get(profile_id)
+            .cloned()
+            .ok_or_else(|| {
+                fdo::Error::InvalidArgs(format!("hardware profile `{profile_id}` is not stored"))
+            })?;
+        let preview = self
+            .preview_hardware_profile(profile_id, &profile)
+            .map_err(planning_to_fdo)?;
+
+        if !self.write_policy.hardware_profile_apply_enabled {
+            return self.record_hardware_profile_apply_run(HardwareProfileApplyRun {
+                profile_id: preview.profile_id,
+                profile_label: preview.profile_label,
+                timestamp_unix_secs: unix_timestamp_secs(),
+                completed: false,
+                message: "hardware profile apply is disabled by daemon policy".to_owned(),
+                results: Vec::new(),
+            });
+        }
+        if let Err(reason) = self.authorizer.authorize(
+            "org.ratvantage.LegionControl1.apply-hardware-profile",
+            sender,
+        ) {
+            return self.record_hardware_profile_apply_run(HardwareProfileApplyRun {
+                profile_id: preview.profile_id,
+                profile_label: preview.profile_label,
+                timestamp_unix_secs: unix_timestamp_secs(),
+                completed: false,
+                message: format!("hardware profile apply blocked by authorization: {reason}"),
+                results: Vec::new(),
+            });
+        }
+
+        let mut results = Vec::new();
+        let mut plan_index = 0usize;
+        let mut completed = true;
+        macro_rules! run_action {
+            ($action_id:expr, $call:expr) => {{
+                let fallback_plan = preview.plans.get(plan_index).cloned().ok_or_else(|| {
+                    fdo::Error::Failed("hardware profile plan/action mismatch".to_owned())
+                })?;
+                plan_index += 1;
+                let result = match $call {
+                    Ok(result) => result,
+                    Err(error) => WriteExecutionResult::failed(
+                        fallback_plan,
+                        format!("hardware profile action failed: {error}"),
+                        None,
+                    ),
+                };
+                let applied = result.applied;
+                results.push(HardwareProfileApplyActionResult {
+                    action_id: $action_id.to_owned(),
+                    result,
+                });
+                if !applied {
+                    completed = false;
+                }
+            }};
+        }
+
+        if completed {
+            if let Some(value) = &profile.actions.platform_profile {
+                run_action!("platform_profile", self.set_platform_profile(value, sender));
+            }
+        }
+        if completed {
+            if let Some(value) = &profile.actions.battery_charge_type {
+                run_action!(
+                    "battery_charge_type",
+                    self.set_battery_charge_type(value, sender)
+                );
+            }
+        }
+        if completed {
+            if let Some(value) = &profile.actions.cpu_governor {
+                run_action!("cpu_governor", self.set_cpu_governor(value, sender));
+            }
+        }
+        if completed {
+            if let Some(value) = &profile.actions.cpu_epp {
+                run_action!("cpu_epp", self.set_cpu_epp(value, sender));
+            }
+        }
+        if completed {
+            if let Some(value) = &profile.actions.cpu_boost {
+                run_action!("cpu_boost", self.set_cpu_boost(value, sender));
+            }
+        }
+        if completed {
+            if let Some(value) = &profile.actions.conservation_mode {
+                run_action!(
+                    "conservation_mode",
+                    self.set_conservation_mode(value, sender)
+                );
+            }
+        }
+        if completed {
+            if let Some(value) = &profile.actions.amd_gpu_dpm_force_level {
+                run_action!(
+                    "amd_gpu_dpm_force_level",
+                    self.set_amd_gpu_dpm_force_level(value, sender)
+                );
+            }
+        }
+        if completed {
+            if let Some(value) = &profile.actions.curve_optimizer_all_core {
+                run_action!(
+                    "curve_optimizer_all_core",
+                    self.set_curve_optimizer_all_core(value, sender)
+                );
+            }
+        }
+        if completed {
+            for (attribute_id, value) in &profile.actions.firmware_attributes {
+                run_action!(
+                    &format!("firmware_attribute:{attribute_id}"),
+                    self.set_firmware_attribute(attribute_id, value, sender)
+                );
+                if !completed {
+                    break;
+                }
+            }
+        }
+
+        let message = if completed {
+            "hardware profile applied".to_owned()
+        } else {
+            "hardware profile apply stopped after first non-applied action".to_owned()
+        };
+        self.record_hardware_profile_apply_run(HardwareProfileApplyRun {
+            profile_id: preview.profile_id,
+            profile_label: preview.profile_label,
+            timestamp_unix_secs: unix_timestamp_secs(),
+            completed,
+            message,
+            results,
+        })
+    }
+
+    pub fn plan_conservation_mode_write(
+        &self,
+        requested: &str,
+    ) -> Result<WriteDryRunPlan, PlanningError> {
+        let registry = self.planning_snapshot()?;
+        plan_conservation_mode(&registry.ideapad_toggles, requested)
+            .map_err(PlanningError::Validation)
+    }
+
+    pub fn plan_amd_gpu_dpm_force_level_write(
+        &self,
+        requested: &str,
+    ) -> Result<WriteDryRunPlan, PlanningError> {
+        let registry = self.planning_snapshot()?;
+        plan_amd_gpu_dpm_force_level(registry.amd_gpu_power_dpm.as_ref(), requested)
+            .map_err(PlanningError::Validation)
+    }
+
+    pub fn plan_firmware_attribute_write(
+        &self,
+        attribute_id: &str,
+        requested: &str,
+    ) -> Result<WriteDryRunPlan, PlanningError> {
+        let registry = self.planning_snapshot()?;
+        plan_firmware_attribute(&registry.firmware_attributes, attribute_id, requested)
+            .map_err(PlanningError::Validation)
+    }
+
+    fn preview_hardware_profile(
+        &self,
+        profile_id: &str,
+        profile: &HardwareProfile,
+    ) -> Result<HardwareProfileApplyPreview, PlanningError> {
+        validate_hardware_profile_id(profile_id).map_err(PlanningError::Validation)?;
+        let plans = self.plan_hardware_profile_actions(&profile.actions)?;
+        Ok(HardwareProfileApplyPreview {
+            profile_id: profile_id.to_owned(),
+            profile_label: profile.label.clone(),
+            plans,
+        })
+    }
+
+    fn plan_hardware_profile_actions(
+        &self,
+        actions: &HardwareProfileActions,
+    ) -> Result<Vec<WriteDryRunPlan>, PlanningError> {
+        let registry = self.planning_snapshot()?;
+        if actions.battery_charge_type.is_some() && actions.conservation_mode.is_some() {
+            return Err(PlanningError::Validation(
+                legion_common::ValidationError::BlockedChoice {
+                    capability_id: "hardware_profiles".to_owned(),
+                    requested: "battery_charge_type+conservation_mode".to_owned(),
+                    reason: "battery charge type and conservation_mode overlap on Lenovo firmware; split them into separate profile/automation steps with read-back between them".to_owned(),
+                },
+            ));
+        }
+        let mut plans = Vec::new();
+        if let Some(value) = &actions.platform_profile {
+            plans.push(
+                plan_platform_profile(registry.platform_profile.as_ref(), value)
+                    .map_err(PlanningError::Validation)?,
+            );
+        }
+        if let Some(value) = &actions.battery_charge_type {
+            plans.push(
+                plan_battery_charge_type(registry.battery_charge_type.as_ref(), value)
+                    .map_err(PlanningError::Validation)?,
+            );
+        }
+        if let Some(value) = &actions.cpu_governor {
+            plans.push(
+                plan_cpu_governor(registry.cpu_power.as_ref(), value)
+                    .map_err(PlanningError::Validation)?,
+            );
+        }
+        if let Some(value) = &actions.cpu_epp {
+            plans.push(
+                plan_cpu_epp(registry.cpu_power.as_ref(), value)
+                    .map_err(PlanningError::Validation)?,
+            );
+        }
+        if let Some(value) = &actions.cpu_boost {
+            plans.push(
+                plan_cpu_boost(registry.cpu_power.as_ref(), value)
+                    .map_err(PlanningError::Validation)?,
+            );
+        }
+        if let Some(value) = &actions.conservation_mode {
+            plans.push(
+                plan_conservation_mode(&registry.ideapad_toggles, value)
+                    .map_err(PlanningError::Validation)?,
+            );
+        }
+        if let Some(value) = &actions.amd_gpu_dpm_force_level {
+            plans.push(
+                plan_amd_gpu_dpm_force_level(registry.amd_gpu_power_dpm.as_ref(), value)
+                    .map_err(PlanningError::Validation)?,
+            );
+        }
+        if let Some(value) = &actions.curve_optimizer_all_core {
+            plans.push(plan_curve_optimizer_all_core(value).map_err(PlanningError::Validation)?);
+        }
+        for (attribute_id, value) in &actions.firmware_attributes {
+            plans.push(
+                plan_firmware_attribute(&registry.firmware_attributes, attribute_id, value)
+                    .map_err(PlanningError::Validation)?,
+            );
+        }
+        Ok(plans)
+    }
+
+    pub fn set_firmware_attribute(
+        &self,
+        attribute_id: &str,
+        requested: &str,
+        sender: &str,
+    ) -> fdo::Result<WriteExecutionResult> {
+        let plan = self
+            .plan_firmware_attribute_write(attribute_id, requested)
+            .map_err(planning_to_fdo)?;
+        if !self.write_policy.firmware_attribute_enabled {
+            return Ok(WriteExecutionResult::blocked_by_policy(
+                plan,
+                "firmware attribute writes are disabled by daemon policy",
+            ));
+        }
+        let plan = enabled_write_plan(plan);
+        if let Err(reason) = self.authorizer.authorize(&plan.polkit_action, sender) {
+            return Ok(WriteExecutionResult::blocked_by_authorization(plan, reason));
+        }
+
+        let path = plan.path.clone();
+        let previous_value = plan.previous_value.clone();
+        if let Err(error) = self
+            .firmware_attribute_writer
+            .write_firmware_attribute(&path, requested)
+        {
+            return Ok(WriteExecutionResult::failed(
+                plan,
+                format!("failed to write firmware attribute: {error}"),
+                None,
+            ));
+        }
+
+        let readback = self.refresh_firmware_attribute(attribute_id)?;
+        if readback == requested {
+            return Ok(WriteExecutionResult::applied(
+                plan,
+                "firmware attribute write applied and read back successfully",
+                Some(readback),
+            ));
+        }
+
+        match self
+            .firmware_attribute_writer
+            .write_firmware_attribute(&path, &previous_value)
+        {
+            Ok(()) => {
+                let rollback_readback = self.refresh_firmware_attribute(attribute_id)?;
+                Ok(WriteExecutionResult::failed(
+                    plan,
+                    format!(
+                        "firmware attribute read-back mismatch after write; restored previous value `{previous_value}`"
+                    ),
+                    Some(rollback_readback),
+                ))
+            }
+            Err(rollback_error) => Ok(WriteExecutionResult::failed(
+                plan,
+                format!(
+                    "firmware attribute read-back mismatch after write and rollback failed: expected `{requested}` got `{readback}`; rollback error: {rollback_error}"
+                ),
+                Some(readback),
+            )),
+        }
+    }
+
+    pub fn set_cpu_boost(
+        &self,
+        requested: &str,
+        sender: &str,
+    ) -> fdo::Result<WriteExecutionResult> {
+        let plan = self
+            .plan_cpu_boost_write(requested)
+            .map_err(planning_to_fdo)?;
+        if !self.write_policy.cpu_boost_enabled {
+            return Ok(WriteExecutionResult::blocked_by_policy(
+                plan,
+                "CPU boost writes are disabled by daemon policy",
+            ));
+        }
+        let plan = enabled_write_plan(plan);
+        if let Err(reason) = self.authorizer.authorize(&plan.polkit_action, sender) {
+            return Ok(WriteExecutionResult::blocked_by_authorization(plan, reason));
+        }
+        let path = plan.path.clone();
+        let previous_value = plan.previous_value.clone();
+        if let Err(error) = self.cpu_boost_writer.write_cpu_boost(&path, requested) {
+            return Ok(WriteExecutionResult::failed(
+                plan,
+                format!("failed to write CPU boost: {error}"),
+                None,
+            ));
+        }
+        let readback = self.refresh_cpu_boost()?;
+        if readback == requested {
+            return Ok(WriteExecutionResult::applied(
+                plan,
+                "CPU boost write applied and read back successfully",
+                Some(readback),
+            ));
+        }
+        match self.cpu_boost_writer.write_cpu_boost(&path, &previous_value) {
+            Ok(()) => {
+                let rollback_readback = self.refresh_cpu_boost()?;
+                Ok(WriteExecutionResult::failed(
+                    plan,
+                    format!(
+                        "CPU boost read-back mismatch after write; restored previous value `{previous_value}`"
+                    ),
+                    Some(rollback_readback),
+                ))
+            }
+            Err(rollback_error) => Ok(WriteExecutionResult::failed(
+                plan,
+                format!(
+                    "CPU boost read-back mismatch after write and rollback failed: expected `{requested}` got `{readback}`; rollback error: {rollback_error}"
+                ),
+                Some(readback),
+            )),
+        }
+    }
+
+    pub fn set_curve_optimizer_all_core(
+        &self,
+        requested: &str,
+        sender: &str,
+    ) -> fdo::Result<WriteExecutionResult> {
+        let plan = self
+            .plan_curve_optimizer_all_core_write(requested)
+            .map_err(planning_to_fdo)?;
+        if !self.write_policy.curve_optimizer_enabled {
+            return Ok(WriteExecutionResult::blocked_by_policy(
+                plan,
+                "Curve Optimizer writes are disabled by daemon policy",
+            ));
+        }
+        let plan = enabled_write_plan(plan);
+        if let Err(reason) = self.authorizer.authorize(&plan.polkit_action, sender) {
+            return Ok(WriteExecutionResult::blocked_by_authorization(plan, reason));
+        }
+
+        let offset =
+            validate_curve_optimizer_all_core_offset(requested).map_err(validation_to_fdo)?;
+        let encoded = encode_curve_optimizer_offset(offset).map_err(validation_to_fdo)?;
+        let output = match self
+            .curve_optimizer_writer
+            .set_curve_optimizer_all_core(encoded)
+        {
+            Ok(output) => output,
+            Err(error) => {
+                return Ok(WriteExecutionResult::failed(
+                    plan,
+                    format!("failed to execute RyzenAdj Curve Optimizer write: {error}"),
+                    None,
+                ));
+            }
+        };
+
+        if !output.stdout.contains("Successfully set coall")
+            && !output.stderr.contains("Successfully set coall")
+        {
+            return Ok(WriteExecutionResult::failed(
+                plan,
+                "RyzenAdj completed but did not report `Successfully set coall`",
+                Some(format!(
+                    "stdout: {}; stderr: {}",
+                    output.stdout, output.stderr
+                )),
+            ));
+        }
+
+        let state = CurveOptimizerWriteState {
+            signed_offset: offset,
+            encoded_value: encoded,
+            backend: "ryzenadj".to_owned(),
+            readback_status: CurveOptimizerReadbackStatus::WriteOnly,
+            timestamp_unix_secs: unix_timestamp_secs(),
+            stdout: (!output.stdout.is_empty()).then_some(output.stdout),
+            stderr: (!output.stderr.is_empty()).then_some(output.stderr),
+        };
+        self.record_curve_optimizer_all_core(state)?;
+
+        Ok(WriteExecutionResult::applied(
+            plan,
+            "Curve Optimizer all-core write accepted by RyzenAdj; read-back is unavailable on this backend",
+            Some(format!("offset={offset} encoded={encoded} readback=write_only")),
+        ))
+    }
+
+    pub fn set_conservation_mode(
+        &self,
+        requested: &str,
+        sender: &str,
+    ) -> fdo::Result<WriteExecutionResult> {
+        let plan = self
+            .plan_conservation_mode_write(requested)
+            .map_err(planning_to_fdo)?;
+        if !self.write_policy.conservation_mode_enabled {
+            return Ok(WriteExecutionResult::blocked_by_policy(
+                plan,
+                "conservation mode writes are disabled by daemon policy",
+            ));
+        }
+        let plan = enabled_write_plan(plan);
+        if let Err(reason) = self.authorizer.authorize(&plan.polkit_action, sender) {
+            return Ok(WriteExecutionResult::blocked_by_authorization(plan, reason));
+        }
+        let path = plan.path.clone();
+        let previous_enabled = plan.previous_value == "1";
+        let enabled = requested == "1";
+        if let Err(error) = self
+            .ideapad_toggle_writer
+            .write_ideapad_toggle(&path, enabled)
+        {
+            return Ok(WriteExecutionResult::failed(
+                plan,
+                format!("failed to write conservation mode: {error}"),
+                None,
+            ));
+        }
+        let (readback, _) = self.refresh_ideapad_toggle_state("conservation_mode")?;
+        if readback == requested {
+            return Ok(WriteExecutionResult::applied(
+                plan,
+                "conservation mode write applied and read back successfully",
+                Some(readback),
+            ));
+        }
+        match self
+            .ideapad_toggle_writer
+            .write_ideapad_toggle(&path, previous_enabled)
+        {
+            Ok(()) => {
+                let (rollback_readback, _) =
+                    self.refresh_ideapad_toggle_state("conservation_mode")?;
+                Ok(WriteExecutionResult::failed(
+                    plan,
+                    format!(
+                        "conservation mode read-back mismatch after write; restored previous value `{}`",
+                        if previous_enabled { "1" } else { "0" }
+                    ),
+                    Some(rollback_readback),
+                ))
+            }
+            Err(rollback_error) => Ok(WriteExecutionResult::failed(
+                plan,
+                format!(
+                    "conservation mode read-back mismatch after write and rollback failed: expected `{requested}` got `{readback}`; rollback error: {rollback_error}"
+                ),
+                Some(readback),
+            )),
+        }
+    }
+
+    pub fn set_amd_gpu_dpm_force_level(
+        &self,
+        requested: &str,
+        sender: &str,
+    ) -> fdo::Result<WriteExecutionResult> {
+        let plan = self
+            .plan_amd_gpu_dpm_force_level_write(requested)
+            .map_err(planning_to_fdo)?;
+        if !self.write_policy.amd_gpu_dpm_enabled {
+            return Ok(WriteExecutionResult::blocked_by_policy(
+                plan,
+                "AMD GPU DPM writes are disabled by daemon policy",
+            ));
+        }
+        let plan = enabled_write_plan(plan);
+        if let Err(reason) = self.authorizer.authorize(&plan.polkit_action, sender) {
+            return Ok(WriteExecutionResult::blocked_by_authorization(plan, reason));
+        }
+
+        let path = plan.path.clone();
+        let previous_value = plan.previous_value.clone();
+        if let Err(error) = fs::write(&path, requested) {
+            return Ok(WriteExecutionResult::failed(
+                plan,
+                format!("failed to write AMD GPU DPM force level: {error}"),
+                None,
+            ));
+        }
+        let readback = self.refresh_amd_gpu_dpm_force_level()?;
+        if readback == requested {
+            return Ok(WriteExecutionResult::applied(
+                plan,
+                "AMD GPU DPM force level write applied and read back successfully",
+                Some(readback),
+            ));
+        }
+
+        match fs::write(&path, &previous_value) {
+            Ok(()) => {
+                let rollback_readback = self.refresh_amd_gpu_dpm_force_level()?;
+                Ok(WriteExecutionResult::failed(
+                    plan,
+                    format!(
+                        "AMD GPU DPM force level read-back mismatch after write; restored previous value `{previous_value}`"
+                    ),
+                    Some(rollback_readback),
+                ))
+            }
+            Err(rollback_error) => Ok(WriteExecutionResult::failed(
+                plan,
+                format!(
+                    "AMD GPU DPM force level read-back mismatch after write and rollback failed: expected `{requested}` got `{readback}`; rollback error: {rollback_error}"
+                ),
+                Some(readback),
+            )),
+        }
+    }
+
+    pub fn set_cpu_governor(
+        &self,
+        requested: &str,
+        sender: &str,
+    ) -> fdo::Result<WriteExecutionResult> {
+        let plan = self
+            .plan_cpu_governor_write(requested)
+            .map_err(planning_to_fdo)?;
+        if !self.write_policy.cpu_governor_enabled {
+            return Ok(WriteExecutionResult::blocked_by_policy(
+                plan,
+                "CPU governor writes are disabled by daemon policy",
+            ));
+        }
+        let plan = enabled_write_plan(plan);
+        if let Err(reason) = self.authorizer.authorize(&plan.polkit_action, sender) {
+            return Ok(WriteExecutionResult::blocked_by_authorization(plan, reason));
+        }
+
+        let path = plan.path.clone();
+        let previous_value = plan.previous_value.clone();
+        if let Err(error) = self
+            .cpu_governor_writer
+            .write_cpu_governor(&path, requested)
+        {
+            return Ok(WriteExecutionResult::failed(
+                plan,
+                format!("failed to write CPU governor: {error}"),
+                None,
+            ));
+        }
+
+        let readback = self.refresh_cpu_governor()?;
+        if readback == requested {
+            return Ok(WriteExecutionResult::applied(
+                plan,
+                "CPU governor write applied and read back successfully",
+                Some(readback),
+            ));
+        }
+
+        match self.cpu_governor_writer.write_cpu_governor(&path, &previous_value) {
+            Ok(()) => {
+                let rollback_readback = self.refresh_cpu_governor()?;
+                Ok(WriteExecutionResult::failed(
+                    plan,
+                    format!(
+                        "CPU governor read-back mismatch after write; restored previous value `{previous_value}`"
+                    ),
+                    Some(rollback_readback),
+                ))
+            }
+            Err(rollback_error) => Ok(WriteExecutionResult::failed(
+                plan,
+                format!(
+                    "CPU governor read-back mismatch after write and rollback failed: expected `{requested}` got `{readback}`; rollback error: {rollback_error}"
+                ),
+                Some(readback),
+            )),
+        }
+    }
+
+    pub fn set_cpu_epp(&self, requested: &str, sender: &str) -> fdo::Result<WriteExecutionResult> {
+        let plan = self
+            .plan_cpu_epp_write(requested)
+            .map_err(planning_to_fdo)?;
+        if !self.write_policy.cpu_epp_enabled {
+            return Ok(WriteExecutionResult::blocked_by_policy(
+                plan,
+                "CPU EPP writes are disabled by daemon policy",
+            ));
+        }
+        let plan = enabled_write_plan(plan);
+        if let Err(reason) = self.authorizer.authorize(&plan.polkit_action, sender) {
+            return Ok(WriteExecutionResult::blocked_by_authorization(plan, reason));
+        }
+
+        let path = plan.path.clone();
+        let previous_value = plan.previous_value.clone();
+        if let Err(error) = self.cpu_epp_writer.write_cpu_epp(&path, requested) {
+            return Ok(WriteExecutionResult::failed(
+                plan,
+                format!("failed to write CPU EPP: {error}"),
+                None,
+            ));
+        }
+
+        let readback = self.refresh_cpu_epp()?;
+        if readback == requested {
+            return Ok(WriteExecutionResult::applied(
+                plan,
+                "CPU EPP write applied and read back successfully",
+                Some(readback),
+            ));
+        }
+
+        match self.cpu_epp_writer.write_cpu_epp(&path, &previous_value) {
+            Ok(()) => {
+                let rollback_readback = self.refresh_cpu_epp()?;
+                Ok(WriteExecutionResult::failed(
+                    plan,
+                    format!(
+                        "CPU EPP read-back mismatch after write; restored previous value `{previous_value}`"
+                    ),
+                    Some(rollback_readback),
+                ))
+            }
+            Err(rollback_error) => Ok(WriteExecutionResult::failed(
+                plan,
+                format!(
+                    "CPU EPP read-back mismatch after write and rollback failed: expected `{requested}` got `{readback}`; rollback error: {rollback_error}"
+                ),
+                Some(readback),
+            )),
+        }
     }
 
     pub fn set_platform_profile(
@@ -598,10 +1611,92 @@ impl LegionControl {
             .map_err(|_| fdo::Error::Failed("daemon state lock poisoned".to_owned()))
     }
 
+    pub fn last_curve_optimizer_all_core(&self) -> fdo::Result<Option<CurveOptimizerWriteState>> {
+        self.state
+            .lock()
+            .map(|state| state.last_curve_optimizer_all_core.clone())
+            .map_err(|_| fdo::Error::Failed("daemon state lock poisoned".to_owned()))
+    }
+
+    pub fn last_hardware_profile_apply(&self) -> fdo::Result<Option<HardwareProfileApplyRun>> {
+        self.state
+            .lock()
+            .map(|state| state.last_hardware_profile_apply.clone())
+            .map_err(|_| fdo::Error::Failed("daemon state lock poisoned".to_owned()))
+    }
+
+    fn record_curve_optimizer_all_core(
+        &self,
+        write_state: CurveOptimizerWriteState,
+    ) -> fdo::Result<CurveOptimizerWriteState> {
+        let mut state = self
+            .state
+            .lock()
+            .map_err(|_| fdo::Error::Failed("daemon state lock poisoned".to_owned()))?;
+        state.last_curve_optimizer_all_core = Some(write_state.clone());
+        save_state(&self.state_path, &state)
+            .map_err(|error| fdo::Error::Failed(format!("failed to save daemon state: {error}")))?;
+        Ok(write_state)
+    }
+
+    fn record_hardware_profile_apply_run(
+        &self,
+        run: HardwareProfileApplyRun,
+    ) -> fdo::Result<HardwareProfileApplyRun> {
+        let mut state = self
+            .state
+            .lock()
+            .map_err(|_| fdo::Error::Failed("daemon state lock poisoned".to_owned()))?;
+        state.last_hardware_profile_apply = Some(run.clone());
+        save_state(&self.state_path, &state)
+            .map_err(|error| fdo::Error::Failed(format!("failed to save daemon state: {error}")))?;
+        Ok(run)
+    }
+
+    pub fn set_gpu_mode(&self, requested: &str, sender: &str) -> fdo::Result<WriteExecutionResult> {
+        let plan = self
+            .plan_gpu_mode_write(requested)
+            .map_err(planning_to_fdo)?;
+        if !self.write_policy.gpu_mode_enabled {
+            return Ok(WriteExecutionResult::blocked_by_policy(
+                plan,
+                "GPU mode writes are disabled by daemon policy",
+            ));
+        }
+        let plan = enabled_write_plan(plan);
+        if let Err(reason) = self.authorizer.authorize(&plan.polkit_action, sender) {
+            return Ok(WriteExecutionResult::blocked_by_authorization(plan, reason));
+        }
+
+        let previous_mode = plan.previous_value.clone();
+        if let Err(error) = self.gpu_mode_writer.switch_gpu_mode(requested) {
+            return Ok(WriteExecutionResult::failed(
+                plan,
+                format!("failed to execute envycontrol GPU mode switch: {error}"),
+                Some(previous_mode),
+            ));
+        }
+
+        let pending = self.record_gpu_mode_pending(requested, Some(previous_mode))?;
+        Ok(WriteExecutionResult::applied(
+            plan,
+            "envycontrol GPU mode switch command completed; reboot is required before read-back verification",
+            Some(format_gpu_mode_pending_summary(Some(&pending))),
+        ))
+    }
+
     pub fn set_gpu_mode_pending(&self, requested: &str) -> fdo::Result<GpuModePending> {
         let registry = self.planning_snapshot().map_err(planning_to_fdo)?;
         validate_gpu_mode_choice(registry.gpu.as_ref(), requested).map_err(validation_to_fdo)?;
         let previous_mode = registry.gpu.and_then(|gpu| gpu.mode);
+        self.record_gpu_mode_pending(requested, previous_mode)
+    }
+
+    fn record_gpu_mode_pending(
+        &self,
+        requested: &str,
+        previous_mode: Option<String>,
+    ) -> fdo::Result<GpuModePending> {
         let pending = GpuModePending {
             requested_mode: requested.to_owned(),
             previous_mode,
@@ -627,6 +1722,386 @@ impl LegionControl {
         save_state(&self.state_path, &state)
             .map_err(|error| fdo::Error::Failed(format!("failed to save daemon state: {error}")))?;
         Ok(previous)
+    }
+
+    pub fn hardware_profiles(&self) -> fdo::Result<BTreeMap<String, HardwareProfile>> {
+        self.state
+            .lock()
+            .map(|state| state.hardware_profiles.clone())
+            .map_err(|_| fdo::Error::Failed("daemon state lock poisoned".to_owned()))
+    }
+
+    pub fn set_hardware_profile(
+        &self,
+        profile_id: &str,
+        profile_json: &str,
+    ) -> fdo::Result<HardwareProfileApplyPreview> {
+        validate_hardware_profile_id(profile_id).map_err(validation_to_fdo)?;
+        let profile: HardwareProfile = serde_json::from_str(profile_json).map_err(|error| {
+            fdo::Error::InvalidArgs(format!("invalid hardware profile JSON: {error}"))
+        })?;
+        let preview = self
+            .preview_hardware_profile(profile_id, &profile)
+            .map_err(planning_to_fdo)?;
+        let mut state = self
+            .state
+            .lock()
+            .map_err(|_| fdo::Error::Failed("daemon state lock poisoned".to_owned()))?;
+        state
+            .hardware_profiles
+            .insert(profile_id.to_owned(), profile);
+        save_state(&self.state_path, &state)
+            .map_err(|error| fdo::Error::Failed(format!("failed to save daemon state: {error}")))?;
+        Ok(preview)
+    }
+
+    pub fn remove_hardware_profile(
+        &self,
+        profile_id: &str,
+    ) -> fdo::Result<Option<HardwareProfile>> {
+        validate_hardware_profile_id(profile_id).map_err(validation_to_fdo)?;
+        let mut state = self
+            .state
+            .lock()
+            .map_err(|_| fdo::Error::Failed("daemon state lock poisoned".to_owned()))?;
+        let previous = state.hardware_profiles.remove(profile_id);
+        if previous.is_some() {
+            state
+                .hardware_profile_triggers
+                .retain(|_, mapped_profile_id| mapped_profile_id != profile_id);
+        }
+        save_state(&self.state_path, &state)
+            .map_err(|error| fdo::Error::Failed(format!("failed to save daemon state: {error}")))?;
+        Ok(previous)
+    }
+
+    pub fn clear_hardware_profiles(&self) -> fdo::Result<BTreeMap<String, HardwareProfile>> {
+        let mut state = self
+            .state
+            .lock()
+            .map_err(|_| fdo::Error::Failed("daemon state lock poisoned".to_owned()))?;
+        state.hardware_profiles.clear();
+        state.hardware_profile_triggers.clear();
+        state.automation_rules.clear();
+        state.last_automation_rule_apply.clear();
+        save_state(&self.state_path, &state)
+            .map_err(|error| fdo::Error::Failed(format!("failed to save daemon state: {error}")))?;
+        Ok(state.hardware_profiles.clone())
+    }
+
+    pub fn hardware_profile_triggers(&self) -> fdo::Result<BTreeMap<String, String>> {
+        self.state
+            .lock()
+            .map(|state| state.hardware_profile_triggers.clone())
+            .map_err(|_| fdo::Error::Failed("daemon state lock poisoned".to_owned()))
+    }
+
+    pub fn set_hardware_profile_trigger(
+        &self,
+        trigger_id: &str,
+        profile_id: &str,
+    ) -> fdo::Result<BTreeMap<String, String>> {
+        validate_hardware_profile_trigger_id(trigger_id).map_err(validation_to_fdo)?;
+        validate_hardware_profile_id(profile_id).map_err(validation_to_fdo)?;
+        let mut state = self
+            .state
+            .lock()
+            .map_err(|_| fdo::Error::Failed("daemon state lock poisoned".to_owned()))?;
+        if !state.hardware_profiles.contains_key(profile_id) {
+            return Err(fdo::Error::InvalidArgs(format!(
+                "hardware profile `{profile_id}` is not stored"
+            )));
+        }
+        state
+            .hardware_profile_triggers
+            .insert(trigger_id.to_owned(), profile_id.to_owned());
+        save_state(&self.state_path, &state)
+            .map_err(|error| fdo::Error::Failed(format!("failed to save daemon state: {error}")))?;
+        Ok(state.hardware_profile_triggers.clone())
+    }
+
+    pub fn remove_hardware_profile_trigger(&self, trigger_id: &str) -> fdo::Result<Option<String>> {
+        validate_hardware_profile_trigger_id(trigger_id).map_err(validation_to_fdo)?;
+        let mut state = self
+            .state
+            .lock()
+            .map_err(|_| fdo::Error::Failed("daemon state lock poisoned".to_owned()))?;
+        let previous = state.hardware_profile_triggers.remove(trigger_id);
+        save_state(&self.state_path, &state)
+            .map_err(|error| fdo::Error::Failed(format!("failed to save daemon state: {error}")))?;
+        Ok(previous)
+    }
+
+    pub fn clear_hardware_profile_triggers(&self) -> fdo::Result<BTreeMap<String, String>> {
+        let mut state = self
+            .state
+            .lock()
+            .map_err(|_| fdo::Error::Failed("daemon state lock poisoned".to_owned()))?;
+        state.hardware_profile_triggers.clear();
+        save_state(&self.state_path, &state)
+            .map_err(|error| fdo::Error::Failed(format!("failed to save daemon state: {error}")))?;
+        Ok(state.hardware_profile_triggers.clone())
+    }
+
+    pub fn apply_hardware_profile_trigger(
+        &self,
+        trigger_id: &str,
+        sender: &str,
+    ) -> fdo::Result<HardwareProfileApplyRun> {
+        validate_hardware_profile_trigger_id(trigger_id).map_err(validation_to_fdo)?;
+        let profile_id = self
+            .state
+            .lock()
+            .map_err(|_| fdo::Error::Failed("daemon state lock poisoned".to_owned()))?
+            .hardware_profile_triggers
+            .get(trigger_id)
+            .cloned()
+            .ok_or_else(|| {
+                fdo::Error::InvalidArgs(format!(
+                    "hardware profile trigger `{trigger_id}` is not configured"
+                ))
+            })?;
+        self.apply_hardware_profile(&profile_id, sender)
+    }
+
+    pub fn automation_rules(&self) -> fdo::Result<BTreeMap<String, AutomationRule>> {
+        self.state
+            .lock()
+            .map(|state| state.automation_rules.clone())
+            .map_err(|_| fdo::Error::Failed("daemon state lock poisoned".to_owned()))
+    }
+
+    pub fn set_automation_rule(
+        &self,
+        rule_id: &str,
+        rule_json: &str,
+    ) -> fdo::Result<BTreeMap<String, AutomationRule>> {
+        validate_automation_rule_id(rule_id).map_err(validation_to_fdo)?;
+        let rule: AutomationRule = serde_json::from_str(rule_json)
+            .map_err(|error| fdo::Error::InvalidArgs(error.to_string()))?;
+        validate_automation_rule(&rule).map_err(validation_to_fdo)?;
+
+        let mut state = self
+            .state
+            .lock()
+            .map_err(|_| fdo::Error::Failed("daemon state lock poisoned".to_owned()))?;
+        match &rule.kind {
+            AutomationRuleKind::FastChargeUntilThreshold {
+                fast_charge_profile_id,
+                protect_profile_id,
+                ..
+            } => {
+                for profile_id in [fast_charge_profile_id, protect_profile_id] {
+                    if !state.hardware_profiles.contains_key(profile_id) {
+                        return Err(fdo::Error::InvalidArgs(format!(
+                            "hardware profile `{profile_id}` is not stored"
+                        )));
+                    }
+                }
+            }
+        }
+        state.automation_rules.insert(rule_id.to_owned(), rule);
+        save_state(&self.state_path, &state)
+            .map_err(|error| fdo::Error::Failed(format!("failed to save daemon state: {error}")))?;
+        Ok(state.automation_rules.clone())
+    }
+
+    pub fn remove_automation_rule(&self, rule_id: &str) -> fdo::Result<Option<AutomationRule>> {
+        validate_automation_rule_id(rule_id).map_err(validation_to_fdo)?;
+        let mut state = self
+            .state
+            .lock()
+            .map_err(|_| fdo::Error::Failed("daemon state lock poisoned".to_owned()))?;
+        let previous = state.automation_rules.remove(rule_id);
+        state.last_automation_rule_apply.remove(rule_id);
+        save_state(&self.state_path, &state)
+            .map_err(|error| fdo::Error::Failed(format!("failed to save daemon state: {error}")))?;
+        Ok(previous)
+    }
+
+    pub fn clear_automation_rules(&self) -> fdo::Result<BTreeMap<String, AutomationRule>> {
+        let mut state = self
+            .state
+            .lock()
+            .map_err(|_| fdo::Error::Failed("daemon state lock poisoned".to_owned()))?;
+        state.automation_rules.clear();
+        state.last_automation_rule_apply.clear();
+        save_state(&self.state_path, &state)
+            .map_err(|error| fdo::Error::Failed(format!("failed to save daemon state: {error}")))?;
+        Ok(state.automation_rules.clone())
+    }
+
+    pub fn automation_rule_preview(&self, rule_id: &str) -> fdo::Result<AutomationRuleEvaluation> {
+        validate_automation_rule_id(rule_id).map_err(validation_to_fdo)?;
+        let rule = self
+            .state
+            .lock()
+            .map_err(|_| fdo::Error::Failed("daemon state lock poisoned".to_owned()))?
+            .automation_rules
+            .get(rule_id)
+            .cloned()
+            .ok_or_else(|| {
+                fdo::Error::InvalidArgs(format!("automation rule `{rule_id}` is not stored"))
+            })?;
+        self.evaluate_automation_rule(rule_id, &rule)
+    }
+
+    pub fn apply_automation_rule(
+        &self,
+        rule_id: &str,
+        sender: &str,
+    ) -> fdo::Result<AutomationRuleApplyRun> {
+        self.apply_automation_rule_with_cooldown(rule_id, sender, None)
+    }
+
+    fn apply_automation_rule_with_cooldown(
+        &self,
+        rule_id: &str,
+        sender: &str,
+        cooldown_secs: Option<u64>,
+    ) -> fdo::Result<AutomationRuleApplyRun> {
+        let evaluation = self.automation_rule_preview(rule_id)?;
+        let now = unix_timestamp_secs();
+        if let Some(cooldown_secs) = cooldown_secs {
+            if let Some(selected_profile_id) = evaluation.selected_profile_id.clone() {
+                let last = self
+                    .state
+                    .lock()
+                    .map_err(|_| fdo::Error::Failed("daemon state lock poisoned".to_owned()))?
+                    .last_automation_rule_apply
+                    .get(rule_id)
+                    .cloned();
+                if let Some(last) = last {
+                    let same_profile = last.evaluation.selected_profile_id.as_deref()
+                        == Some(selected_profile_id.as_str());
+                    let within_cooldown =
+                        now.saturating_sub(last.timestamp_unix_secs) < cooldown_secs;
+                    if same_profile && within_cooldown {
+                        let mut skipped = evaluation;
+                        skipped.matched = false;
+                        skipped.reason = format!(
+                            "selected profile `{selected_profile_id}` is still inside automation cooldown"
+                        );
+                        let run = AutomationRuleApplyRun {
+                            timestamp_unix_secs: now,
+                            evaluation: skipped,
+                            profile_run: None,
+                        };
+                        self.record_automation_rule_apply_run(rule_id, run.clone())?;
+                        return Ok(run);
+                    }
+                }
+            }
+        }
+        let profile_run = match evaluation.selected_profile_id.as_deref() {
+            Some(profile_id) if evaluation.matched => {
+                Some(self.apply_hardware_profile(profile_id, sender)?)
+            }
+            _ => None,
+        };
+        let run = AutomationRuleApplyRun {
+            timestamp_unix_secs: now,
+            evaluation,
+            profile_run,
+        };
+        self.record_automation_rule_apply_run(rule_id, run.clone())?;
+        Ok(run)
+    }
+
+    fn record_automation_rule_apply_run(
+        &self,
+        rule_id: &str,
+        run: AutomationRuleApplyRun,
+    ) -> fdo::Result<AutomationRuleApplyRun> {
+        let mut state = self
+            .state
+            .lock()
+            .map_err(|_| fdo::Error::Failed("daemon state lock poisoned".to_owned()))?;
+        state
+            .last_automation_rule_apply
+            .insert(rule_id.to_owned(), run.clone());
+        save_state(&self.state_path, &state)
+            .map_err(|error| fdo::Error::Failed(format!("failed to save daemon state: {error}")))?;
+        Ok(run)
+    }
+
+    fn evaluate_automation_rule(
+        &self,
+        rule_id: &str,
+        rule: &AutomationRule,
+    ) -> fdo::Result<AutomationRuleEvaluation> {
+        validate_automation_rule(rule).map_err(validation_to_fdo)?;
+        let registry = self.refresh()?;
+        let battery_capacity_percent = registry
+            .telemetry
+            .battery
+            .as_ref()
+            .and_then(|battery| battery.capacity_percent);
+        let ac_online = if registry.telemetry.ac_adapters.is_empty() {
+            None
+        } else {
+            Some(
+                registry
+                    .telemetry
+                    .ac_adapters
+                    .iter()
+                    .any(|adapter| adapter.online == Some(true)),
+            )
+        };
+
+        let mut evaluation = AutomationRuleEvaluation {
+            rule_id: rule_id.to_owned(),
+            rule_label: rule.label.clone(),
+            enabled: rule.enabled,
+            matched: false,
+            reason: String::new(),
+            battery_capacity_percent,
+            ac_online,
+            selected_profile_id: None,
+            profile_preview: None,
+        };
+
+        if !rule.enabled {
+            evaluation.reason = "rule is disabled".to_owned();
+            return Ok(evaluation);
+        }
+
+        match &rule.kind {
+            AutomationRuleKind::FastChargeUntilThreshold {
+                threshold_percent,
+                fast_charge_profile_id,
+                protect_profile_id,
+                require_ac,
+            } => {
+                if *require_ac && ac_online != Some(true) {
+                    evaluation.reason = "AC adapter is not online".to_owned();
+                    return Ok(evaluation);
+                }
+                let Some(capacity) = battery_capacity_percent else {
+                    evaluation.reason = "battery capacity telemetry is unavailable".to_owned();
+                    return Ok(evaluation);
+                };
+                let selected = if capacity < i64::from(*threshold_percent) {
+                    fast_charge_profile_id
+                } else {
+                    protect_profile_id
+                };
+                evaluation.matched = true;
+                evaluation.reason = if selected == fast_charge_profile_id {
+                    format!(
+                        "battery {capacity}% is below threshold {threshold_percent}%; selecting fast-charge profile"
+                    )
+                } else {
+                    format!(
+                        "battery {capacity}% is at or above threshold {threshold_percent}%; selecting protect profile"
+                    )
+                };
+                evaluation.selected_profile_id = Some(selected.clone());
+                evaluation.profile_preview = Some(self.hardware_profile_apply_preview(selected)?);
+            }
+        }
+
+        Ok(evaluation)
     }
 
     pub fn last_known_good_fan_curve(&self) -> fdo::Result<Option<FanCurveSnapshot>> {
@@ -779,6 +2254,60 @@ impl LegionControl {
             })
     }
 
+    fn refresh_cpu_governor(&self) -> fdo::Result<String> {
+        let refreshed = self.refresh()?;
+        refreshed
+            .cpu_power
+            .and_then(|cpu| cpu.governor)
+            .ok_or_else(|| {
+                fdo::Error::Failed("cpu_power governor missing after write/read-back".to_owned())
+            })
+    }
+
+    fn refresh_cpu_epp(&self) -> fdo::Result<String> {
+        let refreshed = self.refresh()?;
+        refreshed.cpu_power.and_then(|cpu| cpu.epp).ok_or_else(|| {
+            fdo::Error::Failed("cpu_power epp missing after write/read-back".to_owned())
+        })
+    }
+
+    fn refresh_cpu_boost(&self) -> fdo::Result<String> {
+        let refreshed = self.refresh()?;
+        refreshed
+            .cpu_power
+            .and_then(|cpu| cpu.boost)
+            .map(|boost| if boost { "1" } else { "0" }.to_owned())
+            .ok_or_else(|| {
+                fdo::Error::Failed("cpu_power boost missing after write/read-back".to_owned())
+            })
+    }
+
+    fn refresh_firmware_attribute(&self, attribute_id: &str) -> fdo::Result<String> {
+        let refreshed = self.refresh()?;
+        refreshed
+            .firmware_attributes
+            .into_iter()
+            .find(|attribute| attribute.name == attribute_id)
+            .and_then(|attribute| attribute.current_value)
+            .ok_or_else(|| {
+                fdo::Error::Failed(format!(
+                    "firmware attribute current value missing after write/read-back for {attribute_id}"
+                ))
+            })
+    }
+
+    fn refresh_amd_gpu_dpm_force_level(&self) -> fdo::Result<String> {
+        let refreshed = self.refresh()?;
+        refreshed
+            .amd_gpu_power_dpm
+            .and_then(|dpm| dpm.current_force_performance_level)
+            .ok_or_else(|| {
+                fdo::Error::Failed(
+                    "AMD GPU DPM force level missing after write/read-back".to_owned(),
+                )
+            })
+    }
+
     fn refresh_led_state(&self, led_id: &str) -> fdo::Result<String> {
         let refreshed = self.refresh()?;
         refreshed_led(&refreshed.leds, led_id)
@@ -825,6 +2354,7 @@ impl LegionControl {
             "fn_lock" => self.write_policy.ideapad_toggle_enabled,
             "camera_power" => self.write_policy.camera_power_enabled,
             "usb_charging" => self.write_policy.usb_charging_enabled,
+            "fan_mode" => self.write_policy.fan_mode_enabled,
             _ => false,
         }
     }
@@ -855,6 +2385,38 @@ impl LegionControl {
 
     fn GetGpuModePending(&self) -> fdo::Result<String> {
         to_json(&self.gpu_mode_pending()?)
+    }
+
+    fn GetHardwareProfiles(&self) -> fdo::Result<String> {
+        to_json(&self.hardware_profiles()?)
+    }
+
+    fn GetHardwareProfileTriggers(&self) -> fdo::Result<String> {
+        to_json(&self.hardware_profile_triggers()?)
+    }
+
+    fn GetAutomationRules(&self) -> fdo::Result<String> {
+        to_json(&self.automation_rules()?)
+    }
+
+    fn GetAutomationRulePreview(&self, rule_id: &str) -> fdo::Result<String> {
+        to_json(&self.automation_rule_preview(rule_id)?)
+    }
+
+    fn GetHardwareProfileApplyPreview(&self, profile_id: &str) -> fdo::Result<String> {
+        to_json(&self.hardware_profile_apply_preview(profile_id)?)
+    }
+
+    fn GetHardwareProfileTriggerApplyPreview(&self, trigger_id: &str) -> fdo::Result<String> {
+        to_json(&self.hardware_profile_trigger_apply_preview(trigger_id)?)
+    }
+
+    fn GetLastHardwareProfileApply(&self) -> fdo::Result<String> {
+        to_json(&self.last_hardware_profile_apply()?)
+    }
+
+    fn GetLastCurveOptimizerAllCore(&self) -> fdo::Result<String> {
+        to_json(&self.last_curve_optimizer_all_core()?)
     }
 
     fn GetLastKnownGoodFanCurve(&self) -> fdo::Result<String> {
@@ -921,6 +2483,111 @@ impl LegionControl {
         to_plan_json(self.plan_restore_auto_fan_write())
     }
 
+    fn PlanCpuGovernorWrite(&self, requested: &str) -> fdo::Result<String> {
+        to_plan_json(self.plan_cpu_governor_write(requested))
+    }
+
+    fn PlanCpuEppWrite(&self, requested: &str) -> fdo::Result<String> {
+        to_plan_json(self.plan_cpu_epp_write(requested))
+    }
+
+    fn PlanCpuBoostWrite(&self, requested: &str) -> fdo::Result<String> {
+        to_plan_json(self.plan_cpu_boost_write(requested))
+    }
+
+    fn PlanCurveOptimizerAllCoreWrite(&self, requested: &str) -> fdo::Result<String> {
+        to_plan_json(self.plan_curve_optimizer_all_core_write(requested))
+    }
+
+    fn PlanConservationModeWrite(&self, requested: &str) -> fdo::Result<String> {
+        to_plan_json(self.plan_conservation_mode_write(requested))
+    }
+
+    fn PlanAmdGpuDpmForceLevelWrite(&self, requested: &str) -> fdo::Result<String> {
+        to_plan_json(self.plan_amd_gpu_dpm_force_level_write(requested))
+    }
+
+    fn PlanFirmwareAttributeWrite(
+        &self,
+        attribute_id: &str,
+        requested: &str,
+    ) -> fdo::Result<String> {
+        to_plan_json(self.plan_firmware_attribute_write(attribute_id, requested))
+    }
+
+    fn SetCpuGovernor(
+        &self,
+        requested: &str,
+        #[zbus(header)] header: Header<'_>,
+    ) -> fdo::Result<String> {
+        let sender = sender_from_header(&header)?;
+        to_json(&self.set_cpu_governor(requested, &sender)?)
+    }
+
+    fn SetCpuEpp(
+        &self,
+        requested: &str,
+        #[zbus(header)] header: Header<'_>,
+    ) -> fdo::Result<String> {
+        let sender = sender_from_header(&header)?;
+        to_json(&self.set_cpu_epp(requested, &sender)?)
+    }
+
+    fn SetCpuBoost(
+        &self,
+        requested: &str,
+        #[zbus(header)] header: Header<'_>,
+    ) -> fdo::Result<String> {
+        let sender = sender_from_header(&header)?;
+        to_json(&self.set_cpu_boost(requested, &sender)?)
+    }
+
+    fn SetCurveOptimizerAllCore(
+        &self,
+        requested: &str,
+        #[zbus(header)] header: Header<'_>,
+    ) -> fdo::Result<String> {
+        let sender = sender_from_header(&header)?;
+        to_json(&self.set_curve_optimizer_all_core(requested, &sender)?)
+    }
+
+    fn SetConservationMode(
+        &self,
+        requested: &str,
+        #[zbus(header)] header: Header<'_>,
+    ) -> fdo::Result<String> {
+        let sender = sender_from_header(&header)?;
+        to_json(&self.set_conservation_mode(requested, &sender)?)
+    }
+
+    fn SetAmdGpuDpmForceLevel(
+        &self,
+        requested: &str,
+        #[zbus(header)] header: Header<'_>,
+    ) -> fdo::Result<String> {
+        let sender = sender_from_header(&header)?;
+        to_json(&self.set_amd_gpu_dpm_force_level(requested, &sender)?)
+    }
+
+    fn SetGpuMode(
+        &self,
+        requested: &str,
+        #[zbus(header)] header: Header<'_>,
+    ) -> fdo::Result<String> {
+        let sender = sender_from_header(&header)?;
+        to_json(&self.set_gpu_mode(requested, &sender)?)
+    }
+
+    fn SetFirmwareAttribute(
+        &self,
+        attribute_id: &str,
+        requested: &str,
+        #[zbus(header)] header: Header<'_>,
+    ) -> fdo::Result<String> {
+        let sender = sender_from_header(&header)?;
+        to_json(&self.set_firmware_attribute(attribute_id, requested, &sender)?)
+    }
+
     fn SetPlatformProfile(
         &self,
         requested: &str,
@@ -967,6 +2634,69 @@ impl LegionControl {
         to_json(&self.clear_gpu_mode_pending()?)
     }
 
+    fn SetHardwareProfile(&self, profile_id: &str, profile_json: &str) -> fdo::Result<String> {
+        to_json(&self.set_hardware_profile(profile_id, profile_json)?)
+    }
+
+    fn ApplyHardwareProfile(
+        &self,
+        profile_id: &str,
+        #[zbus(header)] header: Header<'_>,
+    ) -> fdo::Result<String> {
+        let sender = sender_from_header(&header)?;
+        to_json(&self.apply_hardware_profile(profile_id, &sender)?)
+    }
+
+    fn ApplyHardwareProfileTrigger(
+        &self,
+        trigger_id: &str,
+        #[zbus(header)] header: Header<'_>,
+    ) -> fdo::Result<String> {
+        let sender = sender_from_header(&header)?;
+        to_json(&self.apply_hardware_profile_trigger(trigger_id, &sender)?)
+    }
+
+    fn ApplyAutomationRule(
+        &self,
+        rule_id: &str,
+        #[zbus(header)] header: Header<'_>,
+    ) -> fdo::Result<String> {
+        let sender = sender_from_header(&header)?;
+        to_json(&self.apply_automation_rule(rule_id, &sender)?)
+    }
+
+    fn SetHardwareProfileTrigger(&self, trigger_id: &str, profile_id: &str) -> fdo::Result<String> {
+        to_json(&self.set_hardware_profile_trigger(trigger_id, profile_id)?)
+    }
+
+    fn SetAutomationRule(&self, rule_id: &str, rule_json: &str) -> fdo::Result<String> {
+        to_json(&self.set_automation_rule(rule_id, rule_json)?)
+    }
+
+    fn RemoveAutomationRule(&self, rule_id: &str) -> fdo::Result<String> {
+        to_json(&self.remove_automation_rule(rule_id)?)
+    }
+
+    fn ClearAutomationRules(&self) -> fdo::Result<String> {
+        to_json(&self.clear_automation_rules()?)
+    }
+
+    fn RemoveHardwareProfileTrigger(&self, trigger_id: &str) -> fdo::Result<String> {
+        to_json(&self.remove_hardware_profile_trigger(trigger_id)?)
+    }
+
+    fn ClearHardwareProfileTriggers(&self) -> fdo::Result<String> {
+        to_json(&self.clear_hardware_profile_triggers()?)
+    }
+
+    fn RemoveHardwareProfile(&self, profile_id: &str) -> fdo::Result<String> {
+        to_json(&self.remove_hardware_profile(profile_id)?)
+    }
+
+    fn ClearHardwareProfiles(&self) -> fdo::Result<String> {
+        to_json(&self.clear_hardware_profiles()?)
+    }
+
     fn CaptureLastKnownGoodFanCurve(&self) -> fdo::Result<String> {
         to_json(&self.capture_last_known_good_fan_curve()?)
     }
@@ -997,6 +2727,177 @@ pub fn spawn_fan_preset_resume_observer(state_path: PathBuf, options: ProbeOptio
                 eprintln!("legion-control-daemon: fan resume observer exit: {error}");
             }
         });
+}
+
+/// Polls Fedora's PowerProfiles D-Bus state and mirrors it to amdgpu
+/// `power_dpm_force_performance_level` when the daemon was started with the opt-in flag.
+pub fn spawn_amd_gpu_power_profile_sync_observer(options: ProbeOptions) {
+    let _ = std::thread::Builder::new()
+        .name("ratvantage-amdgpu-power-sync".to_owned())
+        .spawn(move || loop {
+            match handle_amd_gpu_power_profile_sync_tick(&options) {
+                Ok(AmdGpuPowerProfileSyncOutcome::Applied {
+                    active_profile,
+                    previous_force_level,
+                    force_level,
+                    path,
+                }) => {
+                    eprintln!(
+                        "legion-control-daemon: AMD GPU power sync: Fedora profile `{active_profile}` mapped {path} from `{previous_force_level}` to `{force_level}`"
+                    );
+                }
+                Ok(_) => {}
+                Err(error) => {
+                    eprintln!("legion-control-daemon: AMD GPU power sync failed: {error}");
+                }
+            }
+            std::thread::sleep(AMD_GPU_POWER_PROFILE_SYNC_INTERVAL);
+        });
+}
+
+/// Periodically evaluates persisted automation rules and applies the selected hardware profile
+/// through daemon validators/read-back/rollback. This observer is opt-in from daemon startup.
+pub fn spawn_automation_observer(
+    state_path: PathBuf,
+    options: ProbeOptions,
+    write_policy: WriteAccessPolicy,
+) {
+    let _ = std::thread::Builder::new()
+        .name("ratvantage-automation".to_owned())
+        .spawn(move || loop {
+            match handle_automation_observer_tick(
+                &state_path,
+                &options,
+                write_policy.clone(),
+                AUTOMATION_OBSERVER_COOLDOWN_SECS,
+            ) {
+                Ok(runs) => {
+                    for run in runs {
+                        if run.profile_run.is_some() {
+                            eprintln!(
+                                "legion-control-daemon: automation `{}` applied: {}",
+                                run.evaluation.rule_id, run.evaluation.reason
+                            );
+                        }
+                    }
+                }
+                Err(error) => {
+                    eprintln!("legion-control-daemon: automation observer failed: {error}");
+                }
+            }
+            std::thread::sleep(AUTOMATION_OBSERVER_INTERVAL);
+        });
+}
+
+pub fn handle_automation_observer_tick(
+    state_path: &Path,
+    options: &ProbeOptions,
+    write_policy: WriteAccessPolicy,
+    cooldown_secs: u64,
+) -> Result<Vec<AutomationRuleApplyRun>, String> {
+    if !write_policy.hardware_profile_apply_enabled {
+        return Err("automation observer requires hardware profile apply policy".to_owned());
+    }
+    let ctl = LegionControl::new_with_runtime(
+        options.clone(),
+        state_path.to_path_buf(),
+        write_policy,
+        Arc::new(InternalAuthorizer),
+        Arc::new(SysfsPlatformProfileWriter),
+        Arc::new(SysfsBatteryChargeTypeWriter),
+        Arc::new(SysfsLedStateWriter),
+        Arc::new(SysfsIdeapadToggleWriter),
+        Arc::new(SysfsCpuGovernorWriter),
+        Arc::new(SysfsCpuEppWriter),
+    );
+    let rules = ctl
+        .automation_rules()
+        .map_err(|e| format!("automation rules unavailable: {e}"))?;
+    let mut runs = Vec::new();
+    for rule_id in rules.keys() {
+        let run = ctl
+            .apply_automation_rule_with_cooldown(
+                rule_id,
+                AUTOMATION_OBSERVER_SENDER,
+                Some(cooldown_secs),
+            )
+            .map_err(|e| format!("automation rule `{rule_id}` failed: {e}"))?;
+        runs.push(run);
+    }
+    Ok(runs)
+}
+
+pub fn handle_amd_gpu_power_profile_sync_tick(
+    options: &ProbeOptions,
+) -> Result<AmdGpuPowerProfileSyncOutcome, String> {
+    let registry = probe(options);
+    let Some(active_profile) = registry
+        .power_profiles
+        .as_ref()
+        .and_then(|profile| profile.active_profile.as_deref())
+    else {
+        return Ok(AmdGpuPowerProfileSyncOutcome::MissingFedoraPowerProfile);
+    };
+    apply_amd_gpu_force_level_for_fedora_power_profile(&registry, active_profile)
+}
+
+pub fn amd_gpu_force_level_for_fedora_power_profile(profile: &str) -> Option<&'static str> {
+    match profile {
+        "power-saver" | "low-power" | "quiet" => Some("low"),
+        "balanced" | "performance" | "balanced-performance" => Some("auto"),
+        _ => None,
+    }
+}
+
+pub fn apply_amd_gpu_force_level_for_fedora_power_profile(
+    registry: &CapabilityRegistry,
+    active_profile: &str,
+) -> Result<AmdGpuPowerProfileSyncOutcome, String> {
+    let Some(target) = amd_gpu_force_level_for_fedora_power_profile(active_profile) else {
+        return Ok(
+            AmdGpuPowerProfileSyncOutcome::UnsupportedFedoraPowerProfile(active_profile.to_owned()),
+        );
+    };
+    let Some(capability) = registry.amd_gpu_power_dpm.as_ref() else {
+        return Ok(AmdGpuPowerProfileSyncOutcome::MissingAmdGpuDpmCapability);
+    };
+    if !capability.choices.iter().any(|choice| choice == target) {
+        return Err(format!(
+            "AMD GPU DPM force-level target `{target}` is not listed by capability choices {:?}",
+            capability.choices
+        ));
+    }
+    let previous = capability
+        .current_force_performance_level
+        .clone()
+        .unwrap_or_default();
+    if previous == target {
+        return Ok(AmdGpuPowerProfileSyncOutcome::AlreadyApplied {
+            active_profile: active_profile.to_owned(),
+            force_level: target.to_owned(),
+        });
+    }
+
+    let path = capability.force_performance_level_path.clone();
+    fs::write(&path, target)
+        .map_err(|error| format!("failed to write AMD GPU DPM force level {path}: {error}"))?;
+    let readback = read_trimmed_path(&path)
+        .ok_or_else(|| format!("AMD GPU DPM force level read-back missing after writing {path}"))?;
+    if readback == target {
+        return Ok(AmdGpuPowerProfileSyncOutcome::Applied {
+            active_profile: active_profile.to_owned(),
+            previous_force_level: previous,
+            force_level: target.to_owned(),
+            path,
+        });
+    }
+
+    if !previous.is_empty() && capability.choices.iter().any(|choice| choice == &previous) {
+        let _ = fs::write(&path, &previous);
+    }
+    Err(format!(
+        "AMD GPU DPM force level read-back mismatch after write: expected `{target}`, got `{readback}`"
+    ))
 }
 
 fn run_fan_preset_resume_observer(
@@ -1098,6 +2999,13 @@ fn enabled_write_plan(mut plan: WriteDryRunPlan) -> WriteDryRunPlan {
     plan
 }
 
+fn unix_timestamp_secs() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|duration| duration.as_secs())
+        .unwrap_or_default()
+}
+
 fn planning_to_fdo(error: PlanningError) -> fdo::Error {
     match error {
         PlanningError::RegistryUnavailable => {
@@ -1175,6 +3083,13 @@ fn read_fan_curve_snapshot(registry: &CapabilityRegistry) -> fdo::Result<FanCurv
     })
 }
 
+fn read_trimmed_path(path: &str) -> Option<String> {
+    fs::read_to_string(path)
+        .ok()
+        .map(|value| value.trim().to_owned())
+        .filter(|value| !value.is_empty())
+}
+
 fn load_state(path: &Path) -> Result<DaemonState> {
     match fs::read_to_string(path) {
         Ok(contents) => Ok(toml::from_str(&contents)?),
@@ -1232,13 +3147,32 @@ mod tests {
                 ideapad_toggle_enabled: true,
                 camera_power_enabled: true,
                 usb_charging_enabled: true,
+                fan_mode_enabled: true,
+                gpu_mode_enabled: false,
+                cpu_governor_enabled: true,
+                cpu_epp_enabled: true,
+                firmware_attribute_enabled: true,
+                cpu_boost_enabled: true,
+                conservation_mode_enabled: true,
+                amd_gpu_dpm_enabled: true,
+                curve_optimizer_enabled: true,
+                hardware_profile_apply_enabled: true,
             }
             .enabled_methods(),
             [
                 "SetPlatformProfile",
                 "SetBatteryChargeType",
                 "SetLedState",
-                "SetIdeapadToggle"
+                "SetIdeapadToggle",
+                "SetCpuGovernor",
+                "SetCpuEpp",
+                "SetFirmwareAttribute",
+                "SetCpuBoost",
+                "SetConservationMode",
+                "SetAmdGpuDpmForceLevel",
+                "SetCurveOptimizerAllCore",
+                "ApplyHardwareProfile",
+                "ApplyHardwareProfileTrigger"
             ]
         );
     }
@@ -1270,5 +3204,63 @@ mod tests {
             .safety_notes
             .iter()
             .any(|note| note.contains("write method enabled by daemon policy")));
+    }
+
+    #[test]
+    fn fedora_power_profiles_map_to_amd_gpu_force_levels() {
+        assert_eq!(
+            amd_gpu_force_level_for_fedora_power_profile("power-saver"),
+            Some("low")
+        );
+        assert_eq!(
+            amd_gpu_force_level_for_fedora_power_profile("balanced"),
+            Some("auto")
+        );
+        assert_eq!(
+            amd_gpu_force_level_for_fedora_power_profile("performance"),
+            Some("auto")
+        );
+        assert_eq!(
+            amd_gpu_force_level_for_fedora_power_profile("unknown"),
+            None
+        );
+    }
+
+    #[test]
+    fn amd_gpu_power_profile_sync_writes_low_for_power_saver() {
+        let root =
+            std::env::temp_dir().join(format!("ratvantage-amdgpu-sync-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&root);
+        fs::create_dir_all(&root).unwrap();
+        let force_path = root.join("power_dpm_force_performance_level");
+        fs::write(&force_path, "auto\n").unwrap();
+        let registry = CapabilityRegistry {
+            amd_gpu_power_dpm: Some(legion_common::AmdGpuPowerDpmCapability {
+                card: "card7".to_owned(),
+                status: legion_common::CapabilityStatus::ProbeOnly,
+                vendor: "0x1002".to_owned(),
+                force_performance_level_path: force_path.display().to_string(),
+                current_force_performance_level: Some("auto".to_owned()),
+                power_dpm_state: Some("performance".to_owned()),
+                current_sclk: Some("2: 2200Mhz *".to_owned()),
+                current_mclk: Some("1: 1600Mhz *".to_owned()),
+                choices: vec!["auto".to_owned(), "low".to_owned()],
+            }),
+            ..Default::default()
+        };
+
+        let outcome =
+            apply_amd_gpu_force_level_for_fedora_power_profile(&registry, "power-saver").unwrap();
+
+        assert!(matches!(
+            outcome,
+            AmdGpuPowerProfileSyncOutcome::Applied {
+                previous_force_level,
+                force_level,
+                ..
+            } if previous_force_level == "auto" && force_level == "low"
+        ));
+        assert_eq!(fs::read_to_string(&force_path).unwrap(), "low");
+        let _ = fs::remove_dir_all(root);
     }
 }

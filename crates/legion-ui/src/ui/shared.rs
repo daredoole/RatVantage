@@ -320,6 +320,65 @@ where
     F: Fn(&str) -> Result<WriteExecutionResult> + Send + Sync + 'static,
     G: Fn(&WriteExecutionResult) + 'static,
 {
+    build_write_controls_inner(
+        title,
+        current,
+        choices,
+        chooser_title,
+        button_label,
+        capability_label,
+        None,
+        execute,
+        on_result,
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn build_confirmed_write_controls<F, G>(
+    title: &str,
+    current: Option<&str>,
+    choices: Option<&[String]>,
+    chooser_title: &str,
+    button_label: &str,
+    capability_label: &'static str,
+    confirmation_title: &'static str,
+    confirmation_subtitle: &'static str,
+    execute: F,
+    on_result: G,
+) -> adw::PreferencesGroup
+where
+    F: Fn(&str) -> Result<WriteExecutionResult> + Send + Sync + 'static,
+    G: Fn(&WriteExecutionResult) + 'static,
+{
+    build_write_controls_inner(
+        title,
+        current,
+        choices,
+        chooser_title,
+        button_label,
+        capability_label,
+        Some((confirmation_title, confirmation_subtitle)),
+        execute,
+        on_result,
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
+fn build_write_controls_inner<F, G>(
+    title: &str,
+    current: Option<&str>,
+    choices: Option<&[String]>,
+    chooser_title: &str,
+    button_label: &str,
+    capability_label: &'static str,
+    confirmation: Option<(&'static str, &'static str)>,
+    execute: F,
+    on_result: G,
+) -> adw::PreferencesGroup
+where
+    F: Fn(&str) -> Result<WriteExecutionResult> + Send + Sync + 'static,
+    G: Fn(&WriteExecutionResult) + 'static,
+{
     let group = adw::PreferencesGroup::new();
     group.set_title(title);
 
@@ -332,36 +391,96 @@ where
     };
 
     let can_apply = !choices.is_empty();
-    let choice_refs = choices.iter().map(String::as_str).collect::<Vec<_>>();
-    let model = gtk4::StringList::new(&choice_refs);
     let selected_index = current
         .and_then(|current| choices.iter().position(|choice| choice == current))
         .unwrap_or(0) as u32;
 
-    let chooser = gtk4::DropDown::builder().model(&model).build();
-    chooser.set_hexpand(true);
-    chooser.set_selected(selected_index);
-    chooser.set_sensitive(can_apply);
+    let current_display = current
+        .or_else(|| choices.first().map(String::as_str))
+        .unwrap_or("—");
 
-    let apply = gtk4::Button::with_label(button_label);
-    apply.set_sensitive(can_apply);
-    apply.add_css_class("suggested-action");
-    apply.add_css_class("pill");
-    apply.set_valign(gtk4::Align::Center);
-
-    let row = adw::ActionRow::builder()
+    // ExpanderRow: inline selection, no popup — works on all Wayland configs.
+    let expander = adw::ExpanderRow::builder()
         .title(chooser_title)
         .subtitle(if can_apply {
-            "Choose a value, then apply. The daemon verifies read-back."
+            current_display
         } else {
             "No runtime choices detected."
         })
-        .selectable(false)
+        .sensitive(can_apply)
         .build();
-    row.add_suffix(&chooser);
-    row.add_suffix(&apply);
-    row.set_activatable_widget(Some(&chooser));
-    group.add(&row);
+
+    // One ActionRow per choice; checkmark tracks selection.
+    let selected: std::rc::Rc<std::cell::Cell<u32>> =
+        std::rc::Rc::new(std::cell::Cell::new(selected_index));
+    let choices_owned = choices.to_vec();
+
+    let (choice_rows, check_images): (Vec<adw::ActionRow>, Vec<gtk4::Image>) = choices_owned
+        .iter()
+        .enumerate()
+        .map(|(i, choice)| {
+            let icon = gtk4::Image::from_icon_name("object-select-symbolic");
+            icon.set_visible(i as u32 == selected_index);
+
+            let row = adw::ActionRow::builder()
+                .title(choice.as_str())
+                .activatable(true)
+                .build();
+            row.add_suffix(&icon);
+            expander.add_row(&row);
+            (row, icon)
+        })
+        .unzip();
+
+    let check_images = std::rc::Rc::new(check_images);
+
+    for (i, row) in choice_rows.iter().enumerate() {
+        let selected_rc = selected.clone();
+        let images_rc = check_images.clone();
+        let expander_rc = expander.clone();
+        let choice = choices_owned[i].clone();
+
+        row.connect_activated(move |_| {
+            for img in images_rc.iter() {
+                img.set_visible(false);
+            }
+            images_rc[i].set_visible(true);
+            selected_rc.set(i as u32);
+            expander_rc.set_subtitle(&choice);
+            expander_rc.set_expanded(false);
+        });
+    }
+
+    let apply = gtk4::Button::with_label(button_label);
+    apply.set_sensitive(can_apply && confirmation.is_none());
+    apply.add_css_class("suggested-action");
+    apply.add_css_class("pill");
+    apply.set_valign(gtk4::Align::Center);
+    expander.add_suffix(&apply);
+    group.add(&expander);
+
+    let confirmation_active = confirmation.map(|(title, subtitle)| {
+        let active = std::rc::Rc::new(std::cell::Cell::new(false));
+        let check = gtk4::CheckButton::new();
+        check.set_valign(gtk4::Align::Center);
+        let row = adw::ActionRow::builder()
+            .title(title)
+            .subtitle(subtitle)
+            .selectable(false)
+            .build();
+        row.add_suffix(&check);
+        group.add(&row);
+
+        let active_for_toggle = active.clone();
+        let apply_for_toggle = apply.clone();
+        check.connect_toggled(move |check| {
+            let is_active = check.is_active();
+            active_for_toggle.set(is_active);
+            apply_for_toggle.set_sensitive(can_apply && is_active);
+        });
+
+        active
+    });
 
     let feedback_row = write_feedback_row(capability_label);
     group.add(&feedback_row);
@@ -370,30 +489,30 @@ where
     let execute = std::sync::Arc::new(execute);
     let on_result = std::rc::Rc::new(on_result);
     let apply_for_click = apply.clone();
-    let chooser_for_click = chooser.clone();
+    let expander_for_click = expander.clone();
+    let selected_for_click = selected.clone();
 
     apply.connect_clicked(move |_| {
-        let Some(selected) = chooser_for_click
-            .selected_item()
-            .and_then(|item| item.downcast::<gtk4::StringObject>().ok())
-        else {
-            feedback_row_for_click.set_title("Apply result");
-            feedback_row_for_click.set_subtitle("Failed - no selected value was available.");
-            store_write_feedback_state(
-                capability_label,
-                "Apply result",
-                "Failed - no selected value was available.",
-            );
+        if confirmation_active
+            .as_ref()
+            .is_some_and(|active| !active.get())
+        {
+            feedback_row_for_click.set_title("Apply confirmation required");
+            feedback_row_for_click
+                .set_subtitle("Review and confirm the risk note before requesting this write.");
             return;
-        };
+        }
 
-        let requested = selected.string().to_string();
+        let idx = selected_for_click.get() as usize;
+        let requested = choices_owned[idx].clone();
+
+        eprintln!("[rv-ui] apply clicked: {capability_label} -> {requested}");
         feedback_row_for_click.set_title("Apply in progress");
         feedback_row_for_click
             .set_subtitle("Request sent to the daemon; waiting for policy/auth/write result...");
 
         apply_for_click.set_sensitive(false);
-        chooser_for_click.set_sensitive(false);
+        expander_for_click.set_sensitive(false);
 
         let (sender, receiver) = futures_channel::oneshot::channel();
         let execute_clone = execute.clone();
@@ -404,25 +523,33 @@ where
 
         let feedback_row_for_recv = feedback_row_for_click.clone();
         let apply_for_recv = apply_for_click.clone();
-        let chooser_for_recv = chooser_for_click.clone();
+        let expander_for_recv = expander_for_click.clone();
         let on_result_clone = on_result.clone();
+        let confirmation_active_for_recv = confirmation_active.clone();
 
         gtk4::glib::MainContext::default().spawn_local(async move {
             let result = receiver.await;
 
-            apply_for_recv.set_sensitive(true);
-            chooser_for_recv.set_sensitive(true);
+            apply_for_recv.set_sensitive(
+                can_apply
+                    && confirmation_active_for_recv
+                        .as_ref()
+                        .is_none_or(|active| active.get()),
+            );
+            expander_for_recv.set_sensitive(true);
 
             match result {
                 Ok(Ok(res)) => {
                     let title = write_feedback_title(Some(&res));
                     let subtitle = write_feedback_subtitle(Some(&res));
+                    eprintln!("[rv-ui] write result for {capability_label}: {title}");
                     feedback_row_for_recv.set_title(title);
                     feedback_row_for_recv.set_subtitle(&subtitle);
                     store_write_feedback_state(capability_label, title, &subtitle);
                     on_result_clone(&res);
                 }
                 Ok(Err(error)) => {
+                    eprintln!("[rv-ui] write error for {capability_label}: {error}");
                     feedback_row_for_recv.set_title("Apply error");
                     let subtitle = format!("Failed - daemon call could not be completed: {error}");
                     feedback_row_for_recv.set_subtitle(&subtitle);

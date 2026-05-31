@@ -1,4 +1,6 @@
 use std::collections::HashMap;
+use std::env;
+use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::sync::{
     atomic::{AtomicBool, Ordering},
@@ -21,7 +23,7 @@ use crate::{DesktopSession, TrayAction, TrayMenu, TrayMenuEntry, TrayMenuItem, T
 
 const TRAY_ID: &str = "org.ratvantage.LegionControl";
 const ICON_NAME: &str = "applications-system";
-const AUTO_REFRESH_INTERVAL: Duration = Duration::from_secs(30);
+const AUTO_REFRESH_INTERVAL: Duration = Duration::from_secs(5);
 const RESUME_REFRESH_GAP: Duration = Duration::from_secs(90);
 const DESKTOP_NOTIFICATION_REUSE_WINDOW: Duration = Duration::from_secs(6);
 const POWER_PROFILES_PATH: &str = "/org/freedesktop/UPower/PowerProfiles";
@@ -161,8 +163,9 @@ impl StatusNotifierTray {
     }
 
     fn open_dashboard(&mut self) {
-        let mut command = Command::new("legion-control-ui");
-        command.args(dashboard_command_args(self.bus_address.as_deref()));
+        let spec = dashboard_command_spec(self.bus_address.as_deref());
+        let mut command = Command::new(&spec.program);
+        command.args(spec.args);
         if let Err(error) = command.spawn() {
             self.last_error = Some(format!("failed to open dashboard: {error}"));
         }
@@ -425,18 +428,21 @@ fn load_tray_state(bus_address: Option<&str>) -> Result<LoadedTrayState> {
     let report = snapshot.diagnostics.raw_probe_report.clone();
     let gpu_pending = snapshot.diagnostics.gpu_mode_pending.clone();
     let fan_snapshot = snapshot.diagnostics.last_known_good_fan_curve.clone();
+    let hardware_profile_apply = snapshot.diagnostics.last_hardware_profile_apply.clone();
     Ok(LoadedTrayState {
         summary: TraySummary::from_status_and_report(
             &status,
             &report,
             gpu_pending.as_ref(),
             fan_snapshot.as_ref(),
+            hardware_profile_apply.as_ref(),
         ),
         menu: TrayMenu::from_status_and_report(
             &status,
             &report,
             gpu_pending.as_ref(),
             fan_snapshot.as_ref(),
+            hardware_profile_apply.as_ref(),
         ),
         snapshot,
     })
@@ -619,6 +625,56 @@ fn dashboard_command_args(bus_address: Option<&str>) -> Vec<String> {
     }
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct DashboardCommandSpec {
+    program: PathBuf,
+    args: Vec<String>,
+}
+
+fn dashboard_command_spec(bus_address: Option<&str>) -> DashboardCommandSpec {
+    let mut args = dashboard_command_env_args();
+    args.extend(dashboard_command_args(bus_address));
+    DashboardCommandSpec {
+        program: dashboard_command_path(),
+        args,
+    }
+}
+
+fn dashboard_command_env_args() -> Vec<String> {
+    env::var("RATVANTAGE_DASHBOARD_ARGS")
+        .ok()
+        .map(|args| args.split_whitespace().map(str::to_owned).collect())
+        .unwrap_or_default()
+}
+
+fn dashboard_command_path() -> PathBuf {
+    if let Some(path) = env::var_os("RATVANTAGE_DASHBOARD_BIN") {
+        return PathBuf::from(path);
+    }
+
+    dashboard_command_path_for_current_exe(env::current_exe().ok().as_deref())
+}
+
+fn dashboard_command_path_for_current_exe(current_exe: Option<&Path>) -> PathBuf {
+    let Some(current_exe) = current_exe else {
+        return PathBuf::from("legion-control-ui");
+    };
+    let Some(parent) = current_exe.parent() else {
+        return PathBuf::from("legion-control-ui");
+    };
+    let bin_dir = if parent.file_name().and_then(|name| name.to_str()) == Some("deps") {
+        parent.parent().unwrap_or(parent)
+    } else {
+        parent
+    };
+    let candidate = bin_dir.join(format!("legion-control-ui{}", env::consts::EXE_SUFFIX));
+    if candidate.is_file() {
+        candidate
+    } else {
+        PathBuf::from("legion-control-ui")
+    }
+}
+
 fn menu_entry(entry: TrayMenuEntry, stale_state: bool) -> MenuItem<StatusNotifierTray> {
     match entry {
         TrayMenuEntry::Separator => MenuItem::Separator,
@@ -718,7 +774,9 @@ fn humanize_write_value(value: &str) -> String {
 #[cfg(test)]
 mod tests {
     use legion_common::{Capability, CapabilityStatus, HardwareSummary, RiskLevel};
-    use legion_control_ui::{DiagnosticsBundle, RuntimeSnapshot, UiStatus};
+    use legion_control_ui::{
+        DiagnosticsBundle, DiagnosticsRuntimeState, RuntimeSnapshot, UiStatus,
+    };
 
     use super::*;
 
@@ -1317,6 +1375,47 @@ mod tests {
         );
     }
 
+    #[test]
+    fn dashboard_command_prefers_sibling_ui_binary() {
+        let root = env::temp_dir().join(format!(
+            "ratvantage-dashboard-command-{}",
+            std::process::id()
+        ));
+        let debug_dir = root.join("target").join("debug");
+        std::fs::create_dir_all(debug_dir.join("deps")).unwrap();
+        let ui_path = debug_dir.join(format!("legion-control-ui{}", env::consts::EXE_SUFFIX));
+        std::fs::write(&ui_path, "").unwrap();
+
+        assert_eq!(
+            dashboard_command_path_for_current_exe(Some(
+                &debug_dir.join(format!("legion-control-tray{}", env::consts::EXE_SUFFIX))
+            )),
+            ui_path
+        );
+
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn dashboard_command_resolves_from_cargo_test_deps_dir() {
+        let root = env::temp_dir().join(format!(
+            "ratvantage-dashboard-deps-command-{}",
+            std::process::id()
+        ));
+        let debug_dir = root.join("target").join("debug");
+        let deps_dir = debug_dir.join("deps");
+        std::fs::create_dir_all(&deps_dir).unwrap();
+        let ui_path = debug_dir.join(format!("legion-control-ui{}", env::consts::EXE_SUFFIX));
+        std::fs::write(&ui_path, "").unwrap();
+
+        assert_eq!(
+            dashboard_command_path_for_current_exe(Some(&deps_dir.join("status_notifier-test"))),
+            ui_path
+        );
+
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
     fn summary() -> TraySummary {
         let status = UiStatus::from_parts(
             HardwareSummary {
@@ -1403,7 +1502,11 @@ mod tests {
                     capacity_percent: Some(79),
                     status: Some("Charging".to_owned()),
                     health: Some("Good".to_owned()),
+                    power_now_uw: None,
+                    cycle_count: None,
+                    ..Default::default()
                 }),
+                ac_adapters: Vec::new(),
             },
             leds: vec![
                 legion_common::LedCapability {
@@ -1449,7 +1552,13 @@ mod tests {
             }],
         };
 
-        TrayMenu::from_status_and_report(&status, &report, Some(&gpu_pending), Some(&fan_snapshot))
+        TrayMenu::from_status_and_report(
+            &status,
+            &report,
+            Some(&gpu_pending),
+            Some(&fan_snapshot),
+            None,
+        )
     }
 
     #[test]
@@ -1578,15 +1687,10 @@ mod tests {
                     report.clone(),
                     Some("test-kernel".to_owned()),
                 )
-                .with_runtime_state(
-                    None,
-                    None,
-                    std::collections::BTreeMap::new(),
-                    false,
-                ),
+                .with_runtime_state(DiagnosticsRuntimeState::default()),
             },
-            summary: TraySummary::from_status_and_report(&status, &report, None, None),
-            menu: TrayMenu::from_status_and_report(&status, &report, None, None),
+            summary: TraySummary::from_status_and_report(&status, &report, None, None, None),
+            menu: TrayMenu::from_status_and_report(&status, &report, None, None, None),
         }
     }
 

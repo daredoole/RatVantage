@@ -2,19 +2,19 @@
 
 use adw::prelude::*;
 use std::{
-    collections::BTreeMap,
     sync::Once,
     time::{Duration, Instant},
 };
 
 use legion_common::{
-    BatteryChargeTypeCapability, BatteryTelemetry, Capability, CapabilityRegistry,
-    CapabilityStatus, FanCurveCapability, FanCurvePointSnapshot, FanCurveSnapshot, GpuCapability,
+    AmdGpuPowerDpmCapability, BatteryChargeTypeCapability, BatteryTelemetry, Capability,
+    CapabilityRegistry, CapabilityStatus, CpuPowerCapability, FanCurveCapability,
+    FanCurvePointSnapshot, FanCurveSnapshot, FirmwareAttributeCapability, GpuCapability,
     GpuModePending, HardwareSummary, HwmonSensor, IdeapadToggleCapability, LedCapability,
     PlatformProfileCapability, PowerProfilesCapability, RiskLevel, WriteDryRunPlan,
     WriteExecutionResult, WriteExecutionStatus,
 };
-use legion_control_ui::{gtk_shell, ui, DiagnosticsBundle, UiStatus};
+use legion_control_ui::{gtk_shell, ui, DiagnosticsBundle, DiagnosticsRuntimeState, UiStatus};
 
 static GTK_INIT: Once = Once::new();
 
@@ -149,15 +149,33 @@ fn dashboard_pages_render_quick_apply_and_gpu_controls() {
     assert!(profile_text.iter().any(|text| text == "Requested profile"));
     assert!(profile_text.iter().any(|text| text == "Apply profile"));
     assert!(profile_text.iter().any(|text| text == "Apply result"));
+    assert!(profile_text
+        .iter()
+        .any(|text| text == "Advanced CPU Tuning"));
+    assert!(profile_text
+        .iter()
+        .any(|text| text == "Show Curve Optimizer controls"));
+    assert!(profile_text
+        .iter()
+        .any(|text| text == "Firmware Power Limits (TDP)"));
+    assert_eq!(
+        count_action_rows_by_title(&profiles.clone().upcast(), "SPL"),
+        1,
+        "PPT firmware row should render once"
+    );
+    let spl_row = find_action_row_by_title(&profiles.clone().upcast(), "SPL")
+        .expect("SPL firmware row should exist");
+    assert_eq!(
+        spl_row.subtitle().as_deref(),
+        Some("ppt_pl1_spl · range 50..85 step 1")
+    );
+    let spl_spin = find_spin_button(&spl_row.upcast()).expect("SPL row should have a SpinButton");
+    assert_eq!(spl_spin.value_as_int(), 70);
     assert!(profile_text.iter().any(|text| {
         text == "No write attempted yet. If a request is blocked, the daemon will report why here."
     }));
     assert!(!profile_text.iter().any(|text| text == "INFO"));
-    assert!(
-        find_action_row_by_title(&profiles.clone().upcast(), "Requested profile")
-            .and_then(|row| row.activatable_widget())
-            .is_some()
-    );
+    assert!(find_expander_row_by_title(&profiles.clone().upcast(), "Requested profile").is_some());
 
     let battery_text = collect_widget_text(&battery.clone().upcast());
     assert!(battery_text.iter().any(|text| text == "Charge Control"));
@@ -169,10 +187,11 @@ fn dashboard_pages_render_quick_apply_and_gpu_controls() {
     assert!(battery_text.iter().any(|text| {
         text == "No write attempted yet. If a request is blocked, the daemon will report why here."
     }));
+    assert!(battery_text.iter().any(|text| {
+        text.contains("ideapad_acpi conservation_mode") && text.contains("Long_Life/Conservation")
+    }));
     assert!(
-        find_action_row_by_title(&battery.clone().upcast(), "Requested charge type")
-            .and_then(|row| row.activatable_widget())
-            .is_some()
+        find_expander_row_by_title(&battery.clone().upcast(), "Requested charge type").is_some()
     );
 
     let fans = ui::fans::fans_page(Ok(sample_diagnostics()), Ok(Some(sample_fan_snapshot())));
@@ -253,14 +272,58 @@ fn dashboard_pages_render_quick_apply_and_gpu_controls() {
 
     let gpu_text = collect_widget_text(&gpu.clone().upcast());
     assert!(gpu_text.iter().any(|text| text == "GPU"));
+    assert!(gpu_text.iter().any(|text| text == "AMD GPU DPM"));
+    assert!(gpu_text.iter().any(|text| {
+        text.contains("Manual SCLK/MCLK clock states are read-only")
+            && text.contains("not exposed as write controls")
+    }));
+    assert!(gpu_text.iter().any(|text| text == "AMD GPU DPM Control"));
+    assert!(gpu_text.iter().any(|text| {
+        text.contains("DPM force-level writes may affect display/GPU stability")
+            && text.contains("use auto to restore driver control")
+    }));
+    assert!(gpu_text
+        .iter()
+        .any(|text| text == "Confirm DPM force-level write"));
+    let dpm_apply =
+        find_button_by_label(&gpu.clone().upcast(), "Apply force level").expect("DPM apply button");
+    assert!(
+        !dpm_apply.is_sensitive(),
+        "DPM force-level execution should start disabled until confirmed"
+    );
+    let dpm_confirm = find_check_button_in_action_row_by_title(
+        &gpu.clone().upcast(),
+        "Confirm DPM force-level write",
+    )
+    .expect("DPM confirmation checkbox");
+    dpm_confirm.set_active(true);
+    assert!(
+        dpm_apply.is_sensitive(),
+        "DPM force-level execution should be enabled after confirmation"
+    );
     assert!(gpu_text.iter().any(|text| text == "Switch Planning"));
     assert!(gpu_text.iter().any(|text| text == "Current mode"));
     assert!(gpu_text.iter().any(|text| text == "Pending reboot"));
     assert!(gpu_text.iter().any(|text| text == "Target mode"));
+    assert!(gpu_text.iter().any(|text| text == "Confirm GPU switch"));
     assert!(
         find_action_row_by_title(&gpu.clone().upcast(), "Target mode")
             .and_then(|row| row.activatable_widget())
             .is_some()
+    );
+    let switch_mode =
+        find_button_by_label(&gpu.clone().upcast(), "Switch mode").expect("Switch mode button");
+    assert!(
+        !switch_mode.is_sensitive(),
+        "GPU mode execution should start disabled until confirmed"
+    );
+    let confirm =
+        find_check_button_in_action_row_by_title(&gpu.clone().upcast(), "Confirm GPU switch")
+            .expect("GPU mode confirmation checkbox");
+    confirm.set_active(true);
+    assert!(
+        switch_mode.is_sensitive(),
+        "GPU mode execution should be enabled after confirmation"
     );
     assert!(gpu_text.iter().any(|text| text == "Preview plan"));
     assert!(gpu_text.iter().any(|text| text == "Record pending"));
@@ -289,6 +352,18 @@ fn dashboard_pages_render_quick_apply_and_gpu_controls() {
     assert!(appearance_text.iter().any(|text| text == "Cancel"));
     assert!(appearance_text.iter().any(|text| text == "USB Power"));
     assert!(appearance_text.iter().any(|text| text == "USB charging"));
+    assert!(appearance_text.iter().any(|text| text == "Fan Mode"));
+    assert!(appearance_text
+        .iter()
+        .any(|text| { text.contains("0 = Auto") && text.contains("1 = Full speed") }));
+    assert!(appearance_text.iter().any(|text| text == "Auto (0)"));
+    assert!(appearance_text.iter().any(|text| text == "Full speed (1)"));
+    let fan_mode_row = find_action_row_by_title(&appearance.clone().upcast(), "Fan mode")
+        .expect("fan mode control row should render when fan_mode exists");
+    assert!(fan_mode_row
+        .subtitle()
+        .as_deref()
+        .is_some_and(|subtitle| subtitle.contains("Current: Auto (0)")));
 }
 
 #[gtk4::test]
@@ -346,6 +421,9 @@ fn dashboard_pages_disable_quick_apply_when_capabilities_are_unavailable() {
     assert!(appearance_text
         .iter()
         .any(|text| text.contains("quick apply is disabled")));
+    assert!(appearance_text
+        .iter()
+        .any(|text| text.contains("fan_mode not exposed")));
     assert!(!appearance_text.iter().any(|text| text == "Turn on"));
     assert!(!appearance_text.iter().any(|text| text == "Request off"));
 }
@@ -447,51 +525,98 @@ fn button_sensitivity_reflects_current_led_and_toggle_state() {
         !fn_buttons.is_empty(),
         "At least one Turn off button (fn-lock or ylogo)"
     );
+
+    let fan_auto = find_button_by_label(&root, "Auto (0)").expect("fan auto button");
+    let fan_full = find_button_by_label(&root, "Full speed (1)").expect("fan full-speed button");
+    assert!(
+        !fan_auto.is_sensitive(),
+        "Auto should be insensitive when fan_mode is already 0"
+    );
+    assert!(
+        fan_full.is_sensitive(),
+        "Full speed should be sensitive when fan_mode is currently 0"
+    );
 }
 
 #[gtk4::test]
-fn dropdown_preselects_current_platform_profile() {
+fn advanced_cpu_tuning_controls_start_hidden_until_enabled() {
     init_gtk();
 
-    // sample_diagnostics has platform_profile.current = "balanced"
-    // choices = ["low-power", "balanced", "performance"]  → selected index 1
     let profiles = ui::profiles::profiles_page(Ok(sample_diagnostics()));
     let root = profiles.clone().upcast::<gtk4::Widget>();
 
-    let dropdown = find_dropdown(&root);
-    assert!(dropdown.is_some(), "Profiles page should have a DropDown");
-    let dropdown = dropdown.unwrap();
+    let controls = find_preferences_group_by_title(&root, "Advanced CPU Tuning - Curve Optimizer")
+        .expect("Curve Optimizer controls should exist in the page tree");
     assert!(
-        dropdown.is_sensitive(),
-        "DropDown should be sensitive when choices are available"
+        find_button_by_label(&controls.clone().upcast(), "Reset to 0").is_some(),
+        "Curve Optimizer controls should include an explicit reset-to-zero button"
     );
-    assert_eq!(
-        dropdown.selected(),
-        1,
-        "Should pre-select index 1 (balanced is second choice)"
+    assert!(
+        !controls.is_visible(),
+        "Curve Optimizer controls should be hidden until the advanced gate is enabled"
+    );
+
+    let gate = find_switch_in_action_row_by_title(&root, "Show Curve Optimizer controls")
+        .expect("Advanced CPU tuning gate should have a switch");
+    assert!(
+        !gate.is_active(),
+        "Advanced CPU tuning gate should default to disabled"
+    );
+
+    gate.set_active(true);
+    assert!(
+        controls.is_visible(),
+        "Curve Optimizer controls should become visible when the advanced gate is enabled"
     );
 }
 
 #[gtk4::test]
-fn dropdown_preselects_current_battery_charge_type() {
+fn expander_preselects_current_platform_profile() {
+    init_gtk();
+
+    // sample_diagnostics has platform_profile.current = "balanced"
+    let profiles = ui::profiles::profiles_page(Ok(sample_diagnostics()));
+    let root = profiles.clone().upcast::<gtk4::Widget>();
+
+    let expander = find_expander_row_by_title(&root, "Requested profile");
+    assert!(
+        expander.is_some(),
+        "Profiles page should have a Requested profile ExpanderRow"
+    );
+    let expander = expander.unwrap();
+    assert!(
+        expander.is_sensitive(),
+        "ExpanderRow should be sensitive when choices are available"
+    );
+    assert_eq!(
+        expander.subtitle().as_str(),
+        "balanced",
+        "Should pre-select balanced"
+    );
+}
+
+#[gtk4::test]
+fn expander_preselects_current_battery_charge_type() {
     init_gtk();
 
     // sample_diagnostics has battery_charge_type.current = "Standard"
-    // choices = ["Fast", "Standard", "Conservation"] → selected index 1
     let battery = ui::battery::battery_page(Ok(sample_diagnostics()));
     let root = battery.clone().upcast::<gtk4::Widget>();
 
-    let dropdown = find_dropdown(&root);
-    assert!(dropdown.is_some(), "Battery page should have a DropDown");
-    let dropdown = dropdown.unwrap();
+    let expander = find_expander_row_by_title(&root, "Requested charge type");
     assert!(
-        dropdown.is_sensitive(),
-        "DropDown should be sensitive when choices are available"
+        expander.is_some(),
+        "Battery page should have a Requested charge type ExpanderRow"
+    );
+    let expander = expander.unwrap();
+    assert!(
+        expander.is_sensitive(),
+        "ExpanderRow should be sensitive when choices are available"
     );
     assert_eq!(
-        dropdown.selected(),
-        1,
-        "Should pre-select index 1 (Standard is second choice)"
+        expander.subtitle().as_str(),
+        "Standard",
+        "Should pre-select Standard"
     );
 }
 
@@ -665,6 +790,14 @@ fn sample_diagnostics() -> DiagnosticsBundle {
             evidence: vec![],
             details: serde_json::Value::Null,
         },
+        Capability {
+            id: "cpu_power".to_owned(),
+            label: "CPU power".to_owned(),
+            status: CapabilityStatus::ProbeOnly,
+            risk: RiskLevel::ReadOnly,
+            evidence: vec![],
+            details: serde_json::Value::Null,
+        },
     ];
     report.platform_profile = Some(PlatformProfileCapability {
         current: Some("balanced".to_owned()),
@@ -684,6 +817,62 @@ fn sample_diagnostics() -> DiagnosticsBundle {
         status: CapabilityStatus::ProbeOnly,
         detail: None,
     });
+    report.cpu_power = Some(CpuPowerCapability {
+        status: CapabilityStatus::ProbeOnly,
+        scaling_driver: Some("amd-pstate-epp".to_owned()),
+        amd_pstate_status: Some("active".to_owned()),
+        governor: Some("powersave".to_owned()),
+        available_governors: vec!["performance".to_owned(), "powersave".to_owned()],
+        epp: Some("balance_performance".to_owned()),
+        available_epp: vec![
+            "default".to_owned(),
+            "performance".to_owned(),
+            "balance_performance".to_owned(),
+            "balance_power".to_owned(),
+            "power".to_owned(),
+        ],
+        boost: Some(true),
+        scaling_min_khz: Some(400_000),
+        scaling_max_khz: Some(5_150_000),
+        scaling_cur_khz: Some(2_200_000),
+        cpuinfo_min_khz: Some(400_000),
+        cpuinfo_max_khz: Some(5_150_000),
+        governor_path: "/tmp/fixture/sys/devices/system/cpu/cpufreq/policy0/scaling_governor"
+            .to_owned(),
+        epp_path:
+            "/tmp/fixture/sys/devices/system/cpu/cpufreq/policy0/energy_performance_preference"
+                .to_owned(),
+        boost_path: "/tmp/fixture/sys/devices/system/cpu/cpufreq/boost".to_owned(),
+    });
+    report.firmware_attributes = vec![
+        FirmwareAttributeCapability {
+            name: "ppt_pl1_spl".to_owned(),
+            current_value: Some("70".to_owned()),
+            display_name: Some("SPL".to_owned()),
+            path: "/tmp/fixture/sys/class/firmware-attributes/thinklmi/attributes/ppt_pl1_spl/current_value".to_owned(),
+            min_value: Some("50".to_owned()),
+            max_value: Some("85".to_owned()),
+            scalar_increment: Some("1".to_owned()),
+        },
+        FirmwareAttributeCapability {
+            name: "ppt_pl2_sppt".to_owned(),
+            current_value: Some("85".to_owned()),
+            display_name: Some("SPPT".to_owned()),
+            path: "/tmp/fixture/sys/class/firmware-attributes/thinklmi/attributes/ppt_pl2_sppt/current_value".to_owned(),
+            min_value: Some("60".to_owned()),
+            max_value: Some("130".to_owned()),
+            scalar_increment: Some("1".to_owned()),
+        },
+        FirmwareAttributeCapability {
+            name: "ppt_pl3_fppt".to_owned(),
+            current_value: Some("102".to_owned()),
+            display_name: Some("FPPT".to_owned()),
+            path: "/tmp/fixture/sys/class/firmware-attributes/thinklmi/attributes/ppt_pl3_fppt/current_value".to_owned(),
+            min_value: Some("70".to_owned()),
+            max_value: Some("150".to_owned()),
+            scalar_increment: Some("1".to_owned()),
+        },
+    ];
     report.battery_charge_type = Some(BatteryChargeTypeCapability {
         current: Some("Standard".to_owned()),
         choices: vec![
@@ -699,12 +888,34 @@ fn sample_diagnostics() -> DiagnosticsBundle {
         status: CapabilityStatus::ProbeOnly,
         mode: Some("hybrid".to_owned()),
     });
+    report.amd_gpu_power_dpm = Some(AmdGpuPowerDpmCapability {
+        card: "card1".to_owned(),
+        status: CapabilityStatus::ProbeOnly,
+        vendor: "1002".to_owned(),
+        force_performance_level_path:
+            "/tmp/fixture/sys/class/drm/card1/device/power_dpm_force_performance_level".to_owned(),
+        current_force_performance_level: Some("auto".to_owned()),
+        power_dpm_state: Some("balanced".to_owned()),
+        current_sclk: Some("0: 500Mhz *".to_owned()),
+        current_mclk: Some("0: 96Mhz *".to_owned()),
+        choices: vec!["auto".to_owned(), "low".to_owned()],
+    });
     report.telemetry.battery = Some(BatteryTelemetry {
         name: "BAT0".to_owned(),
         path: "/tmp/fixture/sys/class/power_supply/BAT0".to_owned(),
         capacity_percent: Some(79),
         status: Some("Charging".to_owned()),
         health: Some("Good".to_owned()),
+        power_now_uw: Some(30_405_000),
+        cycle_count: Some(219),
+        energy_full_uwh: None,
+        energy_full_design_uwh: None,
+        energy_now_uwh: None,
+        voltage_now_uv: None,
+        capacity_level: None,
+        technology: None,
+        model_name: None,
+        manufacturer: None,
     });
     report.telemetry.sensors = vec![HwmonSensor {
         hwmon_name: Some("legion".to_owned()),
@@ -763,6 +974,14 @@ fn sample_diagnostics() -> DiagnosticsBundle {
             ),
             current_value: Some("0".to_owned()),
         },
+        IdeapadToggleCapability {
+            name: "fan_mode".to_owned(),
+            status: CapabilityStatus::ProbeOnly,
+            path: Some(
+                "/tmp/fixture/sys/bus/platform/drivers/ideapad_acpi/VPC2004:00/fan_mode".to_owned(),
+            ),
+            current_value: Some("0".to_owned()),
+        },
     ];
 
     DiagnosticsBundle::from_report_with_logs(
@@ -770,12 +989,11 @@ fn sample_diagnostics() -> DiagnosticsBundle {
         Some("6.17.0-test".to_owned()),
         vec!["2026-04-25T17:44:00 legion-control-daemon started".to_owned()],
     )
-    .with_runtime_state(
-        Some(sample_gpu_pending()),
-        Some(sample_fan_snapshot()),
-        BTreeMap::new(),
-        false,
-    )
+    .with_runtime_state(DiagnosticsRuntimeState {
+        gpu_mode_pending: Some(sample_gpu_pending()),
+        last_known_good_fan_curve: Some(sample_fan_snapshot()),
+        ..Default::default()
+    })
 }
 
 fn sample_gpu_pending() -> GpuModePending {
@@ -841,6 +1059,16 @@ fn collect_widget_text_recursive(widget: &gtk4::Widget, text: &mut Vec<String>) 
             }
         }
     }
+    if let Ok(row) = widget.clone().downcast::<adw::ExpanderRow>() {
+        let title = row.title().to_string();
+        if !title.is_empty() {
+            text.push(title);
+        }
+        let subtitle = row.subtitle().to_string();
+        if !subtitle.is_empty() {
+            text.push(subtitle);
+        }
+    }
     if let Ok(group) = widget.clone().downcast::<adw::PreferencesGroup>() {
         let title = group.title().to_string();
         if !title.is_empty() {
@@ -866,6 +1094,120 @@ fn find_action_row_by_title(root: &gtk4::Widget, title: &str) -> Option<adw::Act
     while let Some(current) = child {
         if let Some(row) = find_action_row_by_title(&current, title) {
             return Some(row);
+        }
+        child = current.next_sibling();
+    }
+
+    None
+}
+
+fn count_action_rows_by_title(root: &gtk4::Widget, title: &str) -> usize {
+    let current_match = root
+        .clone()
+        .downcast::<adw::ActionRow>()
+        .map(|row| usize::from(row.title() == title))
+        .unwrap_or(0);
+
+    let mut count = current_match;
+    let mut child = root.first_child();
+    while let Some(current) = child {
+        count += count_action_rows_by_title(&current, title);
+        child = current.next_sibling();
+    }
+    count
+}
+
+fn find_expander_row_by_title(root: &gtk4::Widget, title: &str) -> Option<adw::ExpanderRow> {
+    if let Ok(row) = root.clone().downcast::<adw::ExpanderRow>() {
+        if row.title() == title {
+            return Some(row);
+        }
+    }
+
+    let mut child = root.first_child();
+    while let Some(current) = child {
+        if let Some(row) = find_expander_row_by_title(&current, title) {
+            return Some(row);
+        }
+        child = current.next_sibling();
+    }
+
+    None
+}
+
+fn find_spin_button(root: &gtk4::Widget) -> Option<gtk4::SpinButton> {
+    if let Ok(spin) = root.clone().downcast::<gtk4::SpinButton>() {
+        return Some(spin);
+    }
+
+    let mut child = root.first_child();
+    while let Some(current) = child {
+        if let Some(spin) = find_spin_button(&current) {
+            return Some(spin);
+        }
+        child = current.next_sibling();
+    }
+
+    None
+}
+
+fn find_preferences_group_by_title(
+    root: &gtk4::Widget,
+    title: &str,
+) -> Option<adw::PreferencesGroup> {
+    if let Ok(group) = root.clone().downcast::<adw::PreferencesGroup>() {
+        if group.title() == title {
+            return Some(group);
+        }
+    }
+
+    let mut child = root.first_child();
+    while let Some(current) = child {
+        if let Some(group) = find_preferences_group_by_title(&current, title) {
+            return Some(group);
+        }
+        child = current.next_sibling();
+    }
+
+    None
+}
+
+fn find_switch_in_action_row_by_title(root: &gtk4::Widget, title: &str) -> Option<gtk4::Switch> {
+    find_action_row_by_title(root, title).and_then(|row| find_switch(&row.upcast()))
+}
+
+fn find_check_button_in_action_row_by_title(
+    root: &gtk4::Widget,
+    title: &str,
+) -> Option<gtk4::CheckButton> {
+    find_action_row_by_title(root, title).and_then(|row| find_check_button(&row.upcast()))
+}
+
+fn find_check_button(root: &gtk4::Widget) -> Option<gtk4::CheckButton> {
+    if let Ok(check) = root.clone().downcast::<gtk4::CheckButton>() {
+        return Some(check);
+    }
+
+    let mut child = root.first_child();
+    while let Some(current) = child {
+        if let Some(check) = find_check_button(&current) {
+            return Some(check);
+        }
+        child = current.next_sibling();
+    }
+
+    None
+}
+
+fn find_switch(root: &gtk4::Widget) -> Option<gtk4::Switch> {
+    if let Ok(switch) = root.clone().downcast::<gtk4::Switch>() {
+        return Some(switch);
+    }
+
+    let mut child = root.first_child();
+    while let Some(current) = child {
+        if let Some(switch) = find_switch(&current) {
+            return Some(switch);
         }
         child = current.next_sibling();
     }

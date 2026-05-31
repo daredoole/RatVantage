@@ -102,7 +102,7 @@ BusName=org.ratvantage.LegionControl1
 ExecStart=$exec_start
 Restart=on-failure
 StateDirectory=legion-control
-ReadWritePaths=/sys/firmware/acpi /sys/class/power_supply /sys/class/leds /sys/class/hwmon /sys/class/firmware-attributes /var/lib/legion-control /etc/legion-control /sys/bus/platform/drivers
+ReadWritePaths=/sys/firmware/acpi /sys/class/power_supply /sys/class/leds /sys/class/hwmon /sys/class/firmware-attributes /sys/class/drm /sys/bus/pci/devices /sys/devices /var/lib/legion-control /etc/legion-control /sys/bus/platform/drivers
 
 [Install]
 WantedBy=multi-user.target

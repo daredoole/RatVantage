@@ -2,8 +2,9 @@ use std::{fs, process::Command, sync::Arc};
 
 use legion_common::{Capability, CapabilityStatus, HardwareSummary, RiskLevel};
 use legion_control_daemon::{
-    BatteryChargeTypeWriter, IdeapadToggleWriter, LedStateWriter, LegionControl,
-    PlatformProfileWriter, WriteAccessPolicy, WriteAuthorizer, DBUS_INTERFACE, DBUS_PATH,
+    BatteryChargeTypeWriter, CpuEppWriter, CpuGovernorWriter, IdeapadToggleWriter, LedStateWriter,
+    LegionControl, PlatformProfileWriter, WriteAccessPolicy, WriteAuthorizer, DBUS_INTERFACE,
+    DBUS_PATH,
 };
 use legion_control_ui::{
     render_diagnostics_json, render_overview_lines, DiagnosticsBundle, LegionControlClient,
@@ -31,7 +32,9 @@ fn client_reads_daemon_contract_over_private_bus() {
     assert_eq!(
         capability_ids,
         [
+            "amd_gpu_power_dpm",
             "battery_charge_type",
+            "cpu_power",
             "fan_curves",
             "firmware_attributes",
             "gpu",
@@ -39,12 +42,14 @@ fn client_reads_daemon_contract_over_private_bus() {
             "ideapad_toggles",
             "leds",
             "platform_profile",
-            "power_profiles"
+            "power_profiles",
+            "thermal_zones"
         ]
     );
     assert!(capabilities.iter().all(|capability| {
         capability.risk == RiskLevel::ReadOnly
             && (capability.status == CapabilityStatus::ProbeOnly
+                || capability.id == "amd_gpu_power_dpm"
                 || capability.id == "gpu"
                 || capability.id == "power_profiles")
             && capability.details.is_null()
@@ -102,8 +107,10 @@ fn client_reads_daemon_contract_over_private_bus() {
             "battery_capacity_percent=79",
             "battery_status=Charging",
             "battery_health=Good",
+            "battery_power_now_w=30.4",
+            "battery_cycle_count=219",
             "leds=platform::fnlock:0,platform::ylogo:1",
-            "firmware_toggles=camera_power:1,conservation_mode:1,fn_lock:0",
+            "firmware_toggles=camera_power:1,conservation_mode:1,fan_mode:0,fn_lock:0",
         ]
     );
 
@@ -146,10 +153,13 @@ fn client_reads_daemon_contract_over_private_bus() {
     assert_eq!(json["fan_preset_reapply_after_resume"], false);
     assert_eq!(json["recent_daemon_logs"], serde_json::json!([]));
     assert_eq!(json["hardware"]["product_name"], "82WM");
-    assert_eq!(json["summary"]["capability_count"], 9);
-    assert_eq!(json["summary"]["available_capability_count"], 7);
+    assert_eq!(json["summary"]["capability_count"], 12);
+    assert_eq!(json["summary"]["available_capability_count"], 10);
     assert_eq!(json["summary"]["missing_capability_count"], 2);
-    assert_eq!(json["summary"]["capability_status_counts"]["probe_only"], 7);
+    assert_eq!(
+        json["summary"]["capability_status_counts"]["probe_only"],
+        10
+    );
     assert_eq!(json["summary"]["capability_status_counts"]["missing"], 2);
     assert_eq!(json["summary"]["sensor_count"], 2);
     assert_eq!(json["summary"]["fan_curve_count"], 1);
@@ -291,11 +301,13 @@ fn status_model_normalizes_daemon_data_for_ui() {
         status.hardware.product_sku.as_deref(),
         Some("LENOVO_MT_82WM_BU_idea_FM_Legion Pro 5 16ARX8")
     );
-    assert_eq!(status.capability_count(), 9);
+    assert_eq!(status.capability_count(), 12);
     assert_eq!(
         status.capability_ids(),
         [
+            "amd_gpu_power_dpm",
             "battery_charge_type",
+            "cpu_power",
             "fan_curves",
             "firmware_attributes",
             "gpu",
@@ -303,13 +315,15 @@ fn status_model_normalizes_daemon_data_for_ui() {
             "ideapad_toggles",
             "leds",
             "platform_profile",
-            "power_profiles"
+            "power_profiles",
+            "thermal_zones"
         ]
     );
     assert!(status.capabilities.iter().all(|capability| {
         !capability.label.is_empty()
             && capability.risk == RiskLevel::ReadOnly
             && (capability.status == CapabilityStatus::ProbeOnly
+                || capability.id == "amd_gpu_power_dpm"
                 || capability.id == "gpu"
                 || capability.id == "power_profiles")
     }));
@@ -328,14 +342,14 @@ fn status_model_normalizes_daemon_data_for_ui() {
     assert_eq!(
         status.render_lines(),
         [
-            "Legion Control status",
-            "vendor=LENOVO",
-            "product_name=82WM",
-            "product_version=Legion Pro 5 16ARX8",
-            "capability_count=9",
-            "capabilities=battery_charge_type,fan_curves,firmware_attributes,gpu,hwmon,ideapad_toggles,leds,platform_profile,power_profiles",
-            "capability_statuses=battery_charge_type:probe_only:read_only,fan_curves:probe_only:read_only,firmware_attributes:probe_only:read_only,gpu:missing:read_only,hwmon:probe_only:read_only,ideapad_toggles:probe_only:read_only,leds:probe_only:read_only,platform_profile:probe_only:read_only,power_profiles:missing:read_only",
-        ]
+                "Legion Control status",
+                "vendor=LENOVO",
+                "product_name=82WM",
+                "product_version=Legion Pro 5 16ARX8",
+                "capability_count=12",
+                "capabilities=amd_gpu_power_dpm,battery_charge_type,cpu_power,fan_curves,firmware_attributes,gpu,hwmon,ideapad_toggles,leds,platform_profile,power_profiles,thermal_zones",
+                "capability_statuses=amd_gpu_power_dpm:probe_only:read_only,battery_charge_type:probe_only:read_only,cpu_power:probe_only:read_only,fan_curves:probe_only:read_only,firmware_attributes:probe_only:read_only,gpu:missing:read_only,hwmon:probe_only:read_only,ideapad_toggles:probe_only:read_only,leds:probe_only:read_only,platform_profile:probe_only:read_only,power_profiles:missing:read_only,thermal_zones:probe_only:read_only",
+            ]
     );
 }
 
@@ -357,9 +371,9 @@ fn status_cli_prints_hardware_and_capability_summary() {
             "vendor=LENOVO\n",
             "product_name=82WM\n",
             "product_version=Legion Pro 5 16ARX8\n",
-            "capability_count=9\n",
-            "capabilities=battery_charge_type,fan_curves,firmware_attributes,gpu,hwmon,ideapad_toggles,leds,platform_profile,power_profiles\n",
-            "capability_statuses=battery_charge_type:probe_only:read_only,fan_curves:probe_only:read_only,firmware_attributes:probe_only:read_only,gpu:missing:read_only,hwmon:probe_only:read_only,ideapad_toggles:probe_only:read_only,leds:probe_only:read_only,platform_profile:probe_only:read_only,power_profiles:missing:read_only\n",
+            "capability_count=12\n",
+            "capabilities=amd_gpu_power_dpm,battery_charge_type,cpu_power,fan_curves,firmware_attributes,gpu,hwmon,ideapad_toggles,leds,platform_profile,power_profiles,thermal_zones\n",
+            "capability_statuses=amd_gpu_power_dpm:probe_only:read_only,battery_charge_type:probe_only:read_only,cpu_power:probe_only:read_only,fan_curves:probe_only:read_only,firmware_attributes:probe_only:read_only,gpu:missing:read_only,hwmon:probe_only:read_only,ideapad_toggles:probe_only:read_only,leds:probe_only:read_only,platform_profile:probe_only:read_only,power_profiles:missing:read_only,thermal_zones:probe_only:read_only\n",
         )
     );
 }
@@ -391,8 +405,10 @@ fn overview_cli_prints_read_only_mvp_summary() {
             "battery_capacity_percent=79\n",
             "battery_status=Charging\n",
             "battery_health=Good\n",
+            "battery_power_now_w=30.4\n",
+            "battery_cycle_count=219\n",
             "leds=platform::fnlock:0,platform::ylogo:1\n",
-            "firmware_toggles=camera_power:1,conservation_mode:1,fn_lock:0\n",
+            "firmware_toggles=camera_power:1,conservation_mode:1,fan_mode:0,fn_lock:0\n",
         )
     );
 }
@@ -568,6 +584,23 @@ fn plan_cli_prints_read_only_write_preview_json() {
     assert_eq!(json["method"], "SetBatteryChargeType");
     assert_eq!(json["previous_value"], "Standard");
     assert_eq!(json["requested_value"], "Conservation");
+
+    let output = Command::new(env!("CARGO_BIN_EXE_legion-control-ui"))
+        .args([
+            "--plan-firmware-attribute",
+            "ppt_pl1_spl=75",
+            "--bus-address",
+            &address,
+        ])
+        .output()
+        .unwrap();
+
+    assert!(output.status.success());
+    assert!(output.stderr.is_empty());
+    let json: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(json["method"], "SetFirmwareAttribute");
+    assert_eq!(json["previous_value"], "70");
+    assert_eq!(json["requested_value"], "75");
 }
 
 #[test]
@@ -609,12 +642,24 @@ fn set_platform_profile_cli_executes_gated_write_and_prints_result() {
                 ideapad_toggle_enabled: false,
                 camera_power_enabled: false,
                 usb_charging_enabled: false,
+                fan_mode_enabled: false,
+                gpu_mode_enabled: false,
+                cpu_governor_enabled: false,
+                cpu_epp_enabled: false,
+                firmware_attribute_enabled: false,
+                cpu_boost_enabled: false,
+                conservation_mode_enabled: false,
+                amd_gpu_dpm_enabled: false,
+                curve_optimizer_enabled: false,
+                hardware_profile_apply_enabled: false,
             },
             Arc::new(AllowAllAuthorizer),
             Arc::new(RealFixturePlatformProfileWriter),
             Arc::new(RealFixtureBatteryChargeTypeWriter),
             Arc::new(RealFixtureLedStateWriter),
             Arc::new(RealFixtureIdeapadToggleWriter),
+            Arc::new(NoOpCpuGovernorWriter),
+            Arc::new(NoOpCpuEppWriter),
         ));
     let output = Command::new(env!("CARGO_BIN_EXE_legion-control-ui"))
         .args([
@@ -668,6 +713,97 @@ fn set_battery_charge_type_cli_reports_policy_block_when_write_is_disabled() {
 }
 
 #[test]
+fn set_firmware_attribute_cli_reports_policy_block_when_write_is_disabled() {
+    let (_bus, _service_connection, address) = fixture_service();
+    let output = Command::new(env!("CARGO_BIN_EXE_legion-control-ui"))
+        .args([
+            "--set-firmware-attribute",
+            "ppt_pl1_spl=75",
+            "--bus-address",
+            &address,
+        ])
+        .output()
+        .unwrap();
+
+    assert!(output.status.success());
+    assert!(output.stderr.is_empty());
+    let json: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(json["status"], "blocked_by_policy");
+    assert_eq!(json["applied"], false);
+    assert_eq!(json["plan"]["method"], "SetFirmwareAttribute");
+    assert_eq!(json["plan"]["requested_value"], "75");
+}
+
+#[test]
+fn set_firmware_attribute_cli_executes_gated_write_and_prints_result() {
+    let fixture = copied_fixture_root("ui-firmware-attribute-write");
+    let state_path = unique_state_path("ui-firmware-attribute-write");
+    let (_bus, _service_connection, address) =
+        fixture_service_with_runtime(LegionControl::new_with_runtime(
+            ProbeOptions {
+                sysfs_root: fixture.clone(),
+            },
+            &state_path,
+            WriteAccessPolicy {
+                platform_profile_enabled: false,
+                battery_charge_type_enabled: false,
+                led_state_enabled: false,
+                ideapad_toggle_enabled: false,
+                camera_power_enabled: false,
+                usb_charging_enabled: false,
+                fan_mode_enabled: false,
+                gpu_mode_enabled: false,
+                cpu_governor_enabled: false,
+                cpu_epp_enabled: false,
+                firmware_attribute_enabled: true,
+                cpu_boost_enabled: false,
+                conservation_mode_enabled: false,
+                amd_gpu_dpm_enabled: false,
+                curve_optimizer_enabled: false,
+                hardware_profile_apply_enabled: false,
+            },
+            Arc::new(AllowAllAuthorizer),
+            Arc::new(RealFixturePlatformProfileWriter),
+            Arc::new(RealFixtureBatteryChargeTypeWriter),
+            Arc::new(RealFixtureLedStateWriter),
+            Arc::new(RealFixtureIdeapadToggleWriter),
+            Arc::new(NoOpCpuGovernorWriter),
+            Arc::new(NoOpCpuEppWriter),
+        ));
+    let output = Command::new(env!("CARGO_BIN_EXE_legion-control-ui"))
+        .args([
+            "--set-firmware-attribute",
+            "ppt_pl1_spl=75",
+            "--bus-address",
+            &address,
+        ])
+        .output()
+        .unwrap();
+
+    assert!(output.status.success());
+    assert!(output.stderr.is_empty());
+    let json: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(json["status"], "applied");
+    assert_eq!(json["applied"], true);
+    assert_eq!(json["readback_value"], "75");
+    assert_eq!(json["plan"]["method"], "SetFirmwareAttribute");
+    assert_eq!(json["plan"]["requested_value"], "75");
+    assert_eq!(
+        fs::read_to_string(
+            fixture.join(
+                "sys/class/firmware-attributes/thinklmi/attributes/ppt_pl1_spl/current_value"
+            )
+        )
+        .unwrap()
+        .trim(),
+        "75"
+    );
+
+    let _ = fs::remove_file(state_path);
+    let _ = fs::remove_dir_all(fixture);
+}
+
+#[test]
 fn set_battery_charge_type_cli_executes_gated_write_and_prints_result() {
     let fixture = copied_fixture_root("ui-battery-charge-type-write");
     let state_path = unique_state_path("ui-battery-charge-type-write");
@@ -684,12 +820,24 @@ fn set_battery_charge_type_cli_executes_gated_write_and_prints_result() {
                 ideapad_toggle_enabled: false,
                 camera_power_enabled: false,
                 usb_charging_enabled: false,
+                fan_mode_enabled: false,
+                gpu_mode_enabled: false,
+                cpu_governor_enabled: false,
+                cpu_epp_enabled: false,
+                firmware_attribute_enabled: false,
+                cpu_boost_enabled: false,
+                conservation_mode_enabled: false,
+                amd_gpu_dpm_enabled: false,
+                curve_optimizer_enabled: false,
+                hardware_profile_apply_enabled: false,
             },
             Arc::new(AllowAllAuthorizer),
             Arc::new(RealFixturePlatformProfileWriter),
             Arc::new(RealFixtureBatteryChargeTypeWriter),
             Arc::new(RealFixtureLedStateWriter),
             Arc::new(RealFixtureIdeapadToggleWriter),
+            Arc::new(NoOpCpuGovernorWriter),
+            Arc::new(NoOpCpuEppWriter),
         ));
     let output = Command::new(env!("CARGO_BIN_EXE_legion-control-ui"))
         .args([
@@ -759,12 +907,24 @@ fn set_led_state_cli_executes_gated_write_and_prints_result() {
                 ideapad_toggle_enabled: false,
                 camera_power_enabled: false,
                 usb_charging_enabled: false,
+                fan_mode_enabled: false,
+                gpu_mode_enabled: false,
+                cpu_governor_enabled: false,
+                cpu_epp_enabled: false,
+                firmware_attribute_enabled: false,
+                cpu_boost_enabled: false,
+                conservation_mode_enabled: false,
+                amd_gpu_dpm_enabled: false,
+                curve_optimizer_enabled: false,
+                hardware_profile_apply_enabled: false,
             },
             Arc::new(AllowAllAuthorizer),
             Arc::new(RealFixturePlatformProfileWriter),
             Arc::new(RealFixtureBatteryChargeTypeWriter),
             Arc::new(RealFixtureLedStateWriter),
             Arc::new(RealFixtureIdeapadToggleWriter),
+            Arc::new(NoOpCpuGovernorWriter),
+            Arc::new(NoOpCpuEppWriter),
         ));
     let output = Command::new(env!("CARGO_BIN_EXE_legion-control-ui"))
         .args([
@@ -833,12 +993,24 @@ fn set_ideapad_toggle_cli_executes_gated_write_and_prints_result() {
                 ideapad_toggle_enabled: true,
                 camera_power_enabled: false,
                 usb_charging_enabled: false,
+                fan_mode_enabled: false,
+                gpu_mode_enabled: false,
+                cpu_governor_enabled: false,
+                cpu_epp_enabled: false,
+                firmware_attribute_enabled: false,
+                cpu_boost_enabled: false,
+                conservation_mode_enabled: false,
+                amd_gpu_dpm_enabled: false,
+                curve_optimizer_enabled: false,
+                hardware_profile_apply_enabled: false,
             },
             Arc::new(AllowAllAuthorizer),
             Arc::new(RealFixturePlatformProfileWriter),
             Arc::new(RealFixtureBatteryChargeTypeWriter),
             Arc::new(RealFixtureLedStateWriter),
             Arc::new(RealFixtureIdeapadToggleWriter),
+            Arc::new(NoOpCpuGovernorWriter),
+            Arc::new(NoOpCpuEppWriter),
         ));
     let output = Command::new(env!("CARGO_BIN_EXE_legion-control-ui"))
         .args([
@@ -870,6 +1042,180 @@ fn set_ideapad_toggle_cli_executes_gated_write_and_prints_result() {
             .unwrap()
             .trim(),
         "1"
+    );
+
+    let _ = fs::remove_file(state_path);
+    let _ = fs::remove_dir_all(fixture);
+}
+
+#[test]
+fn set_cpu_governor_cli_reports_policy_block_when_write_is_disabled() {
+    let (_bus, _service_connection, address) = fixture_service();
+    let output = Command::new(env!("CARGO_BIN_EXE_legion-control-ui"))
+        .args([
+            "--set-cpu-governor",
+            "performance",
+            "--bus-address",
+            &address,
+        ])
+        .output()
+        .unwrap();
+
+    assert!(output.status.success());
+    assert!(output.stderr.is_empty());
+    let json: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(json["status"], "blocked_by_policy");
+    assert_eq!(json["applied"], false);
+    assert_eq!(json["plan"]["method"], "SetCpuGovernor");
+    assert_eq!(json["plan"]["requested_value"], "performance");
+}
+
+#[test]
+fn set_cpu_governor_cli_executes_gated_write_and_prints_result() {
+    let fixture = copied_fixture_root("ui-cpu-governor-write");
+    let state_path = unique_state_path("ui-cpu-governor-write");
+    let (_bus, _service_connection, address) =
+        fixture_service_with_runtime(LegionControl::new_with_runtime(
+            ProbeOptions {
+                sysfs_root: fixture.clone(),
+            },
+            &state_path,
+            WriteAccessPolicy {
+                platform_profile_enabled: false,
+                battery_charge_type_enabled: false,
+                led_state_enabled: false,
+                ideapad_toggle_enabled: false,
+                camera_power_enabled: false,
+                usb_charging_enabled: false,
+                fan_mode_enabled: false,
+                gpu_mode_enabled: false,
+                cpu_governor_enabled: true,
+                cpu_epp_enabled: false,
+                firmware_attribute_enabled: false,
+                cpu_boost_enabled: false,
+                conservation_mode_enabled: false,
+                amd_gpu_dpm_enabled: false,
+                curve_optimizer_enabled: false,
+                hardware_profile_apply_enabled: false,
+            },
+            Arc::new(AllowAllAuthorizer),
+            Arc::new(RealFixturePlatformProfileWriter),
+            Arc::new(RealFixtureBatteryChargeTypeWriter),
+            Arc::new(RealFixtureLedStateWriter),
+            Arc::new(RealFixtureIdeapadToggleWriter),
+            Arc::new(RealFixtureCpuGovernorWriter),
+            Arc::new(NoOpCpuEppWriter),
+        ));
+    let output = Command::new(env!("CARGO_BIN_EXE_legion-control-ui"))
+        .args([
+            "--set-cpu-governor",
+            "performance",
+            "--bus-address",
+            &address,
+        ])
+        .output()
+        .unwrap();
+
+    assert!(output.status.success());
+    assert!(output.stderr.is_empty());
+    let json: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(json["status"], "applied");
+    assert_eq!(json["applied"], true);
+    assert_eq!(json["readback_value"], "performance");
+    assert_eq!(json["plan"]["method"], "SetCpuGovernor");
+    assert_eq!(
+        fs::read_to_string(fixture.join("sys/devices/system/cpu/cpufreq/policy0/scaling_governor"))
+            .unwrap()
+            .trim(),
+        "performance"
+    );
+
+    let _ = fs::remove_file(state_path);
+    let _ = fs::remove_dir_all(fixture);
+}
+
+#[test]
+fn set_cpu_epp_cli_reports_policy_block_when_write_is_disabled() {
+    let (_bus, _service_connection, address) = fixture_service();
+    let output = Command::new(env!("CARGO_BIN_EXE_legion-control-ui"))
+        .args([
+            "--set-cpu-epp",
+            "balance_performance",
+            "--bus-address",
+            &address,
+        ])
+        .output()
+        .unwrap();
+
+    assert!(output.status.success());
+    assert!(output.stderr.is_empty());
+    let json: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(json["status"], "blocked_by_policy");
+    assert_eq!(json["applied"], false);
+    assert_eq!(json["plan"]["method"], "SetCpuEpp");
+    assert_eq!(json["plan"]["requested_value"], "balance_performance");
+}
+
+#[test]
+fn set_cpu_epp_cli_executes_gated_write_and_prints_result() {
+    let fixture = copied_fixture_root("ui-cpu-epp-write");
+    let state_path = unique_state_path("ui-cpu-epp-write");
+    let (_bus, _service_connection, address) =
+        fixture_service_with_runtime(LegionControl::new_with_runtime(
+            ProbeOptions {
+                sysfs_root: fixture.clone(),
+            },
+            &state_path,
+            WriteAccessPolicy {
+                platform_profile_enabled: false,
+                battery_charge_type_enabled: false,
+                led_state_enabled: false,
+                ideapad_toggle_enabled: false,
+                camera_power_enabled: false,
+                usb_charging_enabled: false,
+                fan_mode_enabled: false,
+                gpu_mode_enabled: false,
+                cpu_governor_enabled: false,
+                cpu_epp_enabled: true,
+                firmware_attribute_enabled: false,
+                cpu_boost_enabled: false,
+                conservation_mode_enabled: false,
+                amd_gpu_dpm_enabled: false,
+                curve_optimizer_enabled: false,
+                hardware_profile_apply_enabled: false,
+            },
+            Arc::new(AllowAllAuthorizer),
+            Arc::new(RealFixturePlatformProfileWriter),
+            Arc::new(RealFixtureBatteryChargeTypeWriter),
+            Arc::new(RealFixtureLedStateWriter),
+            Arc::new(RealFixtureIdeapadToggleWriter),
+            Arc::new(NoOpCpuGovernorWriter),
+            Arc::new(RealFixtureCpuEppWriter),
+        ));
+    let output = Command::new(env!("CARGO_BIN_EXE_legion-control-ui"))
+        .args([
+            "--set-cpu-epp",
+            "balance_performance",
+            "--bus-address",
+            &address,
+        ])
+        .output()
+        .unwrap();
+
+    assert!(output.status.success());
+    assert!(output.stderr.is_empty());
+    let json: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(json["status"], "applied");
+    assert_eq!(json["applied"], true);
+    assert_eq!(json["readback_value"], "balance_performance");
+    assert_eq!(json["plan"]["method"], "SetCpuEpp");
+    assert_eq!(
+        fs::read_to_string(
+            fixture.join("sys/devices/system/cpu/cpufreq/policy0/energy_performance_preference")
+        )
+        .unwrap()
+        .trim(),
+        "balance_performance"
     );
 
     let _ = fs::remove_file(state_path);
@@ -915,12 +1261,24 @@ fn set_camera_power_cli_executes_gated_write_and_prints_result() {
                 ideapad_toggle_enabled: false,
                 camera_power_enabled: true,
                 usb_charging_enabled: false,
+                fan_mode_enabled: false,
+                gpu_mode_enabled: false,
+                cpu_governor_enabled: false,
+                cpu_epp_enabled: false,
+                firmware_attribute_enabled: false,
+                cpu_boost_enabled: false,
+                conservation_mode_enabled: false,
+                amd_gpu_dpm_enabled: false,
+                curve_optimizer_enabled: false,
+                hardware_profile_apply_enabled: false,
             },
             Arc::new(AllowAllAuthorizer),
             Arc::new(RealFixturePlatformProfileWriter),
             Arc::new(RealFixtureBatteryChargeTypeWriter),
             Arc::new(RealFixtureLedStateWriter),
             Arc::new(RealFixtureIdeapadToggleWriter),
+            Arc::new(NoOpCpuGovernorWriter),
+            Arc::new(NoOpCpuEppWriter),
         ));
     let output = Command::new(env!("CARGO_BIN_EXE_legion-control-ui"))
         .args([
@@ -970,12 +1328,24 @@ fn set_usb_charging_cli_reports_policy_block_when_write_is_disabled() {
                 ideapad_toggle_enabled: false,
                 camera_power_enabled: false,
                 usb_charging_enabled: false,
+                fan_mode_enabled: false,
+                gpu_mode_enabled: false,
+                cpu_governor_enabled: false,
+                cpu_epp_enabled: false,
+                firmware_attribute_enabled: false,
+                cpu_boost_enabled: false,
+                conservation_mode_enabled: false,
+                amd_gpu_dpm_enabled: false,
+                curve_optimizer_enabled: false,
+                hardware_profile_apply_enabled: false,
             },
             Arc::new(AllowAllAuthorizer),
             Arc::new(RealFixturePlatformProfileWriter),
             Arc::new(RealFixtureBatteryChargeTypeWriter),
             Arc::new(RealFixtureLedStateWriter),
             Arc::new(RealFixtureIdeapadToggleWriter),
+            Arc::new(NoOpCpuGovernorWriter),
+            Arc::new(NoOpCpuEppWriter),
         ));
     let output = Command::new(env!("CARGO_BIN_EXE_legion-control-ui"))
         .args([
@@ -1017,12 +1387,24 @@ fn set_usb_charging_cli_executes_gated_write_and_prints_result() {
                 ideapad_toggle_enabled: false,
                 camera_power_enabled: false,
                 usb_charging_enabled: true,
+                fan_mode_enabled: false,
+                gpu_mode_enabled: false,
+                cpu_governor_enabled: false,
+                cpu_epp_enabled: false,
+                firmware_attribute_enabled: false,
+                cpu_boost_enabled: false,
+                conservation_mode_enabled: false,
+                amd_gpu_dpm_enabled: false,
+                curve_optimizer_enabled: false,
+                hardware_profile_apply_enabled: false,
             },
             Arc::new(AllowAllAuthorizer),
             Arc::new(RealFixturePlatformProfileWriter),
             Arc::new(RealFixtureBatteryChargeTypeWriter),
             Arc::new(RealFixtureLedStateWriter),
             Arc::new(RealFixtureIdeapadToggleWriter),
+            Arc::new(NoOpCpuGovernorWriter),
+            Arc::new(NoOpCpuEppWriter),
         ));
     let output = Command::new(env!("CARGO_BIN_EXE_legion-control-ui"))
         .args([
@@ -1151,6 +1533,24 @@ fn gpu_pending_cli_prints_and_clears_empty_state() {
 }
 
 #[test]
+fn last_curve_optimizer_cli_prints_empty_state() {
+    let state_path = unique_state_path("ui-curve-optimizer-empty");
+    let (_bus, _service_connection, address) = fixture_service_with_state(&state_path);
+    let client = LegionControlClient::address(&address).unwrap();
+    assert_eq!(client.last_curve_optimizer_all_core().unwrap(), None);
+
+    let output = Command::new(env!("CARGO_BIN_EXE_legion-control-ui"))
+        .args(["--last-curve-optimizer-all-core", "--bus-address", &address])
+        .output()
+        .unwrap();
+
+    assert!(output.status.success());
+    assert!(output.stderr.is_empty());
+    assert_eq!(String::from_utf8(output.stdout).unwrap(), "null\n");
+    let _ = std::fs::remove_file(state_path);
+}
+
+#[test]
 fn last_known_good_fan_curve_cli_captures_state_snapshot() {
     let state_path = unique_state_path("ui-fan-curve");
     let (_bus, _service_connection, address) = runtime_fixture_service_with_state(&state_path);
@@ -1261,9 +1661,9 @@ fn capability(id: &str, label: &str, status: CapabilityStatus, risk: RiskLevel) 
 }
 
 fn fixture_service() -> (PrivateBus, zbus::blocking::Connection, String) {
-    fixture_service_with_runtime(LegionControl::new(ProbeOptions {
-        sysfs_root: fixture_root(),
-    }))
+    let state_path = unique_state_path("ui-empty-state");
+    let _ = fs::remove_file(&state_path);
+    fixture_service_with_state(&state_path)
 }
 
 fn fixture_service_with_runtime(
@@ -1307,24 +1707,9 @@ fn fixture_service_with_state(
 }
 
 fn runtime_fixture_service() -> (PrivateBus, zbus::blocking::Connection, String) {
-    let bus = PrivateBus::start();
-    let service = LegionControl::new(ProbeOptions {
-        sysfs_root: fixture_root()
-            .parent()
-            .expect("fixture root must have parent")
-            .join("sysfs-82wm-runtime-capture"),
-    });
-    let service_connection = ConnectionBuilder::address(bus.address())
-        .unwrap()
-        .name(DBUS_INTERFACE)
-        .unwrap()
-        .serve_at(DBUS_PATH, service)
-        .unwrap()
-        .build()
-        .unwrap();
-    let address = bus.address().to_owned();
-
-    (bus, service_connection, address)
+    let state_path = unique_state_path("ui-runtime-empty-state");
+    let _ = fs::remove_file(&state_path);
+    runtime_fixture_service_with_state(&state_path)
 }
 
 fn runtime_fixture_service_with_state(
@@ -1429,6 +1814,38 @@ struct RealFixtureLedStateWriter;
 impl LedStateWriter for RealFixtureLedStateWriter {
     fn write_led_state(&self, path: &str, enabled: bool) -> std::result::Result<(), String> {
         fs::write(path, if enabled { "1" } else { "0" }).map_err(|error| error.to_string())
+    }
+}
+
+struct NoOpCpuGovernorWriter;
+
+impl CpuGovernorWriter for NoOpCpuGovernorWriter {
+    fn write_cpu_governor(&self, _path: &str, _requested: &str) -> std::result::Result<(), String> {
+        Ok(())
+    }
+}
+
+struct RealFixtureCpuGovernorWriter;
+
+impl CpuGovernorWriter for RealFixtureCpuGovernorWriter {
+    fn write_cpu_governor(&self, path: &str, requested: &str) -> std::result::Result<(), String> {
+        fs::write(path, requested).map_err(|error| error.to_string())
+    }
+}
+
+struct NoOpCpuEppWriter;
+
+impl CpuEppWriter for NoOpCpuEppWriter {
+    fn write_cpu_epp(&self, _path: &str, _requested: &str) -> std::result::Result<(), String> {
+        Ok(())
+    }
+}
+
+struct RealFixtureCpuEppWriter;
+
+impl CpuEppWriter for RealFixtureCpuEppWriter {
+    fn write_cpu_epp(&self, path: &str, requested: &str) -> std::result::Result<(), String> {
+        fs::write(path, requested).map_err(|error| error.to_string())
     }
 }
 

@@ -1,0 +1,14 @@
+# control_id	expected_status	rollback_required	daemon_flag	output_slug	description
+firmware_attribute:ppt_pl1_spl	executed	false	--enable-firmware-attribute-write	ppt_pl1_spl	Firmware PPT PL1/SPL negative execute evidence: Lenovo WMI returns EBUSY on this host
+firmware_attribute:ppt_pl2_sppt	executed	false	--enable-firmware-attribute-write	ppt_pl2_sppt	Firmware PPT PL2/SPPT negative execute evidence: Lenovo WMI returns EBUSY on this host
+firmware_attribute:ppt_pl3_fppt	executed	false	--enable-firmware-attribute-write	ppt_pl3_fppt	Firmware PPT PL3/FPPT negative execute evidence: Lenovo WMI returns EBUSY on this host
+conservation_mode	pass	true	--enable-conservation-mode-write	conservation_mode	Battery conservation mode write and revert
+cpu_governor	pass	true	--enable-cpu-governor-write	cpu_governor	CPU governor write and revert
+cpu_epp	pass	true	--enable-cpu-epp-write	cpu_epp	CPU EPP write and revert
+cpu_boost	pass	true	--enable-cpu-boost-write	cpu_boost	CPU boost write and revert
+fan_mode	executed	false	--enable-fan-mode-write	fan_mode	Fan mode negative execute evidence: requested full speed reads back unchanged on this host
+amd_gpu_dpm_force_level	pass	true	--enable-amd-gpu-dpm-write	amd_gpu_dpm_force_level	AMD GPU DPM force-level write and revert
+curve_optimizer_all_core	pass	true	--enable-curve-optimizer-write	curve_optimizer_all_core	RyzenAdj all-core Curve Optimizer apply and reset-to-zero
+gpu_mode	executed	false	--enable-gpu-mode-write	gpu_mode	EnvyControl GPU mode execution, one-way/recovery evidence
+hardware_profile	executed	false	--enable-hardware-profile-apply	hardware_profile	Manual hardware profile apply evidence
+hardware_profile_trigger	executed	false	--enable-hardware-profile-apply	hardware_profile_trigger	Hardware profile trigger apply evidence
