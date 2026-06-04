@@ -134,6 +134,23 @@ cat >"$bundle/mux-hardware-indicators.txt" <<'TXT'
 === vgaswitcheroo ===
 (not available)
 TXT
+cat >"$bundle/mux-summary.json" <<'JSON'
+{
+  "schema_version": 1,
+  "read_only": true,
+  "phase": "mux-only",
+  "timestamp": "2026-06-04T15:00:00-04:00",
+  "hostname": "fixture",
+  "kernel": "6.9.0-test",
+  "current_mode": "hybrid",
+  "drm_provider_count": 2,
+  "nvidia_pci_entry_count": 1,
+  "d3cold_indicator_count": 1,
+  "first_d3cold_indicator": "0000:01:00.0  driver=nvidia  d3cold_allowed=1",
+  "vgaswitcheroo_checked": true,
+  "session_type": "wayland"
+}
+JSON
 echo "gpu_mux_evidence=$4"
 EOF
 chmod 0755 "$gpu_mux"
@@ -163,6 +180,8 @@ grep -q '"high_value_gpu_switching"' "$out/compatibility-bundle.json"
 grep -q '"high_value_gpu_mux"' "$out/compatibility-bundle.json"
 grep -q '"high_value_automation"' "$out/compatibility-bundle.json"
 grep -q '"current_mode": "hybrid"' "$out/compatibility-bundle.json"
+grep -q '"schema_version": 1' "$out/compatibility-bundle.json"
+grep -q '"session_type": "wayland"' "$out/compatibility-bundle.json"
 grep -q '"first_d3cold_indicator": "0000:01:00.0  driver=nvidia  d3cold_allowed=1"' "$out/compatibility-bundle.json"
 grep -q '"drm_provider_count": 2' "$out/compatibility-bundle.json"
 grep -q '"nvidia_pci_entry_count": 1' "$out/compatibility-bundle.json"
@@ -223,6 +242,7 @@ grep -q "ready_for_execute_evidence" "$out/logs/openrgb-bridge-status.json"
 test -f "$out/openrgb-sdk/openrgb-keyboard-rgb-sdk-evidence.json"
 grep -q '"read_back_supported": true' "$out/openrgb-sdk/openrgb-keyboard-rgb-sdk-evidence.json"
 test -f "$out/gpu-mux/pre/mux-hardware-indicators.txt"
+test -f "$out/gpu-mux/pre/mux-summary.json"
 grep -q "d3cold_allowed=1" "$out/gpu-mux/pre/mux-hardware-indicators.txt"
 grep -q "RatVantage Compatibility Bundle" "$out/compatibility-bundle.md"
 grep -q "automation_diagnostics" "$out/compatibility-bundle.md"

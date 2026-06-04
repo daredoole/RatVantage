@@ -388,6 +388,27 @@ def first_line(relative_path):
     return None
 
 def high_value_gpu_mux_summary():
+    mux_summary = read_json_log("gpu-mux/pre/mux-summary.json")
+    if isinstance(mux_summary, dict):
+        summary = {"available": True}
+        for key in (
+            "schema_version",
+            "phase",
+            "current_mode",
+            "drm_provider_count",
+            "nvidia_pci_entry_count",
+            "d3cold_indicator_count",
+            "first_d3cold_indicator",
+            "vgaswitcheroo_checked",
+            "timestamp",
+            "kernel",
+            "hostname",
+            "session_type",
+        ):
+            if key in mux_summary:
+                summary[key] = mux_summary[key]
+        return summary
+
     manifest_text = read_text("gpu-mux/pre/manifest.txt")
     if manifest_text is None:
         return {"available": False, "reason": "GPU mux evidence was not captured"}

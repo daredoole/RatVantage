@@ -77,6 +77,73 @@ run_cmd() {
   "$@" > "$dest" 2>&1 || echo "(command failed: $*)" >> "$dest"
 }
 
+write_phase_summary() {
+  local bundle_dir="$1"
+  python3 - "$bundle_dir" <<'PY'
+import json
+import sys
+from pathlib import Path
+
+bundle = Path(sys.argv[1])
+
+def read_text(name):
+    path = bundle / name
+    if not path.exists():
+        return ""
+    return path.read_text(errors="replace")
+
+def first_nonempty(name, default="unknown"):
+    for line in read_text(name).splitlines():
+        line = line.strip()
+        if line:
+            return line
+    return default
+
+manifest = {}
+for line in read_text("manifest.txt").splitlines():
+    if "=" in line:
+        key, value = line.split("=", 1)
+        manifest[key] = value
+
+drm_providers = [line.strip() for line in read_text("drm-providers.txt").splitlines() if line.strip()]
+nvidia_pci_entries = [
+    line.strip() for line in read_text("nvidia-pci-enable.txt").splitlines() if line.strip()
+]
+indicators = read_text("mux-hardware-indicators.txt")
+d3cold_indicators = [
+    line.strip()
+    for line in indicators.splitlines()
+    if "driver=" in line and "d3cold_allowed=" in line
+]
+
+summary = {
+    "schema_version": 1,
+    "read_only": True,
+    "phase": manifest.get("phase", "unknown"),
+    "timestamp": manifest.get("timestamp"),
+    "hostname": manifest.get("hostname"),
+    "kernel": manifest.get("kernel"),
+    "current_mode": first_nonempty("envycontrol-mode.txt"),
+    "drm_provider_count": len(drm_providers),
+    "drm_providers": drm_providers[:8],
+    "nvidia_pci_entry_count": len(nvidia_pci_entries),
+    "nvidia_pci_entries": nvidia_pci_entries[:8],
+    "d3cold_indicator_count": len(d3cold_indicators),
+    "d3cold_indicators": d3cold_indicators[:8],
+    "first_d3cold_indicator": d3cold_indicators[0] if d3cold_indicators else None,
+    "vgaswitcheroo_checked": "=== vgaswitcheroo ===" in indicators,
+    "session_type": None,
+}
+for line in read_text("session-state.txt").splitlines():
+    line = line.strip()
+    if line.startswith("XDG_SESSION_TYPE="):
+        summary["session_type"] = line.split("=", 1)[1]
+        break
+
+(bundle / "mux-summary.json").write_text(json.dumps(summary, indent=2, sort_keys=True) + "\n")
+PY
+}
+
 # ── phase: compare ────────────────────────────────────────────────────────────
 
 if [[ "$phase" == "compare" ]]; then
@@ -465,6 +532,8 @@ log "  display manager state"
   echo "kernel=$(uname -r)"
   echo "user=$(whoami)"
 } > "$bundle_dir/manifest.txt"
+
+write_phase_summary "$bundle_dir"
 
 log "Done. Bundle: $bundle_dir"
 echo ""

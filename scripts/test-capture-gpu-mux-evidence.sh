@@ -56,6 +56,14 @@ grep -q "SESSION-RESTART SWITCHING: NOT CONFIRMED" "$partial/compare-report.txt"
 grep -q '"mode_changed": false' "$partial/compare-summary.json"
 grep -q '"session_restart_switching_confirmed": false' "$partial/compare-summary.json"
 
+mux_only="$tmp/mux-only"
+"$script" --phase mux-only --output "$mux_only" >/tmp/ratvantage-gpu-mux-only.txt
+test -f "$mux_only/pre/mux-summary.json"
+grep -q '"read_only": true' "$mux_only/pre/mux-summary.json"
+grep -q '"phase": "mux-only"' "$mux_only/pre/mux-summary.json"
+grep -q '"current_mode"' "$mux_only/pre/mux-summary.json"
+grep -q '"drm_provider_count"' "$mux_only/pre/mux-summary.json"
+
 "$script" --help >/tmp/ratvantage-gpu-mux-help.txt
 grep -q "mux-only" /tmp/ratvantage-gpu-mux-help.txt
 grep -q "This script is READ-ONLY" /tmp/ratvantage-gpu-mux-help.txt
