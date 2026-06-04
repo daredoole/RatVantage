@@ -25,7 +25,7 @@ case "${1:-}" in
     echo '{"summary":{"capability_count":1},"hardware_profile_drift":{"status":"drifted","profile_id":"rgb_breathing_blue","checked_count":1,"drifted_count":1,"items":[{"action_id":"keyboard_rgb","method":"SetOpenRgbKeyboardRgbSdk","requested_value":"Breathing #333333","readback_value":"Breathing #333333","current_value":"Direct #000000","status":"drifted","detail":"current value differs"}]},"fan_curve_drift":{"status":"drifted","curve_id":"quiet-office","checked_count":1,"drifted_count":1,"detail":"Live fan curve differs","items":[{"path":"hwmon0/pwm1_auto_point1_pwm","saved_value":"80","live_value":"100","status":"drifted"}]},"gpu_switching":{"status":"runtime_mux_research_blocked","provider":"fixture-mux","current_mode":"hybrid","switch_type":"runtime-mux","execution_model":"runtime_mux","runtime_plan_available":false,"blockers":["no dedicated runtime mux backend exists yet","no automatic display recovery evidence has been captured"],"evidence":["provider=fixture-mux","current_mode=hybrid"],"next_action":"capture read-only mux state and recovery evidence before adding a switch plan"}}'
     ;;
   --automation-diagnostics)
-    echo '{"hardware_profiles":{"quiet_battery":{"label":"Quiet battery"}},"hardware_profile_triggers":{"ac_unplugged":"quiet_battery","desktop_power_profile_changed":"quiet_battery"},"automation_rules":{"quiet_below_30":{"profile_id":"quiet_battery","enabled":true,"trigger_kind":"battery_threshold","cooldown_seconds":600}},"last_automation_rule_apply":{"quiet_below_30":{"rule_id":"quiet_below_30","selected_profile_id":"quiet_battery","completed":true,"message":"profile applied","timestamp_unix_secs":42}},"recent_platform_profile_changes":[{"previous_profile":"balanced","current_profile":"performance","source":"firmware","timestamp_unix_secs":41}],"recent_desktop_power_profile_changes":[{"previous_profile":"balanced","current_profile":"power-saver","source":"desktop_power_profile_observer","timestamp_unix_secs":43}],"last_hardware_profile_apply":{"profile_id":"quiet_battery","profile_label":"Quiet battery","completed":true,"message":"all actions applied","timestamp_unix_secs":40}}'
+    echo '{"hardware_profiles":{"quiet_battery":{"label":"Quiet battery"},"periodic_repair":{"label":"Periodic repair"}},"hardware_profile_triggers":{"ac_unplugged":"quiet_battery","desktop_power_profile_changed":"quiet_battery"},"automation_rules":{"quiet_below_30":{"profile_id":"quiet_battery","enabled":true,"kind":"battery_profile_threshold","threshold_percent":30,"cooldown_secs":600},"periodic_idle_correction":{"profile_id":"periodic_repair","enabled":true,"kind":"periodic_idle","cooldown_secs":1800}},"last_automation_rule_apply":{"quiet_below_30":{"rule_id":"quiet_below_30","selected_profile_id":"quiet_battery","completed":true,"message":"profile applied","timestamp_unix_secs":42}},"recent_platform_profile_changes":[{"previous_profile":"balanced","current_profile":"performance","source":"firmware","timestamp_unix_secs":41}],"recent_desktop_power_profile_changes":[{"previous_profile":"balanced","current_profile":"power-saver","source":"desktop_power_profile_observer","timestamp_unix_secs":43}],"last_hardware_profile_apply":{"profile_id":"quiet_battery","profile_label":"Quiet battery","completed":true,"message":"all actions applied","timestamp_unix_secs":40}}'
     ;;
   --reset-diagnostics)
     echo '{"curve_optimizer_all_core_reset":{"ok":true,"plan_command":"legion-control-ui --plan-curve-optimizer-all-core 0","execute_command":"legion-control-ui --reset-curve-optimizer-all-core"},"keyboard_rgb_sdk_recovery":{"ok":true,"value":{"available":true,"current_mode":"Breathing","current_colors":{"left":"#112233"},"plan_command":"legion-control-ui --plan-openrgb-keyboard-rgb-sdk '\''{\"effect\":\"Breathing\"}'\''","recovery_note":"read-only"}},"gpu_mode_pending_recovery":{"ok":true,"value":{"pending":{"requested_mode":"hybrid","previous_mode":"nvidia","reboot_required":true},"clear_command":"legion-control-ui --clear-gpu-mode-pending","verification_command":"legion-control-ui --overview"}},"gpu_switching_recovery":{"ok":true,"value":{"available":true,"status":"reboot_required","current_mode":"hybrid","switch_type":"reboot-required","verification_command":"legion-control-ui --overview","steps":["reboot"]}}}'
@@ -120,11 +120,16 @@ grep -q '"high_value_recovery"' "$out/compatibility-bundle.json"
 grep -q '"high_value_drift"' "$out/compatibility-bundle.json"
 grep -q '"high_value_gpu_switching"' "$out/compatibility-bundle.json"
 grep -q '"high_value_automation"' "$out/compatibility-bundle.json"
-grep -q '"automation_rule_count": 1' "$out/compatibility-bundle.json"
-grep -q '"hardware_profile_count": 1' "$out/compatibility-bundle.json"
+grep -q '"automation_rule_count": 2' "$out/compatibility-bundle.json"
+grep -q '"hardware_profile_count": 2' "$out/compatibility-bundle.json"
+grep -q '"automation_rule_kinds"' "$out/compatibility-bundle.json"
+grep -q '"battery_profile_threshold": 1' "$out/compatibility-bundle.json"
+grep -q '"periodic_idle": 1' "$out/compatibility-bundle.json"
 grep -q '"recent_platform_profile_change_count": 1' "$out/compatibility-bundle.json"
 grep -q '"recent_desktop_power_profile_change_count": 1' "$out/compatibility-bundle.json"
 grep -q '"first_rule"' "$out/compatibility-bundle.json"
+grep -q '"kind": "battery_profile_threshold"' "$out/compatibility-bundle.json"
+grep -q '"cooldown_secs": 600' "$out/compatibility-bundle.json"
 grep -q '"profile_id": "quiet_battery"' "$out/compatibility-bundle.json"
 grep -q '"first_rule_apply"' "$out/compatibility-bundle.json"
 grep -q '"selected_profile_id": "quiet_battery"' "$out/compatibility-bundle.json"
@@ -184,6 +189,8 @@ grep -q "gpu_switching_first_blocker" "$out/compatibility-bundle.md"
 grep -q "no dedicated runtime mux backend exists yet" "$out/compatibility-bundle.md"
 grep -q 'hardware_profile_drift: `drifted (1/1)`' "$out/compatibility-bundle.md"
 grep -q 'fan_curve_drift: `drifted (1/1)`' "$out/compatibility-bundle.md"
+grep -q 'automation_rule_kinds: `battery_profile_threshold:1, periodic_idle:1`' "$out/compatibility-bundle.md"
+grep -q 'automation_first_rule: `battery_profile_threshold` -> `quiet_battery`' "$out/compatibility-bundle.md"
 grep -q "openrgb-sdk" "$out/compatibility-bundle.md"
 test -f "$out/compatibility-bundle-pr-body.md"
 grep -q "RatVantage Compatibility Report" "$out/compatibility-bundle-pr-body.md"
@@ -193,6 +200,9 @@ grep -q "gpu_switching" "$out/compatibility-bundle-pr-body.md"
 grep -q "gpu_switching_next_action" "$out/compatibility-bundle-pr-body.md"
 grep -q "gpu_switching_first_blocker" "$out/compatibility-bundle-pr-body.md"
 grep -q 'fan_curve_drift: `drifted (1/1)`' "$out/compatibility-bundle-pr-body.md"
+grep -q "automation_rule_kinds" "$out/compatibility-bundle-pr-body.md"
+grep -q "periodic_idle:1" "$out/compatibility-bundle-pr-body.md"
+grep -q "automation_first_rule" "$out/compatibility-bundle-pr-body.md"
 grep -q "automation_rules" "$out/compatibility-bundle-pr-body.md"
 grep -q "recent_profile_changes" "$out/compatibility-bundle-pr-body.md"
 grep -q "recent_desktop_power_changes" "$out/compatibility-bundle-pr-body.md"

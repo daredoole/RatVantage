@@ -368,11 +368,12 @@ def high_value_automation_summary():
     automation = read_json_log("logs/automation-diagnostics.stdout")
     if not isinstance(automation, dict):
         return {"available": False, "reason": "automation diagnostics JSON was not captured"}
+    automation_rules = automation.get("automation_rules")
 
     summary = {
         "hardware_profile_count": map_count(automation.get("hardware_profiles")),
         "hardware_profile_trigger_count": map_count(automation.get("hardware_profile_triggers")),
-        "automation_rule_count": map_count(automation.get("automation_rules")),
+        "automation_rule_count": map_count(automation_rules),
         "last_automation_rule_apply_count": map_count(automation.get("last_automation_rule_apply")),
         "recent_platform_profile_change_count": map_count(
             automation.get("recent_platform_profile_changes")
@@ -381,9 +382,32 @@ def high_value_automation_summary():
             automation.get("recent_desktop_power_profile_changes")
         ),
     }
+    if isinstance(automation_rules, dict):
+        kinds = {}
+        for rule in automation_rules.values():
+            if isinstance(rule, dict):
+                kind = rule.get("kind") or rule.get("trigger_kind") or "unknown"
+                kinds[kind] = kinds.get(kind, 0) + 1
+        if kinds:
+            summary["automation_rule_kinds"] = dict(sorted(kinds.items()))
     first_rule = first_map_item_summary(
-        automation.get("automation_rules"),
-        ("profile_id", "enabled", "trigger", "trigger_kind", "cooldown_seconds"),
+        automation_rules,
+        (
+            "kind",
+            "profile_id",
+            "enabled",
+            "trigger",
+            "trigger_kind",
+            "cooldown_secs",
+            "cooldown_seconds",
+            "threshold_percent",
+            "when_below_or_equal",
+            "require_ac",
+            "ac_profile_id",
+            "battery_profile_id",
+            "fast_charge_profile_id",
+            "protect_profile_id",
+        ),
     )
     if first_rule is not None:
         summary["first_rule"] = first_rule
@@ -469,6 +493,29 @@ gpu_first_blocker = first_list_value(gpu_switching.get("blockers"))
 gpu_first_evidence = first_list_value(gpu_switching.get("evidence"))
 hardware_profile_drift = drift_status("hardware_profile_drift")
 fan_curve_drift = drift_status("fan_curve_drift")
+automation = report["high_value_automation"]
+automation_first_rule = automation.get("first_rule")
+automation_first_rule_kind = "none"
+automation_first_rule_profile = "none"
+if isinstance(automation_first_rule, dict):
+    automation_first_rule_kind = (
+        automation_first_rule.get("kind")
+        or automation_first_rule.get("trigger_kind")
+        or "unknown"
+    )
+    automation_first_rule_profile = (
+        automation_first_rule.get("profile_id")
+        or automation_first_rule.get("ac_profile_id")
+        or automation_first_rule.get("fast_charge_profile_id")
+        or "none"
+    )
+automation_rule_kinds = automation.get("automation_rule_kinds")
+if isinstance(automation_rule_kinds, dict) and automation_rule_kinds:
+    automation_rule_kinds_text = ", ".join(
+        f"{kind}:{count}" for kind, count in automation_rule_kinds.items()
+    )
+else:
+    automation_rule_kinds_text = "none"
 
 lines = [
     "# RatVantage Compatibility Bundle",
@@ -493,6 +540,8 @@ lines = [
     f"- gpu_switching_first_evidence: `{gpu_first_evidence}`",
     f"- hardware_profile_drift: `{hardware_profile_drift}`",
     f"- fan_curve_drift: `{fan_curve_drift}`",
+    f"- automation_rule_kinds: `{automation_rule_kinds_text}`",
+    f"- automation_first_rule: `{automation_first_rule_kind}` -> `{automation_first_rule_profile}`",
     "",
     "## Files",
     "- `logs/overview.stdout`",
@@ -531,6 +580,8 @@ pr_lines = [
     f"- hardware_profile_drift: `{hardware_profile_drift}`",
     f"- fan_curve_drift: `{fan_curve_drift}`",
     f"- automation_rules: `{report['high_value_automation'].get('automation_rule_count', 0)}`",
+    f"- automation_rule_kinds: `{automation_rule_kinds_text}`",
+    f"- automation_first_rule: `{automation_first_rule_kind}` -> `{automation_first_rule_profile}`",
     f"- recent_profile_changes: `{report['high_value_automation'].get('recent_platform_profile_change_count', 0)}`",
     f"- recent_desktop_power_changes: `{report['high_value_automation'].get('recent_desktop_power_profile_change_count', 0)}`",
     "",
