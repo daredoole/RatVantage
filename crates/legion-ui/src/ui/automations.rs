@@ -28,6 +28,7 @@ pub fn automations_page(diagnostics: Result<DiagnosticsBundle>) -> adw::Preferen
         Ok(bundle) => {
             append_hardware_profile_triggers(&page, &bundle);
             append_recent_platform_profile_changes(&page, &bundle);
+            append_recent_desktop_power_profile_changes(&page, &bundle);
             append_persisted_automation_rules(&page, &bundle);
             append_automation_rule_creator(&page, &bundle);
             append_ac_router_rule_creator(&page, &bundle);
@@ -212,7 +213,7 @@ pub fn automations_page(diagnostics: Result<DiagnosticsBundle>) -> adw::Preferen
         ("Schedule", "Time of day · Time window · Day of week"),
         (
             "Power",
-            "AC plugged in · AC unplugged · Battery below % · Battery above %",
+            "AC plugged in · AC unplugged · Battery below % · Battery above % · Desktop power profile changes",
         ),
         (
             "Thermal",
@@ -2324,6 +2325,44 @@ fn append_recent_platform_profile_changes(page: &adw::PreferencesPage, bundle: &
     page.add(&group);
 }
 
+fn append_recent_desktop_power_profile_changes(
+    page: &adw::PreferencesPage,
+    bundle: &DiagnosticsBundle,
+) {
+    if bundle.recent_desktop_power_profile_changes.is_empty() {
+        return;
+    }
+
+    let group = adw::PreferencesGroup::new();
+    group.set_title("Recent Desktop Power Profile Changes");
+    group.set_description(Some(
+        "Desktop PowerProfiles changes observed by the daemon, including KDE or GNOME power mode changes.",
+    ));
+
+    for event in bundle
+        .recent_desktop_power_profile_changes
+        .iter()
+        .rev()
+        .take(5)
+    {
+        group.add(
+            &adw::ActionRow::builder()
+                .title(format!(
+                    "{} -> {}",
+                    event.previous_profile, event.current_profile
+                ))
+                .subtitle(format!(
+                    "{} · unix {}",
+                    event.source, event.timestamp_unix_secs
+                ))
+                .selectable(false)
+                .build(),
+        );
+    }
+
+    page.add(&group);
+}
+
 fn append_persisted_automation_rules(page: &adw::PreferencesPage, bundle: &DiagnosticsBundle) {
     let group = adw::PreferencesGroup::new();
     group.set_title("Saved Automation Rules");
@@ -3419,6 +3458,7 @@ fn trigger_label(trigger_id: &str) -> String {
         "ac_disconnected" => "AC unplugged".to_owned(),
         "resume" => "Resume from sleep".to_owned(),
         "platform_profile_changed" => "Platform profile changed".to_owned(),
+        "desktop_power_profile_changed" => "Desktop power profile changed".to_owned(),
         "gpu_mode_reboot_completed" => "GPU reboot completed".to_owned(),
         "manual" => "Manual test trigger".to_owned(),
         other => other.replace('_', " "),

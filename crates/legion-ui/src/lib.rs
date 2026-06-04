@@ -6,10 +6,11 @@ use legion_common::{
     format_fan_curve_snapshot_summary, format_gpu_mode_pending_summary, format_gpu_switch_type,
     format_power_profiles_probe_summary, AutomationRule, AutomationRuleApplyRun,
     AutomationRuleEvaluation, Capability, CapabilityRegistry, CapabilityStatus,
-    CurveOptimizerWriteState, CustomThermalPlanPreview, FanCurveSnapshot, GpuModePending,
-    GpuSwitchType, HardwareProfile, HardwareProfileApplyActionResult, HardwareProfileApplyPreview,
-    HardwareProfileApplyRun, HardwareSummary, KeyboardRgbWriteRequest, PlatformProfileChangeEvent,
-    RiskLevel, RyzenBackendStatus, TelemetrySnapshot, WriteDryRunPlan, WriteExecutionResult,
+    CurveOptimizerWriteState, CustomThermalPlanPreview, DesktopPowerProfileChangeEvent,
+    FanCurveSnapshot, GpuModePending, GpuSwitchType, HardwareProfile,
+    HardwareProfileApplyActionResult, HardwareProfileApplyPreview, HardwareProfileApplyRun,
+    HardwareSummary, KeyboardRgbWriteRequest, PlatformProfileChangeEvent, RiskLevel,
+    RyzenBackendStatus, TelemetrySnapshot, WriteDryRunPlan, WriteExecutionResult,
 };
 use serde::{de::DeserializeOwned, Serialize};
 use zbus::blocking::{Connection, ConnectionBuilder, Proxy};
@@ -78,6 +79,7 @@ pub struct DiagnosticsBundle {
     pub hardware_profile_drift: HardwareProfileDriftReport,
     pub gpu_switching: GpuSwitchingDiagnostics,
     pub recent_platform_profile_changes: Vec<PlatformProfileChangeEvent>,
+    pub recent_desktop_power_profile_changes: Vec<DesktopPowerProfileChangeEvent>,
     pub detected_sysfs_paths: Vec<String>,
     pub recent_daemon_logs: Vec<String>,
     pub raw_probe_report: CapabilityRegistry,
@@ -97,6 +99,7 @@ pub struct DiagnosticsRuntimeState {
     pub ryzen_backend_status: Option<RyzenBackendStatus>,
     pub last_hardware_profile_apply: Option<HardwareProfileApplyRun>,
     pub recent_platform_profile_changes: Vec<PlatformProfileChangeEvent>,
+    pub recent_desktop_power_profile_changes: Vec<DesktopPowerProfileChangeEvent>,
 }
 
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
@@ -191,6 +194,7 @@ impl DiagnosticsBundle {
             hardware_profile_drift: HardwareProfileDriftReport::no_last_apply(),
             gpu_switching: gpu_switching_diagnostics(&report),
             recent_platform_profile_changes: Vec::new(),
+            recent_desktop_power_profile_changes: Vec::new(),
             detected_sysfs_paths,
             recent_daemon_logs,
             raw_probe_report: report,
@@ -217,6 +221,7 @@ impl DiagnosticsBundle {
             self.last_hardware_profile_apply.as_ref(),
         );
         self.recent_platform_profile_changes = state.recent_platform_profile_changes;
+        self.recent_desktop_power_profile_changes = state.recent_desktop_power_profile_changes;
         self
     }
 }
@@ -1897,6 +1902,9 @@ impl LegionControlClient {
             recent_platform_profile_changes: self
                 .recent_platform_profile_changes()
                 .unwrap_or_default(),
+            recent_desktop_power_profile_changes: self
+                .recent_desktop_power_profile_changes()
+                .unwrap_or_default(),
         }))
     }
 
@@ -1915,6 +1923,9 @@ impl LegionControlClient {
         let last_hardware_profile_apply = self.last_hardware_profile_apply()?;
         let recent_platform_profile_changes =
             self.recent_platform_profile_changes().unwrap_or_default();
+        let recent_desktop_power_profile_changes = self
+            .recent_desktop_power_profile_changes()
+            .unwrap_or_default();
         Ok(RuntimeSnapshot {
             status: UiStatus::from_parts(report.hardware.clone(), capabilities)?,
             diagnostics: DiagnosticsBundle::from_report_with_logs(
@@ -1935,6 +1946,7 @@ impl LegionControlClient {
                 ryzen_backend_status,
                 last_hardware_profile_apply,
                 recent_platform_profile_changes,
+                recent_desktop_power_profile_changes,
             }),
         })
     }
@@ -2197,6 +2209,12 @@ impl LegionControlClient {
 
     pub fn recent_platform_profile_changes(&self) -> Result<Vec<PlatformProfileChangeEvent>> {
         self.call_json("GetRecentPlatformProfileChanges")
+    }
+
+    pub fn recent_desktop_power_profile_changes(
+        &self,
+    ) -> Result<Vec<DesktopPowerProfileChangeEvent>> {
+        self.call_json("GetRecentDesktopPowerProfileChanges")
     }
 
     pub fn automation_rule_preview(&self, rule_id: &str) -> Result<AutomationRuleEvaluation> {

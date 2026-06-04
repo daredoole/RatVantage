@@ -9,15 +9,15 @@ use std::{
 use legion_common::{
     AmdGpuPowerDpmCapability, AutomationRule, AutomationRuleKind, BatteryChargeTypeCapability,
     BatteryTelemetry, Capability, CapabilityRegistry, CapabilityStatus, CpuPowerCapability,
-    CurveOptimizerReadbackStatus, FanCurveCapability, FanCurvePointSnapshot, FanCurveSnapshot,
-    FirmwareAttributeCapability, GpuCapability, GpuModePending, GpuSwitchType, HardwareProfile,
-    HardwareProfileActions, HardwareProfileApplyActionResult, HardwareProfileApplyRun,
-    HardwareSummary, HwmonSensor, IdeapadToggleCapability, KeyboardRgbCandidate,
-    KeyboardRgbHidReport, KeyboardRgbOpenRgbDevice, KeyboardRgbOpenRgbStatus,
-    KeyboardRgbWriteRequest, LedCapability, PlatformProfileCapability, PlatformProfileChangeEvent,
-    PowerProfilesCapability, RiskLevel, RyzenAdjBackendStatus, RyzenBackendStatus,
-    RyzenSmuBackendStatus, RyzenSmuSetupAssistant, WriteDryRunPlan, WriteExecutionResult,
-    WriteExecutionStatus,
+    CurveOptimizerReadbackStatus, DesktopPowerProfileChangeEvent, FanCurveCapability,
+    FanCurvePointSnapshot, FanCurveSnapshot, FirmwareAttributeCapability, GpuCapability,
+    GpuModePending, GpuSwitchType, HardwareProfile, HardwareProfileActions,
+    HardwareProfileApplyActionResult, HardwareProfileApplyRun, HardwareSummary, HwmonSensor,
+    IdeapadToggleCapability, KeyboardRgbCandidate, KeyboardRgbHidReport, KeyboardRgbOpenRgbDevice,
+    KeyboardRgbOpenRgbStatus, KeyboardRgbWriteRequest, LedCapability, PlatformProfileCapability,
+    PlatformProfileChangeEvent, PowerProfilesCapability, RiskLevel, RyzenAdjBackendStatus,
+    RyzenBackendStatus, RyzenSmuBackendStatus, RyzenSmuSetupAssistant, WriteDryRunPlan,
+    WriteExecutionResult, WriteExecutionStatus,
 };
 use legion_control_ui::{gtk_shell, ui, DiagnosticsBundle, DiagnosticsRuntimeState, UiStatus};
 
@@ -588,6 +588,14 @@ fn automations_page_renders_ac_profile_router_rules() {
             current_profile: "performance".to_owned(),
             source: "platform_profile_observer".to_owned(),
         });
+    diagnostics
+        .recent_desktop_power_profile_changes
+        .push(DesktopPowerProfileChangeEvent {
+            timestamp_unix_secs: 1_770_000_001,
+            previous_profile: "balanced".to_owned(),
+            current_profile: "power-saver".to_owned(),
+            source: "desktop_power_profile_observer".to_owned(),
+        });
 
     let automations = ui::automations::automations_page(Ok(diagnostics));
     let text = collect_widget_text(&automations.clone().upcast());
@@ -597,10 +605,20 @@ fn automations_page_renders_ac_profile_router_rules() {
     assert!(text.iter().any(|value| value == "GPU reboot completed"));
     assert!(text
         .iter()
+        .any(|value| value == "Desktop power profile changed"));
+    assert!(text
+        .iter()
         .any(|value| value == "Recent Platform Profile Changes"));
     assert!(text.iter().any(|value| value == "balanced -> performance"));
     assert!(text.iter().any(|value| {
         value.contains("platform_profile_observer") && value.contains("1770000000")
+    }));
+    assert!(text
+        .iter()
+        .any(|value| value == "Recent Desktop Power Profile Changes"));
+    assert!(text.iter().any(|value| value == "balanced -> power-saver"));
+    assert!(text.iter().any(|value| {
+        value.contains("desktop_power_profile_observer") && value.contains("1770000001")
     }));
     assert!(text.iter().any(|value| value == "Saved Automation Rules"));
     assert!(text.iter().any(|value| value == "AC profile router"));

@@ -31,12 +31,12 @@ use legion_common::{
     validate_gpu_mode_choice, validate_hardware_profile_id, validate_hardware_profile_trigger_id,
     AutomationRule, AutomationRuleApplyRun, AutomationRuleEvaluation, AutomationRuleKind,
     CapabilityRegistry, CurveOptimizerReadbackStatus, CurveOptimizerWriteState,
-    CustomThermalPlanPreview, DaemonState, FanCurveSnapshot, FanPreset, GpuModePending,
-    HardwareProfile, HardwareProfileActions, HardwareProfileApplyActionResult,
-    HardwareProfileApplyPreview, HardwareProfileApplyRun, IdeapadToggleCapability,
-    KeyboardRgbCapability, KeyboardRgbWriteRequest, LedCapability, PlatformProfileChangeEvent,
-    RyzenAdjBackendStatus, RyzenBackendStatus, RyzenSmuBackendStatus, RyzenSmuSetupAssistant,
-    ValidationError, WriteDryRunPlan, WriteExecutionResult, WritePlanStep,
+    CustomThermalPlanPreview, DaemonState, DesktopPowerProfileChangeEvent, FanCurveSnapshot,
+    FanPreset, GpuModePending, HardwareProfile, HardwareProfileActions,
+    HardwareProfileApplyActionResult, HardwareProfileApplyPreview, HardwareProfileApplyRun,
+    IdeapadToggleCapability, KeyboardRgbCapability, KeyboardRgbWriteRequest, LedCapability,
+    PlatformProfileChangeEvent, RyzenAdjBackendStatus, RyzenBackendStatus, RyzenSmuBackendStatus,
+    RyzenSmuSetupAssistant, ValidationError, WriteDryRunPlan, WriteExecutionResult, WritePlanStep,
 };
 use legion_probe::{probe, ProbeOptions};
 use serde::{Deserialize, Serialize};
@@ -49,12 +49,13 @@ use zbus::{
 
 pub const DBUS_INTERFACE: &str = "org.ratvantage.LegionControl1";
 pub const DBUS_PATH: &str = "/org/ratvantage/LegionControl1";
-pub const READ_ONLY_METHODS: &str = "CaptureLastKnownGoodFanCurve,ClearAutomationRules,ClearFanPresetProfileMap,ClearGpuModePending,ClearHardwareProfileTriggers,ClearHardwareProfiles,GetAutomationRulePreview,GetAutomationRules,GetCapabilities,GetFanPresetProfileMap,GetFanPresetReapplyAfterResume,GetGpuModePending,GetHardwareProfileApplyPreview,GetHardwareProfileTriggerApplyPreview,GetHardwareProfileTriggers,GetHardwareProfiles,GetHardwareSummary,GetLastAutomationRuleApply,GetLastCurveOptimizerAllCore,GetLastHardwareProfileApply,GetLastKnownGoodFanCurve,GetLiveFanCurveReadings,GetRawProbeReport,GetRecentPlatformProfileChanges,GetRyzenBackendStatus,GetTelemetry,PlanAmdGpuDpmForceLevelWrite,PlanBatteryChargeTypeWrite,PlanConservationModeWrite,PlanCpuBoostWrite,PlanCpuEppWrite,PlanCpuGovernorWrite,PlanCurveOptimizerAllCoreWrite,PlanCustomThermalFanPresetWrite,PlanCustomThermalFirmwareAttributeWrite,PlanCustomThermalFirmwarePptPresetWrite,PlanCustomThermalRestoreAutoFanWrite,PlanFanPresetWrite,PlanFirmwareAttributeResetWrite,PlanFirmwareAttributeWrite,PlanGpuModeWrite,PlanIdeapadToggleWrite,PlanKeyboardRgbWrite,PlanLedStateWrite,PlanOpenRgbAccessSetup,PlanOpenRgbKeyboardRgbBridge,PlanOpenRgbKeyboardRgbSdkWrite,PlanPlatformProfileWrite,PlanPrepareCustomThermalMode,PlanRestoreAutoFanWrite,RefreshCapabilities,RemoveAutomationRule,RemoveFanPresetProfileMapEntry,RemoveHardwareProfile,RemoveHardwareProfileTrigger,SetAutomationRule,SetFanPresetProfileMapEntry,SetFanPresetReapplyAfterResume,SetGpuModePending,SetHardwareProfile,SetHardwareProfileTrigger";
+pub const READ_ONLY_METHODS: &str = "CaptureLastKnownGoodFanCurve,ClearAutomationRules,ClearFanPresetProfileMap,ClearGpuModePending,ClearHardwareProfileTriggers,ClearHardwareProfiles,GetAutomationRulePreview,GetAutomationRules,GetCapabilities,GetFanPresetProfileMap,GetFanPresetReapplyAfterResume,GetGpuModePending,GetHardwareProfileApplyPreview,GetHardwareProfileTriggerApplyPreview,GetHardwareProfileTriggers,GetHardwareProfiles,GetHardwareSummary,GetLastAutomationRuleApply,GetLastCurveOptimizerAllCore,GetLastHardwareProfileApply,GetLastKnownGoodFanCurve,GetLiveFanCurveReadings,GetRawProbeReport,GetRecentDesktopPowerProfileChanges,GetRecentPlatformProfileChanges,GetRyzenBackendStatus,GetTelemetry,PlanAmdGpuDpmForceLevelWrite,PlanBatteryChargeTypeWrite,PlanConservationModeWrite,PlanCpuBoostWrite,PlanCpuEppWrite,PlanCpuGovernorWrite,PlanCurveOptimizerAllCoreWrite,PlanCustomThermalFanPresetWrite,PlanCustomThermalFirmwareAttributeWrite,PlanCustomThermalFirmwarePptPresetWrite,PlanCustomThermalRestoreAutoFanWrite,PlanFanPresetWrite,PlanFirmwareAttributeResetWrite,PlanFirmwareAttributeWrite,PlanGpuModeWrite,PlanIdeapadToggleWrite,PlanKeyboardRgbWrite,PlanLedStateWrite,PlanOpenRgbAccessSetup,PlanOpenRgbKeyboardRgbBridge,PlanOpenRgbKeyboardRgbSdkWrite,PlanPlatformProfileWrite,PlanPrepareCustomThermalMode,PlanRestoreAutoFanWrite,RefreshCapabilities,RemoveAutomationRule,RemoveFanPresetProfileMapEntry,RemoveHardwareProfile,RemoveHardwareProfileTrigger,SetAutomationRule,SetFanPresetProfileMapEntry,SetFanPresetReapplyAfterResume,SetGpuModePending,SetHardwareProfile,SetHardwareProfileTrigger";
 pub const GATED_WRITE_METHODS: &str =
     "SetPlatformProfile,SetBatteryChargeType,SetLedState,SetKeyboardRgb,SetIdeapadToggle,SetGpuMode,SetCpuGovernor,SetCpuEpp,SetFirmwareAttribute,SetCpuBoost,SetConservationMode,SetAmdGpuDpmForceLevel,SetCurveOptimizerAllCore,SetupOpenRgbAccess,ApplyHardwareProfile,ApplyHardwareProfileTrigger,ApplyAutomationRule";
 pub const DEFAULT_STATE_PATH: &str = "/var/lib/legion-control/state.toml";
 const AMD_GPU_POWER_PROFILE_SYNC_INTERVAL: std::time::Duration = std::time::Duration::from_secs(5);
 const RECENT_PLATFORM_PROFILE_CHANGE_LIMIT: usize = 20;
+const RECENT_DESKTOP_POWER_PROFILE_CHANGE_LIMIT: usize = 20;
 
 const PACKAGED_FAN_PRESETS: &[&str] = &[
     include_str!("../../../data/presets/quiet-office.toml"),
@@ -2400,6 +2401,15 @@ impl LegionControl {
             .map_err(|_| fdo::Error::Failed("daemon state lock poisoned".to_owned()))
     }
 
+    pub fn recent_desktop_power_profile_changes(
+        &self,
+    ) -> fdo::Result<Vec<DesktopPowerProfileChangeEvent>> {
+        self.state
+            .lock()
+            .map(|state| state.recent_desktop_power_profile_changes.clone())
+            .map_err(|_| fdo::Error::Failed("daemon state lock poisoned".to_owned()))
+    }
+
     fn record_curve_optimizer_all_core(
         &self,
         write_state: CurveOptimizerWriteState,
@@ -2489,6 +2499,47 @@ impl LegionControl {
             })?;
         }
         Ok(())
+    }
+
+    fn observe_desktop_power_profile_change(
+        &self,
+        current: String,
+    ) -> fdo::Result<Option<(String, String)>> {
+        let mut state = self
+            .state
+            .lock()
+            .map_err(|_| fdo::Error::Failed("daemon state lock poisoned".to_owned()))?;
+        let previous = state.last_observed_desktop_power_profile.clone();
+        state.last_observed_desktop_power_profile = Some(current.clone());
+        let change = previous.as_ref().and_then(|previous| {
+            if previous == &current {
+                None
+            } else {
+                Some((previous.clone(), current.clone()))
+            }
+        });
+        if let Some((previous, current)) = &change {
+            state
+                .recent_desktop_power_profile_changes
+                .push(DesktopPowerProfileChangeEvent {
+                    timestamp_unix_secs: unix_timestamp_secs(),
+                    previous_profile: previous.clone(),
+                    current_profile: current.clone(),
+                    source: "desktop_power_profile_observer".to_owned(),
+                });
+            let overflow = state
+                .recent_desktop_power_profile_changes
+                .len()
+                .saturating_sub(RECENT_DESKTOP_POWER_PROFILE_CHANGE_LIMIT);
+            if overflow > 0 {
+                state
+                    .recent_desktop_power_profile_changes
+                    .drain(0..overflow);
+            }
+        }
+        save_state(&self.state_path, &state)
+            .map_err(|error| fdo::Error::Failed(format!("failed to save daemon state: {error}")))?;
+        Ok(change)
     }
 
     pub fn set_gpu_mode(&self, requested: &str, sender: &str) -> fdo::Result<WriteExecutionResult> {
@@ -3417,6 +3468,10 @@ impl LegionControl {
         to_json(&self.recent_platform_profile_changes()?)
     }
 
+    fn GetRecentDesktopPowerProfileChanges(&self) -> fdo::Result<String> {
+        to_json(&self.recent_desktop_power_profile_changes()?)
+    }
+
     fn GetLastCurveOptimizerAllCore(&self) -> fdo::Result<String> {
         to_json(&self.last_curve_optimizer_all_core()?)
     }
@@ -3917,6 +3972,24 @@ pub fn spawn_automation_observer(
                     );
                 }
             }
+            match handle_desktop_power_profile_change_observer_tick(
+                &state_path,
+                &options,
+                write_policy.clone(),
+            ) {
+                Ok(Some(run)) => {
+                    eprintln!(
+                        "legion-control-daemon: desktop power profile changed trigger applied: profile={} completed={}",
+                        run.profile_id, run.completed
+                    );
+                }
+                Ok(None) => {}
+                Err(error) => {
+                    eprintln!(
+                        "legion-control-daemon: desktop power profile observer failed: {error}"
+                    );
+                }
+            }
             std::thread::sleep(AUTOMATION_OBSERVER_INTERVAL);
         });
 }
@@ -4004,6 +4077,66 @@ pub fn handle_platform_profile_change_observer_tick(
     ctl.record_current_platform_profile_observed()
         .map_err(|e| format!("failed to record post-trigger platform profile: {e}"))?;
     Ok(Some(run))
+}
+
+pub fn handle_desktop_power_profile_change_observer_tick(
+    state_path: &Path,
+    options: &ProbeOptions,
+    write_policy: WriteAccessPolicy,
+) -> Result<Option<HardwareProfileApplyRun>, String> {
+    let registry = probe(options);
+    let Some(current) = registry
+        .power_profiles
+        .and_then(|profiles| profiles.active_profile)
+    else {
+        return Ok(None);
+    };
+    handle_desktop_power_profile_change_observer_tick_with_current(
+        state_path,
+        options,
+        write_policy,
+        current,
+    )
+}
+
+pub fn handle_desktop_power_profile_change_observer_tick_with_current(
+    state_path: &Path,
+    options: &ProbeOptions,
+    write_policy: WriteAccessPolicy,
+    current: String,
+) -> Result<Option<HardwareProfileApplyRun>, String> {
+    let ctl = LegionControl::new_with_runtime(
+        options.clone(),
+        state_path.to_path_buf(),
+        write_policy,
+        Arc::new(InternalAuthorizer),
+        Arc::new(SysfsPlatformProfileWriter),
+        Arc::new(SysfsBatteryChargeTypeWriter),
+        Arc::new(SysfsLedStateWriter),
+        Arc::new(SysfsIdeapadToggleWriter),
+        Arc::new(SysfsCpuGovernorWriter),
+        Arc::new(SysfsCpuEppWriter),
+    );
+    let Some((previous, current)) = ctl
+        .observe_desktop_power_profile_change(current)
+        .map_err(|e| format!("desktop power profile observation failed: {e}"))?
+    else {
+        return Ok(None);
+    };
+    let triggers = ctl
+        .hardware_profile_triggers()
+        .map_err(|e| format!("hardware profile triggers unavailable: {e}"))?;
+    if !triggers.contains_key("desktop_power_profile_changed") {
+        return Ok(None);
+    }
+
+    ctl.apply_hardware_profile_trigger("desktop_power_profile_changed", AUTOMATION_OBSERVER_SENDER)
+        .map(Some)
+        .map_err(|e| {
+            format!(
+                "desktop power profile changed trigger failed after `{previous}` -> `{current}`: {e}"
+            )
+        })
 }
 
 pub fn handle_gpu_mode_reboot_completion_observer_tick(

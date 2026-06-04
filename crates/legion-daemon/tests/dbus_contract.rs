@@ -2,8 +2,8 @@ use std::{collections::BTreeMap, env, fs, os::unix::fs::PermissionsExt, sync::Ar
 
 use legion_common::{
     AutomationRuleKind, Capability, CapabilityRegistry, CurveOptimizerWriteState,
-    CustomThermalPlanPreview, FanCurveSnapshot, GpuModePending, HardwareSummary,
-    KeyboardRgbOpenRgbDevice, KeyboardRgbOpenRgbStatus, KeyboardRgbWriteRequest,
+    CustomThermalPlanPreview, DesktopPowerProfileChangeEvent, FanCurveSnapshot, GpuModePending,
+    HardwareSummary, KeyboardRgbOpenRgbDevice, KeyboardRgbOpenRgbStatus, KeyboardRgbWriteRequest,
     PlatformProfileChangeEvent, RyzenBackendStatus, TelemetrySnapshot, WriteDryRunPlan,
     WriteExecutionResult, WriteExecutionStatus,
 };
@@ -246,6 +246,7 @@ fn introspection_exposes_gated_reversible_write_methods_only() {
             "GetLastKnownGoodFanCurve",
             "GetLiveFanCurveReadings",
             "GetRawProbeReport",
+            "GetRecentDesktopPowerProfileChanges",
             "GetRecentPlatformProfileChanges",
             "GetRyzenBackendStatus",
             "GetTelemetry",
@@ -3513,6 +3514,113 @@ fn platform_profile_change_observer_applies_mapped_trigger_once() {
             &state_path,
         )
         .recent_platform_profile_changes()
+        .unwrap()
+        .len(),
+        1
+    );
+
+    let _ = fs::remove_file(state_path);
+    let _ = fs::remove_dir_all(fixture);
+}
+
+#[test]
+fn desktop_power_profile_change_observer_applies_mapped_trigger_once() {
+    let fixture = copied_fixture_root("desktop-power-profile-change-observer");
+    let state_path = unique_state_path("desktop-power-profile-change-observer");
+    let service = LegionControl::new_with_state_path(
+        ProbeOptions {
+            sysfs_root: fixture.clone(),
+        },
+        &state_path,
+    );
+    let profile_json = serde_json::json!({
+        "schema_version": 1,
+        "label": "Desktop power profile response",
+        "actions": {
+            "battery_charge_type": "Fast"
+        }
+    })
+    .to_string();
+    service
+        .set_hardware_profile("desktop_power_response", &profile_json)
+        .unwrap();
+    service
+        .set_hardware_profile_trigger("desktop_power_profile_changed", "desktop_power_response")
+        .unwrap();
+
+    let policy = WriteAccessPolicy {
+        battery_charge_type_enabled: true,
+        hardware_profile_apply_enabled: true,
+        ..Default::default()
+    };
+    let first =
+        legion_control_daemon::handle_desktop_power_profile_change_observer_tick_with_current(
+            &state_path,
+            &ProbeOptions {
+                sysfs_root: fixture.clone(),
+            },
+            policy.clone(),
+            "balanced".to_owned(),
+        )
+        .unwrap();
+    assert!(first.is_none());
+
+    let second =
+        legion_control_daemon::handle_desktop_power_profile_change_observer_tick_with_current(
+            &state_path,
+            &ProbeOptions {
+                sysfs_root: fixture.clone(),
+            },
+            policy.clone(),
+            "power-saver".to_owned(),
+        )
+        .unwrap()
+        .unwrap();
+    assert!(second.completed);
+    assert_eq!(second.profile_id, "desktop_power_response");
+    assert_eq!(
+        fs::read_to_string(fixture.join("sys/class/power_supply/BAT0/charge_type"))
+            .unwrap()
+            .trim(),
+        "Fast"
+    );
+    let history = LegionControl::new_with_state_path(
+        ProbeOptions {
+            sysfs_root: fixture.clone(),
+        },
+        &state_path,
+    )
+    .recent_desktop_power_profile_changes()
+    .unwrap();
+    assert_eq!(
+        history,
+        vec![DesktopPowerProfileChangeEvent {
+            timestamp_unix_secs: history[0].timestamp_unix_secs,
+            previous_profile: "balanced".to_owned(),
+            current_profile: "power-saver".to_owned(),
+            source: "desktop_power_profile_observer".to_owned(),
+        }]
+    );
+
+    let third =
+        legion_control_daemon::handle_desktop_power_profile_change_observer_tick_with_current(
+            &state_path,
+            &ProbeOptions {
+                sysfs_root: fixture.clone(),
+            },
+            policy,
+            "power-saver".to_owned(),
+        )
+        .unwrap();
+    assert!(third.is_none());
+    assert_eq!(
+        LegionControl::new_with_state_path(
+            ProbeOptions {
+                sysfs_root: fixture.clone(),
+            },
+            &state_path,
+        )
+        .recent_desktop_power_profile_changes()
         .unwrap()
         .len(),
         1

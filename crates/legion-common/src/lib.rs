@@ -68,6 +68,12 @@ pub struct DaemonState {
     /// Recent external platform profile changes observed by the daemon.
     #[serde(default)]
     pub recent_platform_profile_changes: Vec<PlatformProfileChangeEvent>,
+    /// Last desktop power profile sampled by the daemon-owned power-profile observer.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub last_observed_desktop_power_profile: Option<String>,
+    /// Recent desktop power profile changes observed by the daemon.
+    #[serde(default)]
+    pub recent_desktop_power_profile_changes: Vec<DesktopPowerProfileChangeEvent>,
     /// Daemon-owned automation rules. Rules resolve to hardware profiles before execution.
     #[serde(default)]
     pub automation_rules: BTreeMap<String, AutomationRule>,
@@ -90,6 +96,8 @@ impl Default for DaemonState {
             last_hardware_profile_apply: None,
             last_observed_platform_profile: None,
             recent_platform_profile_changes: Vec::new(),
+            last_observed_desktop_power_profile: None,
+            recent_desktop_power_profile_changes: Vec::new(),
             automation_rules: BTreeMap::new(),
             last_automation_rule_apply: BTreeMap::new(),
         }
@@ -101,6 +109,7 @@ pub const HARDWARE_PROFILE_TRIGGER_IDS: &[&str] = &[
     "ac_disconnected",
     "resume",
     "platform_profile_changed",
+    "desktop_power_profile_changed",
     "gpu_mode_reboot_completed",
     "manual",
 ];
@@ -252,6 +261,14 @@ pub struct AutomationRuleApplyRun {
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct PlatformProfileChangeEvent {
+    pub timestamp_unix_secs: u64,
+    pub previous_profile: String,
+    pub current_profile: String,
+    pub source: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct DesktopPowerProfileChangeEvent {
     pub timestamp_unix_secs: u64,
     pub previous_profile: String,
     pub current_profile: String,
@@ -3858,6 +3875,7 @@ mod tests {
     fn hardware_profile_trigger_ids_are_allowlisted() {
         assert!(validate_hardware_profile_trigger_id("ac_connected").is_ok());
         assert!(validate_hardware_profile_trigger_id("resume").is_ok());
+        assert!(validate_hardware_profile_trigger_id("desktop_power_profile_changed").is_ok());
         assert!(validate_hardware_profile_trigger_id("gpu_mode_reboot_completed").is_ok());
         assert!(matches!(
             validate_hardware_profile_trigger_id("lid_open"),

@@ -174,6 +174,9 @@ struct Args {
     #[arg(long)]
     recent_platform_profile_changes: bool,
 
+    #[arg(long)]
+    recent_desktop_power_profile_changes: bool,
+
     #[arg(long, value_name = "PROFILE_ID")]
     plan_hardware_profile: Option<String>,
 
@@ -287,6 +290,7 @@ fn main() -> Result<()> {
         args.automation_diagnostics,
         args.last_automation_rule_apply,
         args.recent_platform_profile_changes,
+        args.recent_desktop_power_profile_changes,
         args.plan_hardware_profile.is_some(),
         args.plan_hardware_profile_trigger.is_some(),
         args.apply_hardware_profile.is_some(),
@@ -436,12 +440,15 @@ fn main() -> Result<()> {
                 "last_automation_rule_apply": client.last_automation_rule_apply()?,
                 "last_hardware_profile_apply": client.last_hardware_profile_apply()?,
                 "recent_platform_profile_changes": client.recent_platform_profile_changes()?,
+                "recent_desktop_power_profile_changes": client.recent_desktop_power_profile_changes()?,
                 "hardware_profile_drift": diagnostics.hardware_profile_drift,
             }))?;
         } else if args.last_automation_rule_apply {
             print_json(&client.last_automation_rule_apply()?)?;
         } else if args.recent_platform_profile_changes {
             print_json(&client.recent_platform_profile_changes()?)?;
+        } else if args.recent_desktop_power_profile_changes {
+            print_json(&client.recent_desktop_power_profile_changes()?)?;
         } else if let Some(profile_id) = args.plan_hardware_profile {
             print_json(&client.hardware_profile_apply_preview(&profile_id)?)?;
         } else if let Some(trigger_id) = args.plan_hardware_profile_trigger {

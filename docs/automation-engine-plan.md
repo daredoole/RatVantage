@@ -64,6 +64,7 @@ Already modeled trigger IDs:
 - `ac_disconnected`
 - `resume`
 - `platform_profile_changed`
+- `desktop_power_profile_changed`
 - `gpu_mode_reboot_completed`
 
 `platform_profile_changed` is now daemon-owned when the opt-in automation
@@ -71,6 +72,13 @@ observer is enabled: the observer records a first-sample baseline, detects an
 external `platform_profile` value change, and applies the mapped hardware
 profile trigger through the existing profile-apply policy/validators/read-back
 path.
+
+`desktop_power_profile_changed` is daemon-owned when the opt-in automation
+observer is enabled: the observer records a first-sample baseline from the
+desktop PowerProfiles API, records recent changes, detects a subsequent KDE,
+GNOME, or power-profiles-daemon active-profile change, and applies the mapped
+hardware profile trigger through the existing profile-apply
+policy/validators/read-back path.
 
 `gpu_mode_reboot_completed` is daemon-owned when the opt-in automation observer
 is enabled: if the durable pending GPU mode matches the current EnvyControl
@@ -81,7 +89,6 @@ Needed additions:
 
 - Battery threshold trigger, sampled from `BAT*` capacity/status.
 - Periodic idle trigger with cooldown, for state correction.
-- Optional desktop power profile change trigger.
 
 Each trigger should be daemon-owned. The GTK UI configures mappings; it should
 not run background hardware writes itself.
@@ -310,3 +317,9 @@ Do not hide unsupported controls; show them as disabled with the reason.
 24. Done: promote the OpenRGB SDK fallback for daemon `SetKeyboardRgb` when the
     SDK backend is evidence-ready; live system-daemon dogfood applied Breathing
     with four-zone `#333333` read-back through `SetOpenRgbKeyboardRgbSdk`.
+25. Done: add `desktop_power_profile_changed` as a daemon-owned hardware-profile
+    trigger. The opt-in automation observer baselines and records desktop
+    PowerProfiles changes, applies a mapped profile through existing gates, CLI
+    exposes `--recent-desktop-power-profile-changes`, automation diagnostics
+    includes the history, and GTK Automations renders the trigger and recent
+    changes.
