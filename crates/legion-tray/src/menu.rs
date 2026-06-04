@@ -1,8 +1,13 @@
 use legion_common::{
-    CapabilityRegistry, FanCurveSnapshot, GpuModePending, HardwareProfileApplyRun, HwmonSensor,
+    format_gpu_switch_type, CapabilityRegistry, FanCurveSnapshot, GpuModePending,
+    HardwareProfileApplyRun, HwmonSensor, KeyboardRgbWriteRequest,
 };
-use legion_control_ui::UiStatus;
+use legion_control_ui::{GpuSwitchingDiagnostics, UiStatus};
+use std::collections::BTreeMap;
 use std::str::FromStr;
+
+const KEYBOARD_BACKLIGHT_LED: &str = "platform::kbd_backlight";
+const Y_LOGO_LED: &str = "platform::ylogo";
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum TrayAction {
@@ -11,6 +16,7 @@ pub enum TrayAction {
     SetBatteryChargeType(String),
     SetLedState(String, bool),
     SetIdeapadToggle(String, bool),
+    SetKeyboardRgbPreset(String),
     OpenDashboard,
     RefreshStatus,
     Quit,
@@ -36,6 +42,7 @@ impl TrayAction {
                     if *enabled { "on" } else { "off" }
                 )
             }
+            Self::SetKeyboardRgbPreset(preset) => format!("set_keyboard_rgb:{preset}"),
             Self::OpenDashboard => "open_dashboard".to_owned(),
             Self::RefreshStatus => "refresh_status".to_owned(),
             Self::Quit => "quit".to_owned(),
@@ -72,6 +79,11 @@ impl FromStr for TrayAction {
         if let Some(spec) = value.strip_prefix("set_ideapad_toggle:") {
             let (toggle_id, enabled) = parse_enabled_spec(value, spec)?;
             return Ok(Self::SetIdeapadToggle(toggle_id, enabled));
+        }
+        if let Some(preset) = value.strip_prefix("set_keyboard_rgb:") {
+            let preset = non_empty_arg(value, preset)?;
+            tray_keyboard_rgb_request(&preset)?;
+            return Ok(Self::SetKeyboardRgbPreset(preset));
         }
         Err(format!("unknown tray action `{value}`"))
     }
@@ -125,6 +137,7 @@ impl TrayMenu {
         status: &UiStatus,
         report: &CapabilityRegistry,
         gpu_pending: Option<&GpuModePending>,
+        gpu_switching: Option<&GpuSwitchingDiagnostics>,
         _fan_snapshot: Option<&FanCurveSnapshot>,
         hardware_profile_apply: Option<&HardwareProfileApplyRun>,
     ) -> Self {
@@ -178,6 +191,12 @@ impl TrayMenu {
         for toggle_row in ideapad_toggle_rows(report) {
             entries.push(TrayMenuEntry::Item(info_item(toggle_row)));
         }
+        if let Some(rgb_row) = keyboard_rgb_row(report) {
+            entries.push(TrayMenuEntry::Item(info_item(rgb_row)));
+        }
+        if let Some(openrgb_row) = keyboard_rgb_openrgb_row(report) {
+            entries.push(TrayMenuEntry::Item(info_item(openrgb_row)));
+        }
 
         for fan_row in fan_rows(&report.telemetry.sensors) {
             entries.push(TrayMenuEntry::Item(info_item(fan_row)));
@@ -185,6 +204,9 @@ impl TrayMenu {
 
         if let Some(gpu_row) = gpu_row(report, gpu_pending) {
             entries.push(TrayMenuEntry::Item(info_item(gpu_row)));
+        }
+        if let Some(gpu_switching_row) = gpu_switching_row(gpu_switching) {
+            entries.push(TrayMenuEntry::Item(info_item(gpu_switching_row)));
         }
 
         if let Some(profile_apply) = hardware_profile_apply {
@@ -348,6 +370,14 @@ fn append_quick_actions(entries: &mut Vec<TrayMenuEntry>, report: &CapabilityReg
         sections.push(section);
     }
 
+    if let Some(section) = keyboard_backlight_quick_action_section(report) {
+        sections.push(section);
+    }
+
+    if let Some(section) = keyboard_rgb_guidance_section(report) {
+        sections.push(section);
+    }
+
     if let Some(section) = ideapad_toggle_quick_action_section(report) {
         sections.push(section);
     }
@@ -414,7 +444,7 @@ fn led_quick_action_section(report: &CapabilityRegistry) -> Option<Vec<TrayMenuE
     let led = report
         .leds
         .iter()
-        .find(|led| led.name == "platform::ylogo" && led.max_brightness == Some(1))?;
+        .find(|led| led.name == Y_LOGO_LED && led.max_brightness == Some(1))?;
     let current = led.brightness?;
     if current != 0 && current != 1 {
         return None;
@@ -459,12 +489,214 @@ fn ideapad_toggle_rows(report: &CapabilityRegistry) -> Vec<String> {
 
 fn legion_led_row(led: &legion_common::LedCapability) -> Option<String> {
     let brightness = led.brightness?;
-    let state = binary_state_label(brightness)?;
 
     match led.name.as_str() {
-        "platform::ylogo" => Some(format!("Logo LED: {state}")),
+        Y_LOGO_LED => Some(format!("Logo LED: {}", binary_state_label(brightness)?)),
+        KEYBOARD_BACKLIGHT_LED => Some(format!(
+            "Keyboard backlight: {}",
+            backlight_level_label(brightness)
+        )),
         _ => None,
     }
+}
+
+fn keyboard_rgb_row(report: &CapabilityRegistry) -> Option<String> {
+    if let Some(rgb) = report.keyboard_rgb.as_ref() {
+        let effect = rgb.current_effect.as_deref().unwrap_or("unknown");
+        return Some(format!(
+            "Keyboard RGB: {} zones / effect {}",
+            rgb.zones.len(),
+            humanize_choice(effect)
+        ));
+    }
+
+    let candidates = &report.keyboard_rgb_candidates;
+    if candidates.is_empty() {
+        return None;
+    }
+    let mut ids = candidates
+        .iter()
+        .filter_map(|candidate| {
+            match (
+                candidate.vendor_id.as_deref(),
+                candidate.product_id.as_deref(),
+            ) {
+                (Some(vendor), Some(product)) => Some(format!("{vendor}:{product}")),
+                _ => None,
+            }
+        })
+        .collect::<Vec<_>>();
+    ids.sort();
+    ids.dedup();
+    let ids = if ids.is_empty() {
+        "unknown VID:PID".to_owned()
+    } else {
+        ids.join(", ")
+    };
+    Some(format!(
+        "Keyboard RGB: {} HID research candidate{} ({ids})",
+        candidates.len(),
+        if candidates.len() == 1 { "" } else { "s" }
+    ))
+}
+
+fn keyboard_rgb_openrgb_row(report: &CapabilityRegistry) -> Option<String> {
+    let openrgb = report.keyboard_rgb_openrgb.as_ref()?;
+    if !openrgb.installed {
+        return Some("Keyboard RGB OpenRGB: not installed".to_owned());
+    }
+    let Some(device) = openrgb.devices.first() else {
+        return Some("Keyboard RGB OpenRGB: installed, keyboard not detected".to_owned());
+    };
+    let modes = if device.modes.is_empty() {
+        "modes unknown".to_owned()
+    } else {
+        device.modes.join(", ")
+    };
+    Some(format!(
+        "Keyboard RGB OpenRGB: {} ({modes}) backend_ready={}",
+        device.description.as_deref().unwrap_or(&device.name),
+        openrgb.backend_ready
+    ))
+}
+
+fn keyboard_backlight_quick_action_section(
+    report: &CapabilityRegistry,
+) -> Option<Vec<TrayMenuEntry>> {
+    let led = report
+        .leds
+        .iter()
+        .find(|led| led.name == KEYBOARD_BACKLIGHT_LED && led.max_brightness.unwrap_or(0) >= 1)?;
+    let current = led.brightness?;
+    if current < 0 {
+        return None;
+    }
+
+    let mut entries = vec![TrayMenuEntry::Item(info_item(format!(
+        "Keyboard backlight (current: {}, guarded)",
+        backlight_level_label(current)
+    )))];
+    entries.push(TrayMenuEntry::Item(action_item(
+        "Turn off",
+        TrayAction::SetLedState(led.name.clone(), false),
+    )));
+    entries.push(TrayMenuEntry::Item(action_item(
+        "Turn on",
+        TrayAction::SetLedState(led.name.clone(), true),
+    )));
+    for entry in &mut entries {
+        if let TrayMenuEntry::Item(item) = entry {
+            if item.label == "Turn off" && current == 0 {
+                item.label = "Turn off (current)".to_owned();
+                item.enabled = false;
+                item.action = TrayAction::NoOp;
+            }
+            if item.label == "Turn on" && current > 0 {
+                item.label = "Turn on (current)".to_owned();
+                item.enabled = false;
+                item.action = TrayAction::NoOp;
+            }
+        }
+    }
+    Some(entries)
+}
+
+fn keyboard_rgb_guidance_section(report: &CapabilityRegistry) -> Option<Vec<TrayMenuEntry>> {
+    if let Some(section) = keyboard_rgb_quick_action_section(report) {
+        return Some(section);
+    }
+
+    if report.keyboard_rgb_candidates.is_empty() {
+        return None;
+    }
+
+    Some(vec![
+        TrayMenuEntry::Item(info_item(format!(
+            "Keyboard RGB research ({} candidate{}, no safe write backend)",
+            report.keyboard_rgb_candidates.len(),
+            if report.keyboard_rgb_candidates.len() == 1 {
+                ""
+            } else {
+                "s"
+            }
+        ))),
+        TrayMenuEntry::Item(action_item("RGB evidence", TrayAction::OpenDashboard)),
+    ])
+}
+
+fn keyboard_rgb_quick_action_section(report: &CapabilityRegistry) -> Option<Vec<TrayMenuEntry>> {
+    let (current, modes, backend_label) = if let Some(rgb) = report.keyboard_rgb.as_ref() {
+        (
+            rgb.current_effect.as_deref(),
+            rgb.effects.as_slice(),
+            "native backend",
+        )
+    } else {
+        let openrgb = report.keyboard_rgb_openrgb.as_ref()?;
+        if !openrgb.backend_ready {
+            return None;
+        }
+        let device = openrgb.devices.first()?;
+        (
+            device.current_mode.as_deref(),
+            device.modes.as_slice(),
+            "OpenRGB SDK",
+        )
+    };
+
+    let mut entries = vec![TrayMenuEntry::Item(info_item(format!(
+        "Keyboard RGB (current: {}, guarded via {backend_label})",
+        current
+            .map(humanize_choice)
+            .unwrap_or_else(|| "Unknown".to_owned())
+    )))];
+
+    for (preset, label, effect) in [
+        ("direct-dim", "Static dim", "Direct"),
+        ("breathing-dim", "Breathing dim", "Breathing"),
+        ("rainbow-wave", "Rainbow wave", "Rainbow Wave"),
+        ("spectrum-cycle", "Spectrum cycle", "Spectrum Cycle"),
+    ] {
+        if modes.iter().any(|mode| mode.eq_ignore_ascii_case(effect)) {
+            entries.push(TrayMenuEntry::Item(action_item(
+                label,
+                TrayAction::SetKeyboardRgbPreset(preset.to_owned()),
+            )));
+        }
+    }
+
+    entries.push(TrayMenuEntry::Item(action_item(
+        "RGB settings",
+        TrayAction::OpenDashboard,
+    )));
+
+    if entries.len() <= 2 {
+        None
+    } else {
+        Some(entries)
+    }
+}
+
+pub fn tray_keyboard_rgb_request(preset: &str) -> Result<KeyboardRgbWriteRequest, String> {
+    let effect = match preset {
+        "direct-dim" => "Direct",
+        "breathing-dim" => "Breathing",
+        "rainbow-wave" => "Rainbow Wave",
+        "spectrum-cycle" => "Spectrum Cycle",
+        _ => return Err(format!("unknown keyboard RGB tray preset `{preset}`")),
+    };
+
+    Ok(KeyboardRgbWriteRequest {
+        effect: effect.to_owned(),
+        colors: BTreeMap::from([
+            ("left_side".to_owned(), "#333333".to_owned()),
+            ("left_center".to_owned(), "#333333".to_owned()),
+            ("right_center".to_owned(), "#333333".to_owned()),
+            ("right_side".to_owned(), "#333333".to_owned()),
+        ]),
+        brightness: 40,
+        speed: Some(30),
+    })
 }
 
 fn legion_toggle_row(toggle: &legion_common::IdeapadToggleCapability) -> Option<String> {
@@ -484,6 +716,13 @@ fn binary_state_label(value: i64) -> Option<&'static str> {
         0 => Some("off"),
         1 => Some("on"),
         _ => None,
+    }
+}
+
+fn backlight_level_label(value: i64) -> String {
+    match binary_state_label(value) {
+        Some(label) => label.to_owned(),
+        None => format!("level {value}"),
     }
 }
 
@@ -634,20 +873,52 @@ fn gpu_row(report: &CapabilityRegistry, gpu_pending: Option<&GpuModePending>) ->
         return Some(detail);
     }
 
-    report
-        .gpu
-        .as_ref()
-        .and_then(|gpu| gpu.mode.as_deref())
-        .map(|mode| format!("GPU: {mode}"))
+    report.gpu.as_ref().and_then(|gpu| {
+        gpu.mode.as_deref().map(|mode| {
+            format!(
+                "GPU: {mode} (switch type: {})",
+                format_gpu_switch_type(gpu.switch_type)
+            )
+        })
+    })
+}
+
+fn gpu_switching_row(gpu_switching: Option<&GpuSwitchingDiagnostics>) -> Option<String> {
+    let gpu_switching = gpu_switching?;
+    if gpu_switching.status == "unavailable" {
+        return None;
+    }
+
+    let mut details = vec![
+        format!("switch type {}", gpu_switching.switch_type),
+        if gpu_switching.runtime_plan_available {
+            "runtime plan available".to_owned()
+        } else {
+            "runtime plan blocked".to_owned()
+        },
+    ];
+    if let Some(provider) = gpu_switching.provider.as_deref() {
+        details.push(format!("provider {provider}"));
+    }
+    if let Some(mode) = gpu_switching.current_mode.as_deref() {
+        details.push(format!("mode {mode}"));
+    }
+
+    Some(format!(
+        "GPU switching: {} ({})",
+        humanize_choice(&gpu_switching.status),
+        details.join("; ")
+    ))
 }
 
 #[cfg(test)]
 mod tests {
     use legion_common::{
         BatteryChargeTypeCapability, BatteryTelemetry, Capability, CapabilityRegistry,
-        CapabilityStatus, FanCurvePointSnapshot, FanCurveSnapshot, GpuModePending,
-        HardwareProfileApplyRun, HardwareSummary, HwmonSensor, IdeapadToggleCapability,
-        LedCapability, PlatformProfileCapability, PowerProfilesCapability, RiskLevel,
+        CapabilityStatus, FanCurvePointSnapshot, FanCurveSnapshot, GpuCapability, GpuModePending,
+        GpuSwitchType, HardwareProfileApplyRun, HardwareSummary, HwmonSensor,
+        IdeapadToggleCapability, KeyboardRgbOpenRgbDevice, KeyboardRgbOpenRgbStatus, LedCapability,
+        PlatformProfileCapability, PowerProfilesCapability, RiskLevel,
     };
 
     use super::*;
@@ -737,6 +1008,12 @@ mod tests {
                     brightness: Some(1),
                     max_brightness: Some(1),
                 },
+                LedCapability {
+                    name: "platform::kbd_backlight".to_owned(),
+                    path: "/tmp/platform::kbd_backlight/brightness".to_owned(),
+                    brightness: Some(1),
+                    max_brightness: Some(2),
+                },
             ],
             ideapad_toggles: vec![
                 IdeapadToggleCapability {
@@ -764,12 +1041,62 @@ mod tests {
                     current_value: Some("0".to_owned()),
                 },
             ],
+            keyboard_rgb_openrgb: Some(KeyboardRgbOpenRgbStatus {
+                installed: true,
+                path: Some("/usr/bin/openrgb".to_owned()),
+                devices: vec![KeyboardRgbOpenRgbDevice {
+                    index: 0,
+                    name: "Lenovo 5 2023".to_owned(),
+                    device_type: Some("Laptop".to_owned()),
+                    description: Some("Lenovo 4-Zone device".to_owned()),
+                    modes: vec![
+                        "Direct".to_owned(),
+                        "Breathing".to_owned(),
+                        "Rainbow Wave".to_owned(),
+                        "Spectrum Cycle".to_owned(),
+                    ],
+                    current_mode: Some("Direct".to_owned()),
+                    zones: vec!["Keyboard".to_owned()],
+                    leds: vec![
+                        "Left side".to_owned(),
+                        "Left center".to_owned(),
+                        "Right center".to_owned(),
+                        "Right side".to_owned(),
+                    ],
+                }],
+                i2c_dev_loaded: true,
+                user_in_i2c_group: true,
+                has_i2c_rw_access: true,
+                has_hidraw_rw_access: true,
+                backend_ready: false,
+                write_support_claimed: false,
+                sdk_helper_installed: false,
+                sdk_helper_path: None,
+                sdk_server_running: false,
+                sdk_snapshot_supported: false,
+                sdk_active_mode: None,
+                sdk_color_zones: vec![],
+                sdk_colors: std::collections::BTreeMap::new(),
+            }),
             ..Default::default()
         };
         let gpu_pending = GpuModePending {
             requested_mode: "hybrid".to_owned(),
             previous_mode: Some("nvidia".to_owned()),
             reboot_required: true,
+        };
+        let gpu_switching = GpuSwitchingDiagnostics {
+            status: "runtime_mux_research_blocked".to_owned(),
+            provider: Some("fixture-mux".to_owned()),
+            current_mode: Some("hybrid".to_owned()),
+            switch_type: "runtime-mux".to_owned(),
+            execution_model: "runtime_mux".to_owned(),
+            runtime_plan_available: false,
+            blockers: vec!["no automatic display recovery evidence has been captured".to_owned()],
+            evidence: vec!["provider=fixture-mux".to_owned()],
+            next_action:
+                "capture read-only mux state and recovery evidence before adding a switch plan"
+                    .to_owned(),
         };
         let fan_snapshot = FanCurveSnapshot {
             curve_id: "legion_hwmon".to_owned(),
@@ -792,6 +1119,7 @@ mod tests {
             &status,
             &report,
             Some(&gpu_pending),
+            Some(&gpu_switching),
             Some(&fan_snapshot),
             Some(&profile_apply),
         );
@@ -805,11 +1133,14 @@ mod tests {
                 "Charge type: Standard",
                 "Battery: 79% / Charging / Good",
                 "Logo LED: on",
+                "Keyboard backlight: on",
                 "Fn-lock: off",
                 "Camera power: on",
                 "USB charging: off",
+                "Keyboard RGB OpenRGB: Lenovo 4-Zone device (Direct, Breathing, Rainbow Wave, Spectrum Cycle) backend_ready=false",
                 "Fan: CPU Fan 2410 RPM",
                 "GPU: switch to hybrid pending (was nvidia) — reboot required",
+                "GPU switching: Runtime Mux Research Blocked (switch type runtime-mux; runtime plan blocked; provider fixture-mux; mode hybrid)",
                 "Last profile apply: co_test stopped: hardware profile apply stopped after first non-applied action",
                 "Unavailable: gpu",
                 "Platform profile (current: Balanced)",
@@ -817,6 +1148,8 @@ mod tests {
                 "Battery charging (current: Standard)",
                 "Standard (current)",
                 "Logo light (current: on, guarded)",
+                "Turn on (current)",
+                "Keyboard backlight (current: on, guarded)",
                 "Turn on (current)",
                 "Fn-lock (current: off)",
                 "Turn off (current)",
@@ -832,6 +1165,7 @@ mod tests {
                 "Conservation",
                 "Fast",
                 "Turn off",
+                "Turn off",
                 "Turn on",
                 "Camera settings",
                 "USB charging settings",
@@ -843,6 +1177,9 @@ mod tests {
         assert!(!menu_labels(&menu)
             .iter()
             .any(|label| label.contains("input12::capslock")));
+        assert!(menu_labels(&menu)
+            .iter()
+            .any(|label| label == &"Keyboard backlight: on"));
         assert!(!menu_labels(&menu)
             .iter()
             .any(|label| label.contains("conservation_mode")));
@@ -855,6 +1192,117 @@ mod tests {
         assert!(!menu_labels(&menu)
             .iter()
             .any(|label| label.starts_with("Fan presets:")));
+    }
+
+    #[test]
+    fn menu_builder_adds_keyboard_rgb_presets_when_openrgb_sdk_is_ready() {
+        let status = UiStatus::from_parts(
+            HardwareSummary {
+                sysfs_root: "/tmp/fixture".to_owned(),
+                vendor: Some("LENOVO".to_owned()),
+                product_name: Some("82WM".to_owned()),
+                product_version: Some("Legion Pro 5 16ARX8".to_owned()),
+                product_sku: None,
+            },
+            vec![capability(
+                "keyboard_rgb_openrgb",
+                CapabilityStatus::ProbeOnly,
+            )],
+        )
+        .unwrap();
+        let report = CapabilityRegistry {
+            keyboard_rgb_openrgb: Some(KeyboardRgbOpenRgbStatus {
+                installed: true,
+                path: Some("/usr/bin/openrgb".to_owned()),
+                devices: vec![KeyboardRgbOpenRgbDevice {
+                    index: 0,
+                    name: "Lenovo 5 2023".to_owned(),
+                    device_type: Some("Laptop".to_owned()),
+                    description: Some("Lenovo 4-Zone device".to_owned()),
+                    modes: vec![
+                        "Direct".to_owned(),
+                        "Breathing".to_owned(),
+                        "Rainbow Wave".to_owned(),
+                        "Spectrum Cycle".to_owned(),
+                    ],
+                    current_mode: Some("Breathing".to_owned()),
+                    zones: vec!["Keyboard".to_owned()],
+                    leds: vec![
+                        "Left side".to_owned(),
+                        "Left center".to_owned(),
+                        "Right center".to_owned(),
+                        "Right side".to_owned(),
+                    ],
+                }],
+                i2c_dev_loaded: true,
+                user_in_i2c_group: false,
+                has_i2c_rw_access: true,
+                has_hidraw_rw_access: true,
+                backend_ready: true,
+                write_support_claimed: true,
+                sdk_helper_installed: true,
+                sdk_helper_path: Some(
+                    "/home/darrian/.local/bin/ratvantage-openrgb-keyboard-rgb-sdk-helper"
+                        .to_owned(),
+                ),
+                sdk_server_running: true,
+                sdk_snapshot_supported: true,
+                sdk_active_mode: Some("Breathing".to_owned()),
+                sdk_color_zones: vec![
+                    "left_center".to_owned(),
+                    "left_side".to_owned(),
+                    "right_center".to_owned(),
+                    "right_side".to_owned(),
+                ],
+                sdk_colors: std::collections::BTreeMap::new(),
+            }),
+            ..Default::default()
+        };
+
+        let menu = TrayMenu::from_status_and_report(&status, &report, None, None, None, None);
+        let labels = menu_labels(&menu);
+
+        assert!(labels.iter().any(|label| {
+            label == &"Keyboard RGB (current: Breathing, guarded via OpenRGB SDK)"
+        }));
+        assert_eq!(
+            enabled_labels(&menu)
+                .into_iter()
+                .filter(|label| matches!(
+                    *label,
+                    "Static dim" | "Breathing dim" | "Rainbow wave" | "Spectrum cycle"
+                ))
+                .collect::<Vec<_>>(),
+            [
+                "Static dim",
+                "Breathing dim",
+                "Rainbow wave",
+                "Spectrum cycle"
+            ]
+        );
+        assert!(menu.entries.iter().any(|entry| matches!(
+            entry,
+            TrayMenuEntry::Item(item)
+                if item.action == TrayAction::SetKeyboardRgbPreset("breathing-dim".to_owned())
+        )));
+    }
+
+    #[test]
+    fn tray_keyboard_rgb_action_parser_accepts_known_presets() {
+        assert_eq!(
+            "set_keyboard_rgb:breathing-dim".parse::<TrayAction>(),
+            Ok(TrayAction::SetKeyboardRgbPreset("breathing-dim".to_owned()))
+        );
+        assert!("set_keyboard_rgb:unknown".parse::<TrayAction>().is_err());
+
+        let request = tray_keyboard_rgb_request("breathing-dim").unwrap();
+        assert_eq!(request.effect, "Breathing");
+        assert_eq!(request.brightness, 40);
+        assert_eq!(request.speed, Some(30));
+        assert_eq!(
+            request.colors.get("left_side").map(String::as_str),
+            Some("#333333")
+        );
     }
 
     #[test]
@@ -874,6 +1322,7 @@ mod tests {
         let menu = TrayMenu::from_status_and_report(
             &status,
             &CapabilityRegistry::default(),
+            None,
             None,
             None,
             None,
@@ -930,7 +1379,7 @@ mod tests {
             ..Default::default()
         };
 
-        let menu = TrayMenu::from_status_and_report(&status, &report, None, None, None);
+        let menu = TrayMenu::from_status_and_report(&status, &report, None, None, None, None);
 
         assert!(!menu_labels(&menu)
             .iter()
@@ -952,6 +1401,9 @@ mod tests {
     #[test]
     fn menu_builder_keeps_dashboard_refresh_quit_after_quick_action_sections() {
         let menu = menu_builder_fixture();
+        assert!(menu_labels(&menu)
+            .iter()
+            .any(|label| label == &"GPU: integrated (switch type: reboot-required)"));
         let enabled = enabled_labels(&menu);
         assert_eq!(
             &enabled[enabled.len().saturating_sub(3)..],
@@ -1006,6 +1458,13 @@ mod tests {
                 path: "/tmp/charge_type".to_owned(),
                 choices_path: "/tmp/charge_types".to_owned(),
             }),
+            gpu: Some(GpuCapability {
+                provider: "envycontrol".to_owned(),
+                status: CapabilityStatus::ProbeOnly,
+                mode: Some("integrated".to_owned()),
+                switch_type: GpuSwitchType::RebootRequired,
+                switch_notes: vec!["envycontrol switch evidence".to_owned()],
+            }),
             leds: vec![
                 LedCapability {
                     name: "platform::fnlock".to_owned(),
@@ -1043,7 +1502,7 @@ mod tests {
             ..Default::default()
         };
 
-        TrayMenu::from_status_and_report(&status, &report, None, None, None)
+        TrayMenu::from_status_and_report(&status, &report, None, None, None, None)
     }
 
     fn disabled_labels(menu: &TrayMenu) -> Vec<&str> {

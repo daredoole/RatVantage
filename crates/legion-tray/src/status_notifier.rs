@@ -14,12 +14,18 @@ use ksni::blocking::TrayMethods;
 use ksni::menu::StandardItem;
 use ksni::{Category, MenuItem, Status, ToolTip, Tray};
 use legion_common::WriteExecutionResult;
-use legion_control_ui::{runtime_refresh_notice, LegionControlClient, RuntimeSnapshot};
+use legion_control_ui::{
+    runtime_refresh_notice, FanCurveDriftReport, HardwareProfileDriftReport, LegionControlClient,
+    RuntimeSnapshot,
+};
 use zbus::blocking::{Connection, MessageIterator, Proxy};
 use zbus::zvariant::OwnedValue;
 use zbus::MatchRule;
 
-use crate::{DesktopSession, TrayAction, TrayMenu, TrayMenuEntry, TrayMenuItem, TraySummary};
+use crate::{
+    tray_keyboard_rgb_request, DesktopSession, TrayAction, TrayMenu, TrayMenuEntry, TrayMenuItem,
+    TraySummary,
+};
 
 const TRAY_ID: &str = "org.ratvantage.LegionControl";
 const ICON_NAME: &str = "applications-system";
@@ -181,7 +187,8 @@ impl StatusNotifierTray {
             TrayAction::SetPlatformProfile(_)
             | TrayAction::SetBatteryChargeType(_)
             | TrayAction::SetLedState(_, _)
-            | TrayAction::SetIdeapadToggle(_, _) => self.execute_write_action(action),
+            | TrayAction::SetIdeapadToggle(_, _)
+            | TrayAction::SetKeyboardRgbPreset(_) => self.execute_write_action(action),
             TrayAction::OpenDashboard => self.open_dashboard(),
             TrayAction::RefreshStatus => self.refresh_status(),
             TrayAction::Quit => self.request_shutdown(),
@@ -427,6 +434,7 @@ fn load_tray_state(bus_address: Option<&str>) -> Result<LoadedTrayState> {
     let status = snapshot.status.clone();
     let report = snapshot.diagnostics.raw_probe_report.clone();
     let gpu_pending = snapshot.diagnostics.gpu_mode_pending.clone();
+    let gpu_switching = snapshot.diagnostics.gpu_switching.clone();
     let fan_snapshot = snapshot.diagnostics.last_known_good_fan_curve.clone();
     let hardware_profile_apply = snapshot.diagnostics.last_hardware_profile_apply.clone();
     Ok(LoadedTrayState {
@@ -434,6 +442,7 @@ fn load_tray_state(bus_address: Option<&str>) -> Result<LoadedTrayState> {
             &status,
             &report,
             gpu_pending.as_ref(),
+            Some(&gpu_switching),
             fan_snapshot.as_ref(),
             hardware_profile_apply.as_ref(),
         ),
@@ -441,6 +450,7 @@ fn load_tray_state(bus_address: Option<&str>) -> Result<LoadedTrayState> {
             &status,
             &report,
             gpu_pending.as_ref(),
+            Some(&gpu_switching),
             fan_snapshot.as_ref(),
             hardware_profile_apply.as_ref(),
         ),
@@ -465,6 +475,10 @@ fn execute_tray_action(
         TrayAction::SetLedState(led_id, enabled) => client.set_led_state(led_id, *enabled),
         TrayAction::SetIdeapadToggle(toggle_id, enabled) => {
             client.set_ideapad_toggle(toggle_id, *enabled)
+        }
+        TrayAction::SetKeyboardRgbPreset(preset) => {
+            let request = tray_keyboard_rgb_request(preset).map_err(anyhow::Error::msg)?;
+            client.set_keyboard_rgb(&request)
         }
         _ => anyhow::bail!("unsupported tray write action"),
     }
@@ -499,6 +513,12 @@ fn state_change_notifications(
         notifications.push(notification);
     }
     if let Some(notification) = battery_charge_type_change_notification(previous, current) {
+        notifications.push(notification);
+    }
+    if let Some(notification) = hardware_profile_drift_notification(previous, current) {
+        notifications.push(notification);
+    }
+    if let Some(notification) = fan_curve_drift_notification(previous, current) {
         notifications.push(notification);
     }
     notifications
@@ -554,6 +574,162 @@ fn current_battery_charge_type(snapshot: &RuntimeSnapshot) -> Option<&str> {
         .battery_charge_type
         .as_ref()
         .and_then(|charge_type| charge_type.current.as_deref())
+}
+
+fn hardware_profile_drift_notification(
+    previous: Option<&RuntimeSnapshot>,
+    current: &RuntimeSnapshot,
+) -> Option<DesktopNotification> {
+    let current_drift = &current.diagnostics.hardware_profile_drift;
+    if current_drift.status != "drifted" || current_drift.drifted_count == 0 {
+        return None;
+    }
+    if previous
+        .map(|previous| {
+            same_hardware_profile_drift(&previous.diagnostics.hardware_profile_drift, current_drift)
+        })
+        .unwrap_or(false)
+    {
+        return None;
+    }
+
+    Some(DesktopNotification {
+        key: "hardware_profile_drift",
+        title: "Hardware profile drift".to_owned(),
+        body: format!(
+            "{} — last hardware profile {} drifted: {} of {} checked action(s) differ{}",
+            notification_machine_label(current),
+            current_drift.profile_id.as_deref().unwrap_or("unknown"),
+            current_drift.drifted_count,
+            current_drift.checked_count,
+            hardware_profile_drift_first_item(current_drift),
+        ),
+    })
+}
+
+fn same_hardware_profile_drift(
+    previous: &HardwareProfileDriftReport,
+    current: &HardwareProfileDriftReport,
+) -> bool {
+    previous.status == current.status
+        && previous.profile_id == current.profile_id
+        && previous.drifted_count == current.drifted_count
+        && previous.checked_count == current.checked_count
+        && previous
+            .items
+            .iter()
+            .filter(|item| item.status == "drifted")
+            .map(|item| {
+                (
+                    item.action_id.as_str(),
+                    item.requested_value.as_str(),
+                    item.current_value.as_deref(),
+                )
+            })
+            .collect::<Vec<_>>()
+            == current
+                .items
+                .iter()
+                .filter(|item| item.status == "drifted")
+                .map(|item| {
+                    (
+                        item.action_id.as_str(),
+                        item.requested_value.as_str(),
+                        item.current_value.as_deref(),
+                    )
+                })
+                .collect::<Vec<_>>()
+}
+
+fn hardware_profile_drift_first_item(drift: &HardwareProfileDriftReport) -> String {
+    drift
+        .items
+        .iter()
+        .find(|item| item.status == "drifted")
+        .map(|item| {
+            format!(
+                " ({}: requested {}, current {})",
+                item.action_id,
+                item.requested_value,
+                item.current_value.as_deref().unwrap_or("unknown")
+            )
+        })
+        .unwrap_or_default()
+}
+
+fn fan_curve_drift_notification(
+    previous: Option<&RuntimeSnapshot>,
+    current: &RuntimeSnapshot,
+) -> Option<DesktopNotification> {
+    let current_drift = &current.diagnostics.fan_curve_drift;
+    if current_drift.status != "drifted" || current_drift.drifted_count == 0 {
+        return None;
+    }
+    if previous
+        .map(|previous| same_fan_curve_drift(&previous.diagnostics.fan_curve_drift, current_drift))
+        .unwrap_or(false)
+    {
+        return None;
+    }
+
+    Some(DesktopNotification {
+        key: "fan_curve_drift",
+        title: "Fan curve drift".to_owned(),
+        body: format!(
+            "{} — live fan curve drifted from the saved snapshot: {} of {} checked point(s) differ{}",
+            notification_machine_label(current),
+            current_drift.drifted_count,
+            current_drift.checked_count,
+            fan_curve_drift_first_item(current_drift),
+        ),
+    })
+}
+
+fn same_fan_curve_drift(previous: &FanCurveDriftReport, current: &FanCurveDriftReport) -> bool {
+    previous.status == current.status
+        && previous.curve_id == current.curve_id
+        && previous.drifted_count == current.drifted_count
+        && previous.checked_count == current.checked_count
+        && previous
+            .items
+            .iter()
+            .filter(|item| item.status != "in_sync")
+            .map(|item| {
+                (
+                    item.path.as_str(),
+                    item.saved_value.as_str(),
+                    item.live_value.as_deref(),
+                )
+            })
+            .collect::<Vec<_>>()
+            == current
+                .items
+                .iter()
+                .filter(|item| item.status != "in_sync")
+                .map(|item| {
+                    (
+                        item.path.as_str(),
+                        item.saved_value.as_str(),
+                        item.live_value.as_deref(),
+                    )
+                })
+                .collect::<Vec<_>>()
+}
+
+fn fan_curve_drift_first_item(drift: &FanCurveDriftReport) -> String {
+    drift
+        .items
+        .iter()
+        .find(|item| item.status != "in_sync")
+        .map(|item| {
+            format!(
+                " ({}: saved {}, live {})",
+                item.path,
+                item.saved_value,
+                item.live_value.as_deref().unwrap_or("missing")
+            )
+        })
+        .unwrap_or_default()
 }
 
 fn notification_machine_label(snapshot: &RuntimeSnapshot) -> String {
@@ -712,6 +888,7 @@ fn is_write_action(action: &TrayAction) -> bool {
             | TrayAction::SetBatteryChargeType(_)
             | TrayAction::SetLedState(_, _)
             | TrayAction::SetIdeapadToggle(_, _)
+            | TrayAction::SetKeyboardRgbPreset(_)
     )
 }
 
@@ -763,6 +940,7 @@ fn write_target_label(method: &str) -> &'static str {
         "SetBatteryChargeType" => "battery charging",
         "SetLedState" => "LED",
         "SetIdeapadToggle" => "toggle",
+        "SetKeyboardRgb" | "SetOpenRgbKeyboardRgbSdk" => "keyboard RGB",
         _ => "setting",
     }
 }
@@ -1034,6 +1212,39 @@ mod tests {
     }
 
     #[test]
+    fn status_notifier_activation_executes_keyboard_rgb_preset_action() {
+        let shutdown_requested = Arc::new(AtomicBool::new(false));
+        let state = Arc::new(std::sync::Mutex::new(tray_state_fixture(
+            "balanced", "Standard", true, false,
+        )));
+        let menu = state.lock().unwrap().menu.clone();
+        let tray = StatusNotifierTray::new_with_runtime(
+            summary(),
+            menu,
+            None,
+            shutdown_requested,
+            loader_for_state(Arc::clone(&state)),
+            Arc::new(move |_, action| match action {
+                TrayAction::SetKeyboardRgbPreset(preset) => Ok(applied_result(
+                    "SetOpenRgbKeyboardRgbSdk",
+                    &format!("preset={preset}"),
+                )),
+                other => anyhow::bail!("unexpected action {other:?}"),
+            }),
+            noop_notification_sender(),
+        );
+        let mut tray = tray;
+
+        tray.handle_action(TrayAction::SetKeyboardRgbPreset("breathing-dim".to_owned()));
+
+        assert!(tray.last_error.is_none());
+        assert_eq!(
+            tray.last_write_status.as_deref(),
+            Some("Changed keyboard RGB to Preset=breathing Dim.")
+        );
+    }
+
+    #[test]
     fn status_notifier_activation_preserves_menu_and_records_error_on_write_failure() {
         let shutdown_requested = Arc::new(AtomicBool::new(false));
         let notifications = Arc::new(std::sync::Mutex::new(Vec::<DesktopNotification>::new()));
@@ -1188,6 +1399,83 @@ mod tests {
                 key: "battery_charge_type",
                 title: "Battery charging".to_owned(),
                 body: "82WM Legion Pro 5 16ARX8 — charging mode is now Long Life.".to_owned(),
+            }]
+        );
+    }
+
+    #[test]
+    fn refresh_status_records_hardware_profile_drift_notification_once() {
+        let shutdown_requested = Arc::new(AtomicBool::new(false));
+        let initial = tray_state_fixture("balanced", "Standard", true, false);
+        let drifted =
+            with_hardware_profile_drift(tray_state_fixture("balanced", "Standard", true, false));
+        let snapshots = Arc::new(std::sync::Mutex::new(vec![drifted.clone(), drifted]));
+        let notifications = Arc::new(std::sync::Mutex::new(Vec::<DesktopNotification>::new()));
+        let tray = StatusNotifierTray::new_with_runtime(
+            summary(),
+            initial.menu.clone(),
+            None,
+            shutdown_requested,
+            Arc::new({
+                let snapshots = Arc::clone(&snapshots);
+                move |_| {
+                    let mut guard = snapshots.lock().unwrap();
+                    Ok(guard.remove(0))
+                }
+            }),
+            Arc::new(|_, _| anyhow::bail!("unexpected action")),
+            recording_notification_sender(Arc::clone(&notifications)),
+        )
+        .with_snapshot(initial.snapshot);
+        let mut tray = tray;
+
+        tray.refresh_status();
+        tray.refresh_status();
+
+        assert_eq!(
+            notifications.lock().unwrap().as_slice(),
+            &[DesktopNotification {
+                key: "hardware_profile_drift",
+                title: "Hardware profile drift".to_owned(),
+                body: "82WM Legion Pro 5 16ARX8 — last hardware profile gaming drifted: 1 of 1 checked action(s) differ (platform_profile: requested performance, current balanced)".to_owned(),
+            }]
+        );
+    }
+
+    #[test]
+    fn refresh_status_records_fan_curve_drift_notification_once() {
+        let shutdown_requested = Arc::new(AtomicBool::new(false));
+        let initial = tray_state_fixture("balanced", "Standard", true, false);
+        let drifted = with_fan_curve_drift(tray_state_fixture("balanced", "Standard", true, false));
+        let snapshots = Arc::new(std::sync::Mutex::new(vec![drifted.clone(), drifted]));
+        let notifications = Arc::new(std::sync::Mutex::new(Vec::<DesktopNotification>::new()));
+        let tray = StatusNotifierTray::new_with_runtime(
+            summary(),
+            initial.menu.clone(),
+            None,
+            shutdown_requested,
+            Arc::new({
+                let snapshots = Arc::clone(&snapshots);
+                move |_| {
+                    let mut guard = snapshots.lock().unwrap();
+                    Ok(guard.remove(0))
+                }
+            }),
+            Arc::new(|_, _| anyhow::bail!("unexpected action")),
+            recording_notification_sender(Arc::clone(&notifications)),
+        )
+        .with_snapshot(initial.snapshot);
+        let mut tray = tray;
+
+        tray.refresh_status();
+        tray.refresh_status();
+
+        assert_eq!(
+            notifications.lock().unwrap().as_slice(),
+            &[DesktopNotification {
+                key: "fan_curve_drift",
+                title: "Fan curve drift".to_owned(),
+                body: "82WM Legion Pro 5 16ARX8 — live fan curve drifted from the saved snapshot: 1 of 1 checked point(s) differ (/tmp/hwmon/pwm1_auto_point1_pwm: saved 96, live 128)".to_owned(),
             }]
         );
     }
@@ -1556,6 +1844,7 @@ mod tests {
             &status,
             &report,
             Some(&gpu_pending),
+            None,
             Some(&fan_snapshot),
             None,
         )
@@ -1689,8 +1978,8 @@ mod tests {
                 )
                 .with_runtime_state(DiagnosticsRuntimeState::default()),
             },
-            summary: TraySummary::from_status_and_report(&status, &report, None, None, None),
-            menu: TrayMenu::from_status_and_report(&status, &report, None, None, None),
+            summary: TraySummary::from_status_and_report(&status, &report, None, None, None, None),
+            menu: TrayMenu::from_status_and_report(&status, &report, None, None, None, None),
         }
     }
 
@@ -1709,6 +1998,44 @@ mod tests {
             notifications.lock().unwrap().push(notification.clone());
             Ok(replaces_id.max(1))
         })
+    }
+
+    fn with_hardware_profile_drift(mut state: LoadedTrayState) -> LoadedTrayState {
+        state.snapshot.diagnostics.hardware_profile_drift =
+            legion_control_ui::HardwareProfileDriftReport {
+                status: "drifted".to_owned(),
+                profile_id: Some("gaming".to_owned()),
+                checked_count: 1,
+                drifted_count: 1,
+                items: vec![legion_control_ui::HardwareProfileDriftItem {
+                    action_id: "platform_profile".to_owned(),
+                    method: "SetPlatformProfile".to_owned(),
+                    requested_value: "performance".to_owned(),
+                    readback_value: Some("performance".to_owned()),
+                    current_value: Some("balanced".to_owned()),
+                    status: "drifted".to_owned(),
+                    detail: "current value `balanced` differs from last requested `performance`"
+                        .to_owned(),
+                }],
+            };
+        state
+    }
+
+    fn with_fan_curve_drift(mut state: LoadedTrayState) -> LoadedTrayState {
+        state.snapshot.diagnostics.fan_curve_drift = legion_control_ui::FanCurveDriftReport {
+            status: "drifted".to_owned(),
+            curve_id: Some("legion_hwmon".to_owned()),
+            checked_count: 1,
+            drifted_count: 1,
+            detail: "Live fan curve differs from the saved 1 point on legion_hwmon.".to_owned(),
+            items: vec![legion_control_ui::FanCurveDriftItem {
+                path: "/tmp/hwmon/pwm1_auto_point1_pwm".to_owned(),
+                saved_value: "96".to_owned(),
+                live_value: Some("128".to_owned()),
+                status: "drifted".to_owned(),
+            }],
+        };
+        state
     }
 
     fn applied_result(method: &'static str, requested: &str) -> WriteExecutionResult {

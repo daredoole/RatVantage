@@ -5,7 +5,7 @@ pub mod status_icon;
 pub mod status_notifier;
 
 pub use desktop_detection::{DesktopSession, TrayDesktopCheck};
-pub use menu::{TrayAction, TrayMenu, TrayMenuEntry, TrayMenuItem};
+pub use menu::{tray_keyboard_rgb_request, TrayAction, TrayMenu, TrayMenuEntry, TrayMenuItem};
 pub use status_icon::TraySummary;
 #[cfg(feature = "status-notifier")]
 pub use status_notifier::{run_status_notifier_tray, StatusNotifierTray};

@@ -18,15 +18,15 @@ fn status_cli_prints_tray_summary_over_private_bus() {
     let stdout = String::from_utf8(output.stdout).unwrap();
     assert!(stdout.contains("Legion Control tray status"));
     assert!(stdout.contains(
-        "tooltip=82WM Legion Pro 5 16ARX8: Platform: balanced, Fans: 2410 RPM, 10 available capabilities, 2 missing"
+        "tooltip=82WM Legion Pro 5 16ARX8: Platform: balanced, Fans: 2410 RPM, 11 available capabilities, 2 missing"
     ));
-    assert!(stdout.contains("capability_count=12"));
-    assert!(stdout.contains("available_capability_count=10"));
+    assert!(stdout.contains("capability_count=13"));
+    assert!(stdout.contains("available_capability_count=11"));
     assert!(stdout.contains("missing_capability_count=2"));
     assert!(stdout.contains("platform_profile=balanced"));
     assert!(stdout.contains("fan_rpm=2410 RPM"));
     assert!(stdout.contains(
-        "capabilities=amd_gpu_power_dpm,battery_charge_type,cpu_power,fan_curves,firmware_attributes,gpu,hwmon,ideapad_toggles,leds,platform_profile,power_profiles,thermal_zones"
+        "capabilities=amd_gpu_power_dpm,battery_charge_type,cpu_power,fan_curves,firmware_attributes,gpu,hwmon,ideapad_toggles,keyboard_rgb_candidates,leds,platform_profile,power_profiles,thermal_zones"
     ));
 }
 
@@ -41,7 +41,7 @@ fn tooltip_cli_prints_single_line_over_private_bus() {
     assert!(output.status.success());
     assert_eq!(
         String::from_utf8(output.stdout).unwrap(),
-        "82WM Legion Pro 5 16ARX8: Platform: balanced, Fans: 2410 RPM, 10 available capabilities, 2 missing\n"
+        "82WM Legion Pro 5 16ARX8: Platform: balanced, Fans: 2410 RPM, 11 available capabilities, 2 missing\n"
     );
 }
 
@@ -113,6 +113,7 @@ steps = []
     assert!(stdout.contains("label=Logo LED: on"));
     assert!(stdout.contains("label=Fn-lock: off"));
     assert!(stdout.contains("label=Camera power: on"));
+    assert!(stdout.contains("label=Keyboard RGB: 3 HID research candidates (048D:C103, 048D:C985)"));
     assert!(stdout.contains("label=Fan: CPU Fan 2410 RPM"));
     assert!(stdout.contains("label=GPU: switch to hybrid pending (was nvidia) — reboot required"));
     assert!(stdout.contains(
@@ -132,6 +133,8 @@ steps = []
     assert!(stdout.contains("enabled action=set_battery_charge_type:Fast label=Fast"));
     assert!(stdout.contains("label=Logo light (current: on, guarded)"));
     assert!(stdout.contains("enabled action=set_led_state:platform::ylogo:off label=Turn off"));
+    assert!(stdout.contains("label=Keyboard RGB research (3 candidates, no safe write backend)"));
+    assert!(stdout.contains("enabled action=open_dashboard label=RGB evidence"));
     assert!(stdout.contains("label=Fn-lock (current: off)"));
     assert!(stdout.contains("enabled action=set_ideapad_toggle:fn_lock:on label=Turn on"));
     assert!(stdout.contains("label=Camera power: on · guarded change in Dashboard"));
@@ -145,6 +148,7 @@ steps = []
     assert!(!stdout.contains("label=Toggle: fan_mode"));
     assert!(!stdout.contains("Apply preset:"));
     assert!(!stdout.contains("Toggle logo LED"));
+    assert!(!stdout.contains("set_keyboard_rgb"));
 
     let _ = fs::remove_file(state_path);
 }

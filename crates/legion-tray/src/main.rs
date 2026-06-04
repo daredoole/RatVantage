@@ -3,7 +3,9 @@ use clap::Parser;
 use legion_common::WriteExecutionResult;
 #[cfg(not(feature = "status-notifier"))]
 use legion_control_tray::DesktopSession;
-use legion_control_tray::{TrayAction, TrayDesktopCheck, TrayMenu, TraySummary};
+use legion_control_tray::{
+    tray_keyboard_rgb_request, TrayAction, TrayDesktopCheck, TrayMenu, TraySummary,
+};
 use legion_control_ui::LegionControlClient;
 
 #[derive(Debug, Parser)]
@@ -59,12 +61,14 @@ fn main() -> Result<()> {
         let status = snapshot.status;
         let report = snapshot.diagnostics.raw_probe_report;
         let gpu_pending = snapshot.diagnostics.gpu_mode_pending;
+        let gpu_switching = snapshot.diagnostics.gpu_switching;
         let fan_snapshot = snapshot.diagnostics.last_known_good_fan_curve;
         let hardware_profile_apply = snapshot.diagnostics.last_hardware_profile_apply;
         let summary = TraySummary::from_status_and_report(
             &status,
             &report,
             gpu_pending.as_ref(),
+            Some(&gpu_switching),
             fan_snapshot.as_ref(),
             hardware_profile_apply.as_ref(),
         );
@@ -77,6 +81,7 @@ fn main() -> Result<()> {
                 &status,
                 &report,
                 gpu_pending.as_ref(),
+                Some(&gpu_switching),
                 fan_snapshot.as_ref(),
                 hardware_profile_apply.as_ref(),
             );
@@ -123,6 +128,10 @@ fn execute_action(
         TrayAction::SetLedState(led_id, enabled) => client.set_led_state(led_id, *enabled),
         TrayAction::SetIdeapadToggle(toggle_id, enabled) => {
             client.set_ideapad_toggle(toggle_id, *enabled)
+        }
+        TrayAction::SetKeyboardRgbPreset(preset) => {
+            let request = tray_keyboard_rgb_request(preset).map_err(anyhow::Error::msg)?;
+            client.set_keyboard_rgb(&request)
         }
         _ => anyhow::bail!(
             "tray action `{}` is not a daemon write action",

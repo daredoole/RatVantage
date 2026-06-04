@@ -64,12 +64,23 @@ Already modeled trigger IDs:
 - `ac_disconnected`
 - `resume`
 - `platform_profile_changed`
+- `gpu_mode_reboot_completed`
+
+`platform_profile_changed` is now daemon-owned when the opt-in automation
+observer is enabled: the observer records a first-sample baseline, detects an
+external `platform_profile` value change, and applies the mapped hardware
+profile trigger through the existing profile-apply policy/validators/read-back
+path.
+
+`gpu_mode_reboot_completed` is daemon-owned when the opt-in automation observer
+is enabled: if the durable pending GPU mode matches the current EnvyControl
+probe after reboot, the daemon clears pending state and applies the mapped
+hardware profile trigger through the existing profile-apply policy path.
 
 Needed additions:
 
 - Battery threshold trigger, sampled from `BAT*` capacity/status.
 - Periodic idle trigger with cooldown, for state correction.
-- GPU mode pending/reboot completion trigger.
 - Optional desktop power profile change trigger.
 
 Each trigger should be daemon-owned. The GTK UI configures mappings; it should
@@ -86,7 +97,7 @@ Profile actions should cover validated controls:
 - CPU EPP.
 - CPU boost.
 - AMD GPU DPM force level.
-- EnvyControl GPU mode, reboot-gated.
+- EnvyControl GPU mode, reboot-gated. [implemented as a hardware-profile action; execution remains policy/reboot gated]
 - Curve Optimizer all-core, advanced/write-only.
 - Firmware attributes only when the live evidence marks them promotable.
 
@@ -184,7 +195,10 @@ Rules should be serializable TOML/JSON and import/exportable for issue reports.
 Automations page should have:
 
 - Template cards: Battery Saver, AC Performance, Fast Charge Until Threshold,
-  Quiet on Battery, Integrated GPU on Battery, CO Experimental Profile.
+  Quiet on Battery [implemented starter], Integrated GPU on Battery [implemented starter],
+  Resume Repair [implemented starter], GPU Reboot Repair [implemented starter],
+  Fn+Q Tuning Repair [implemented starter],
+  RGB Breathing Profile [implemented starter], CO Experimental Profile [implemented starter].
 - Rule list with enabled/disabled switch.
 - Trigger selector.
 - Condition editor.
@@ -210,7 +224,89 @@ Do not hide unsupported controls; show them as disabled with the reason.
    (`--enable-automation-observer`) that evaluates saved rules every minute,
    applies matching profiles through the daemon write path, records the last
    run, and suppresses repeated same-profile applies during cooldown.
-5. Add CLI diagnostics for automation rules and last runs.
-6. Add backend setup status for RyzenAdj / `ryzen_smu`.
-7. Add `ryzen_smu` setup assistant in read-only/generate-command mode.
-8. Add advanced CPU automation actions only after backend status is visible.
+5. Done: add `ac_profile_router` rules that select one stored profile while AC
+   is online and another while AC is offline, with preview, observer cooldown,
+   and apply through the existing hardware-profile policy path.
+6. Done: add a GTK Quick Template starter that saves
+   `plugged_in_balanced` / `battery_saver` profiles, maps AC connect/disconnect
+   triggers, and stores an `ac_router` rule.
+7. Done: add GTK saved-rule editing for `ac_profile_router` rules, including
+   AC/battery profile pickers, enabled state, cooldown, preview/test-run, save,
+   and delete.
+8. Done: add a GTK Quick Template starter that saves an `rgb_breathing_blue`
+   hardware profile with staged `keyboard_rgb` actions; preview works through
+   native RGB or the OpenRGB bridge, while apply remains evidence-gated.
+9. Done: add a GTK Quick Template starter that saves a
+   `co_experimental_minus10` hardware profile with staged all-core Curve
+   Optimizer `-10`; preview works immediately, while apply remains write-only,
+   policy-gated, and dependent on the existing CO execution evidence path.
+10. Done: add `battery_profile_threshold` rules that select one stored profile
+   from battery capacity telemetry, support at/below or at/above threshold
+   matching, optional AC-online/offline requirements, observer cooldown, preview,
+   test-run, GTK saved-rule rendering, and GTK editing for profile, threshold,
+   direction, AC condition, enabled state, cooldown, save, preview/test-run, and
+   delete.
+11. Done: extend the GTK Quiet on Battery starter so it also saves a
+   `quiet_below_30` `battery_profile_threshold` rule in addition to the
+   AC-unplugged trigger and fan-preset app-state mapping.
+12. Done: add a GTK Battery Threshold Rule starter that saves
+    `battery_recovered_balanced` and maps battery capacity 80% or higher to it
+    through `battery_recovered_80`.
+13. Done: add `legion-control-ui --automation-diagnostics` as a combined
+    read-only support snapshot for hardware profiles, trigger mappings,
+    automation rules, last automation runs, and the last hardware-profile apply;
+    GTK Diagnostics surfaces a copyable command for this snapshot.
+14. Done: add backend setup status for RyzenAdj / `ryzen_smu` through daemon
+    detection, `legion-control-ui --ryzen-backend-status`, the Profiles page,
+    and the Diagnostics page.
+15. Done: add a `ryzen_smu` setup assistant in read-only/generate-command mode
+    through `legion-control-ui --ryzen-smu-setup` plus copyable Diagnostics
+    commands. RatVantage does not install or load kernel modules automatically.
+16. Done: add an AC CPU Performance Router GTK starter that saves
+    `ac_cpu_performance` / `battery_cpu_efficiency` hardware profiles with
+    platform profile, CPU governor, CPU EPP, and CPU boost actions, maps
+    AC connect/disconnect triggers, and stores `ac_cpu_router`; daemon preview
+    coverage proves the selected profile expands to platform/governor/EPP/boost
+    plans through existing gates.
+17. Done: add a GTK Create Automation Rule form for custom
+    `battery_profile_threshold` rules. The form accepts rule ID, label, target
+    hardware profile, threshold, direction, optional AC condition, and cooldown,
+    then saves through `SetAutomationRule` so daemon validation remains the
+    authority.
+18. Done: add a GTK Create AC Router Rule form for custom
+    `ac_profile_router` rules. The form accepts rule ID, label, AC-online
+    profile, battery-power profile, and cooldown, rejects same-profile routing
+    locally, then saves through `SetAutomationRule` so daemon validation remains
+    the authority.
+19. Done: add a GTK Create Fast Charge Rule form for custom
+    `fast_charge_until_threshold` rules. The form accepts rule ID, label,
+    fast-charge profile, protect profile, threshold, AC requirement, and
+    cooldown, rejects same-profile routing locally, then saves through
+    `SetAutomationRule` so daemon validation remains the authority.
+20. Done: add a Balanced Daily Mixed GTK starter that saves
+    `balanced_daily_mixed` with platform profile, battery charge type, CPU
+    governor/EPP/boost, AMD GPU DPM, and staged keyboard RGB actions, plus a
+    `balanced -> balanced-daily` fan-preset mapping. Daemon preview coverage
+    proves the mixed profile expands to platform, battery, RGB, CPU, and AMD GPU
+    DPM dry-run plans without enabling new execution paths.
+21. Done: add a Quiet Battery Mixed GTK starter that saves
+    `quiet_battery_mixed` with low-power platform profile, Conservation charge
+    type, CPU governor/EPP/boost efficiency settings, AMD GPU DPM low, and staged
+    keyboard RGB actions, plus a `low-power -> quiet-office` fan-preset mapping.
+    Daemon preview coverage proves the mixed profile expands to platform,
+    battery, RGB, CPU, and AMD GPU DPM dry-run plans without enabling new
+    execution paths.
+22. Done: add a Performance AC Mixed GTK starter that saves
+    `performance_ac_mixed` with performance platform profile, Standard charge
+    type, CPU governor/EPP/boost performance settings, AMD GPU DPM auto, and
+    staged keyboard RGB actions, maps `ac_connected` to the profile, and records
+    a `performance -> performance-sustained` fan-preset mapping. Daemon preview
+    coverage proves the mixed profile expands to platform, battery, RGB, CPU,
+    and AMD GPU DPM dry-run plans without enabling new execution paths.
+23. Done: add a GPU Reboot Repair GTK starter that saves
+    `gpu_reboot_completed_balanced` with a balanced platform-profile repair
+    action and maps `gpu_mode_reboot_completed` to it. Execution remains behind
+    the daemon's existing hardware-profile policy/read-back gates.
+24. Done: promote the OpenRGB SDK fallback for daemon `SetKeyboardRgb` when the
+    SDK backend is evidence-ready; live system-daemon dogfood applied Breathing
+    with four-zone `#333333` read-back through `SetOpenRgbKeyboardRgbSdk`.

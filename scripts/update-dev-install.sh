@@ -12,6 +12,8 @@ then restart the user tray. This is the fast path after UI/tray edits.
 Options:
   --daemon            Also build, install, and restart the system daemon using
                       the broad current dev write-flag set.
+                      If scripts/install-dev-passwordless-updater.sh has been
+                      installed once, this runs without a password prompt.
   --no-restart-tray   Install user binaries but do not restart the tray process.
   -h, --help          Show this help.
 
@@ -50,37 +52,79 @@ done
 cd "$repo_root"
 
 if (( install_daemon )); then
-  echo "Building release daemon"
-  cargo build --release -p legion-control-daemon
+  if [[ "${RATVANTAGE_UPDATE_DEV_SKIP_DAEMON_BUILD:-0}" != "1" ]]; then
+    echo "Building release daemon"
+    cargo build --release -p legion-control-daemon
+  fi
 
-  echo "Installing system D-Bus/polkit integration"
-  sudo "$repo_root/scripts/install-dev-system-integration.sh"
+  helper="${RATVANTAGE_DEV_UPDATE_HELPER:-/usr/local/sbin/ratvantage-dev-update-daemon}"
+  openrgb_setup_helper="${RATVANTAGE_OPENRGB_SETUP_HELPER:-/usr/local/sbin/ratvantage-setup-keyboard-rgb-openrgb-access}"
+  sudo_cmd="${RATVANTAGE_SUDO_BIN:-sudo}"
+  helper_is_current=0
+  if [[ -x "$helper" ]] \
+    && grep -q -- 'ratvantage-dev-update-daemon-capability: repo-driven-daemon-args-v1' "$helper" \
+    && grep -q -- 'scripts/dev-daemon-args.sh' "$helper" \
+    && grep -q -- 'setup-keyboard-rgb-openrgb-access.sh' "$helper"; then
+    helper_is_current=1
+  fi
 
-  echo "Installing system daemon"
-  sudo "$repo_root/scripts/install-dev-systemd-ratvantage.sh" \
-    "$repo_root/target/release/legion-control-daemon" -- \
-    --enable-platform-profile-write \
-    --enable-battery-charge-type-write \
-    --enable-led-state-write \
-    --enable-ideapad-toggle-write \
-    --enable-camera-power-write \
-    --enable-usb-charging-write \
-    --enable-fan-mode-write \
-    --enable-gpu-mode-write \
-    --enable-cpu-governor-write \
-    --enable-cpu-epp-write \
-    --enable-firmware-attribute-write \
-    --enable-cpu-boost-write \
-    --enable-conservation-mode-write \
-    --enable-amd-gpu-dpm-write \
-    --enable-curve-optimizer-write \
-    --enable-hardware-profile-apply \
-    --enable-automation-observer
+  daemon_updated=0
+  if [[ -x "$helper" && "$helper_is_current" -eq 1 ]] && "$sudo_cmd" -n "$helper" "$repo_root"; then
+    daemon_updated=1
+  fi
 
-  sudo systemctl daemon-reload
-  sudo busctl call org.freedesktop.DBus /org/freedesktop/DBus \
-    org.freedesktop.DBus ReloadConfig >/dev/null
-  sudo systemctl restart legion-control-daemon.service
+  if [[ "$daemon_updated" -eq 0 && -x "$helper" && "$helper_is_current" -eq 0 ]]; then
+    echo "Passwordless daemon updater is installed but stale." >&2
+    echo "It cannot enable OpenRGB access setup or install:" >&2
+    echo "  $openrgb_setup_helper" >&2
+    echo "Refresh the root-owned helper once:" >&2
+    echo "  sudo $repo_root/scripts/install-dev-passwordless-updater.sh" >&2
+    if ! "$sudo_cmd" -n true 2>/dev/null && [[ ! -t 0 ]]; then
+      echo "No interactive sudo is available in this session; stopping before daemon install." >&2
+      exit 1
+    fi
+
+    echo "Refreshing passwordless daemon updater"
+    "$sudo_cmd" "$repo_root/scripts/install-dev-passwordless-updater.sh"
+    "$sudo_cmd" -n "$helper" "$repo_root"
+    daemon_updated=1
+  fi
+
+  if [[ "$daemon_updated" -eq 0 ]]; then
+    echo "Passwordless daemon updater is not installed or failed." >&2
+    echo "For non-interactive daemon updates, run once:" >&2
+    echo "  sudo $repo_root/scripts/install-dev-passwordless-updater.sh" >&2
+    if ! "$sudo_cmd" -n true 2>/dev/null && [[ ! -t 0 ]]; then
+      echo "No interactive sudo is available in this session; stopping before daemon install." >&2
+      exit 1
+    fi
+
+    echo "Installing system D-Bus/polkit integration"
+    "$sudo_cmd" "$repo_root/scripts/install-dev-system-integration.sh"
+
+    echo "Installing system daemon"
+    daemon_args_file="$repo_root/scripts/dev-daemon-args.sh"
+    if [[ ! -x "$daemon_args_file" ]]; then
+      echo "daemon args helper must exist and be executable: $daemon_args_file" >&2
+      exit 2
+    fi
+    mapfile -t daemon_args < <("$daemon_args_file")
+    "$sudo_cmd" "$repo_root/scripts/install-dev-systemd-ratvantage.sh" \
+      "$repo_root/target/release/legion-control-daemon" -- \
+      "${daemon_args[@]}"
+
+    "$sudo_cmd" systemctl daemon-reload
+    "$sudo_cmd" busctl call org.freedesktop.DBus /org/freedesktop/DBus \
+      org.freedesktop.DBus ReloadConfig >/dev/null
+    "$sudo_cmd" systemctl restart legion-control-daemon.service
+  fi
+
+  if [[ ! -x "$openrgb_setup_helper" ]]; then
+    echo "OpenRGB access setup helper is not installed yet:" >&2
+    echo "  $openrgb_setup_helper" >&2
+    echo "To install the updated root-owned helper, run once:" >&2
+    echo "  sudo $repo_root/scripts/install-dev-passwordless-updater.sh" >&2
+  fi
 fi
 
 echo "Installing user tray/dashboard"

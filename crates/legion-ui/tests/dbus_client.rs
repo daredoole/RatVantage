@@ -3,8 +3,8 @@ use std::{fs, os::unix::fs::PermissionsExt, process::Command, sync::Arc};
 use legion_common::{Capability, CapabilityStatus, HardwareSummary, RiskLevel, RyzenBackendStatus};
 use legion_control_daemon::{
     BatteryChargeTypeWriter, CpuEppWriter, CpuGovernorWriter, IdeapadToggleWriter, LedStateWriter,
-    LegionControl, PlatformProfileWriter, WriteAccessPolicy, WriteAuthorizer, DBUS_INTERFACE,
-    DBUS_PATH,
+    LegionControl, OpenRgbAccessSetupWriter, PlatformProfileWriter, WriteAccessPolicy,
+    WriteAuthorizer, DBUS_INTERFACE, DBUS_PATH,
 };
 use legion_control_ui::{
     render_diagnostics_json, render_overview_lines, DiagnosticsBundle, LegionControlClient,
@@ -40,6 +40,7 @@ fn client_reads_daemon_contract_over_private_bus() {
             "gpu",
             "hwmon",
             "ideapad_toggles",
+            "keyboard_rgb_candidates",
             "leds",
             "platform_profile",
             "power_profiles",
@@ -51,6 +52,7 @@ fn client_reads_daemon_contract_over_private_bus() {
             && (capability.status == CapabilityStatus::ProbeOnly
                 || capability.id == "amd_gpu_power_dpm"
                 || capability.id == "gpu"
+                || capability.id == "keyboard_rgb_candidates"
                 || capability.id == "power_profiles")
             && capability.details.is_null()
     }));
@@ -99,6 +101,7 @@ fn client_reads_daemon_contract_over_private_bus() {
             "fan_rpm=CPU Fan:2410",
             "temperatures=CPU Temp:52000",
             "gpu_mode=unknown",
+            "gpu_switch_type=unknown",
             "desktop_power_profiles=not_applicable",
             "gpu_pending_reboot=none",
             "last_known_good_fan_curve=none",
@@ -110,6 +113,8 @@ fn client_reads_daemon_contract_over_private_bus() {
             "battery_power_now_w=30.4",
             "battery_cycle_count=219",
             "leds=platform::fnlock:0,platform::ylogo:1",
+            "keyboard_rgb_status=research_candidates=3 backend_ready=false vid_pid=048d:c103|048d:c985",
+            "keyboard_rgb_candidates=hidraw1:048d:c103:reports=unknown:shapes=unknown,hidraw2:048d:c985:reports=unknown:shapes=unknown,hidraw3:048d:c985:reports=unknown:shapes=unknown",
             "firmware_toggles=camera_power:1,conservation_mode:1,fan_mode:0,fn_lock:0",
         ]
     );
@@ -145,7 +150,11 @@ fn client_reads_daemon_contract_over_private_bus() {
         serde_json::from_str(&render_diagnostics_json(&bundle).unwrap()).unwrap();
     assert_eq!(json["kernel_version"], "test-kernel");
     assert_eq!(json["gpu_mode_pending"], serde_json::Value::Null);
+    assert_eq!(json["gpu_switching"]["status"], "unavailable");
+    assert_eq!(json["gpu_switching"]["runtime_plan_available"], false);
     assert_eq!(json["last_known_good_fan_curve"], serde_json::Value::Null);
+    assert_eq!(json["fan_curve_drift"]["status"], "no_saved_snapshot");
+    assert_eq!(json["fan_curve_drift"]["checked_count"], 0);
     assert_eq!(
         json["fan_preset_by_platform_profile"],
         serde_json::json!({})
@@ -153,12 +162,12 @@ fn client_reads_daemon_contract_over_private_bus() {
     assert_eq!(json["fan_preset_reapply_after_resume"], false);
     assert_eq!(json["recent_daemon_logs"], serde_json::json!([]));
     assert_eq!(json["hardware"]["product_name"], "82WM");
-    assert_eq!(json["summary"]["capability_count"], 12);
-    assert_eq!(json["summary"]["available_capability_count"], 10);
+    assert_eq!(json["summary"]["capability_count"], 13);
+    assert_eq!(json["summary"]["available_capability_count"], 11);
     assert_eq!(json["summary"]["missing_capability_count"], 2);
     assert_eq!(
         json["summary"]["capability_status_counts"]["probe_only"],
-        10
+        11
     );
     assert_eq!(json["summary"]["capability_status_counts"]["missing"], 2);
     assert_eq!(json["summary"]["sensor_count"], 2);
@@ -203,6 +212,7 @@ fn client_reads_daemon_contract_over_private_bus() {
     assert_eq!(platform_plan.method, "SetPlatformProfile");
     assert_eq!(platform_plan.previous_value, "balanced");
     assert_eq!(platform_plan.requested_value, "performance");
+    assert!(client.plan_prepare_custom_thermal_mode().is_err());
 
     let battery_plan = client
         .plan_battery_charge_type_write("Conservation")
@@ -229,6 +239,101 @@ fn client_reads_daemon_contract_over_private_bus() {
     assert_eq!(toggle_plan.method, "SetIdeapadToggle");
     assert_eq!(toggle_plan.previous_value, "1");
     assert_eq!(toggle_plan.requested_value, "0");
+}
+
+#[test]
+fn prepare_custom_thermal_client_and_cli_print_plan_json() {
+    let fixture = copied_fixture_root("ui-prepare-custom-thermal");
+    fs::write(
+        fixture.join("sys/firmware/acpi/platform_profile_choices"),
+        "low-power balanced performance max-power custom\n",
+    )
+    .unwrap();
+    fs::write(
+        fixture.join("sys/firmware/acpi/platform_profile"),
+        "low-power\n",
+    )
+    .unwrap();
+    let service = LegionControl::new(ProbeOptions {
+        sysfs_root: fixture.clone(),
+    });
+    let (_bus, _service_connection, address) = fixture_service_with_runtime(service);
+    let client = LegionControlClient::address(&address).unwrap();
+
+    let plan = client.plan_prepare_custom_thermal_mode().unwrap();
+    assert_eq!(plan.method, "PrepareCustomThermalMode");
+    assert_eq!(plan.previous_value, "low-power");
+    assert_eq!(plan.requested_value, "custom");
+
+    let preview = client
+        .plan_custom_thermal_firmware_attribute_write("ppt_pl1_spl", "75")
+        .unwrap();
+    assert_eq!(preview.sequence_id, "custom_thermal_firmware_attribute");
+    assert_eq!(preview.plans[0].method, "PrepareCustomThermalMode");
+    assert_eq!(preview.plans[1].method, "SetFirmwareAttribute");
+
+    let preset_preview = client
+        .plan_custom_thermal_firmware_ppt_preset_write("balanced-custom")
+        .unwrap();
+    assert_eq!(
+        preset_preview.sequence_id,
+        "custom_thermal_firmware_ppt_preset"
+    );
+    assert_eq!(preset_preview.plans[0].method, "PrepareCustomThermalMode");
+    assert_eq!(preset_preview.plans[1].requested_value, "70");
+    assert_eq!(preset_preview.plans[2].requested_value, "85");
+    assert_eq!(preset_preview.plans[3].requested_value, "102");
+
+    let output = Command::new(env!("CARGO_BIN_EXE_legion-control-ui"))
+        .args(["--plan-prepare-custom-thermal", "--bus-address", &address])
+        .output()
+        .unwrap();
+
+    assert!(output.status.success());
+    assert!(output.stderr.is_empty());
+    let json: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(json["method"], "PrepareCustomThermalMode");
+    assert_eq!(json["previous_value"], "low-power");
+    assert_eq!(json["requested_value"], "custom");
+    assert_eq!(json["readback_required"], true);
+
+    let output = Command::new(env!("CARGO_BIN_EXE_legion-control-ui"))
+        .args([
+            "--plan-custom-thermal-firmware-attribute",
+            "ppt_pl1_spl=75",
+            "--bus-address",
+            &address,
+        ])
+        .output()
+        .unwrap();
+
+    assert!(output.status.success());
+    assert!(output.stderr.is_empty());
+    let json: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(json["sequence_id"], "custom_thermal_firmware_attribute");
+    assert_eq!(json["plans"][0]["method"], "PrepareCustomThermalMode");
+    assert_eq!(json["plans"][1]["method"], "SetFirmwareAttribute");
+
+    let output = Command::new(env!("CARGO_BIN_EXE_legion-control-ui"))
+        .args([
+            "--plan-custom-thermal-firmware-ppt-preset",
+            "balanced-custom",
+            "--bus-address",
+            &address,
+        ])
+        .output()
+        .unwrap();
+
+    assert!(output.status.success());
+    assert!(output.stderr.is_empty());
+    let json: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(json["sequence_id"], "custom_thermal_firmware_ppt_preset");
+    assert_eq!(json["plans"][0]["method"], "PrepareCustomThermalMode");
+    assert_eq!(json["plans"][1]["requested_value"], "70");
+    assert_eq!(json["plans"][2]["requested_value"], "85");
+    assert_eq!(json["plans"][3]["requested_value"], "102");
+
+    let _ = fs::remove_dir_all(fixture);
 }
 
 #[test]
@@ -301,7 +406,7 @@ fn status_model_normalizes_daemon_data_for_ui() {
         status.hardware.product_sku.as_deref(),
         Some("LENOVO_MT_82WM_BU_idea_FM_Legion Pro 5 16ARX8")
     );
-    assert_eq!(status.capability_count(), 12);
+    assert_eq!(status.capability_count(), 13);
     assert_eq!(
         status.capability_ids(),
         [
@@ -313,6 +418,7 @@ fn status_model_normalizes_daemon_data_for_ui() {
             "gpu",
             "hwmon",
             "ideapad_toggles",
+            "keyboard_rgb_candidates",
             "leds",
             "platform_profile",
             "power_profiles",
@@ -325,6 +431,7 @@ fn status_model_normalizes_daemon_data_for_ui() {
             && (capability.status == CapabilityStatus::ProbeOnly
                 || capability.id == "amd_gpu_power_dpm"
                 || capability.id == "gpu"
+                || capability.id == "keyboard_rgb_candidates"
                 || capability.id == "power_profiles")
     }));
     assert!(
@@ -346,9 +453,9 @@ fn status_model_normalizes_daemon_data_for_ui() {
                 "vendor=LENOVO",
                 "product_name=82WM",
                 "product_version=Legion Pro 5 16ARX8",
-                "capability_count=12",
-                "capabilities=amd_gpu_power_dpm,battery_charge_type,cpu_power,fan_curves,firmware_attributes,gpu,hwmon,ideapad_toggles,leds,platform_profile,power_profiles,thermal_zones",
-                "capability_statuses=amd_gpu_power_dpm:probe_only:read_only,battery_charge_type:probe_only:read_only,cpu_power:probe_only:read_only,fan_curves:probe_only:read_only,firmware_attributes:probe_only:read_only,gpu:missing:read_only,hwmon:probe_only:read_only,ideapad_toggles:probe_only:read_only,leds:probe_only:read_only,platform_profile:probe_only:read_only,power_profiles:missing:read_only,thermal_zones:probe_only:read_only",
+                "capability_count=13",
+                "capabilities=amd_gpu_power_dpm,battery_charge_type,cpu_power,fan_curves,firmware_attributes,gpu,hwmon,ideapad_toggles,keyboard_rgb_candidates,leds,platform_profile,power_profiles,thermal_zones",
+                "capability_statuses=amd_gpu_power_dpm:probe_only:read_only,battery_charge_type:probe_only:read_only,cpu_power:probe_only:read_only,fan_curves:probe_only:read_only,firmware_attributes:probe_only:read_only,gpu:missing:read_only,hwmon:probe_only:read_only,ideapad_toggles:probe_only:read_only,keyboard_rgb_candidates:probe_only:read_only,leds:probe_only:read_only,platform_profile:probe_only:read_only,power_profiles:missing:read_only,thermal_zones:probe_only:read_only",
             ]
     );
 }
@@ -371,9 +478,9 @@ fn status_cli_prints_hardware_and_capability_summary() {
             "vendor=LENOVO\n",
             "product_name=82WM\n",
             "product_version=Legion Pro 5 16ARX8\n",
-            "capability_count=12\n",
-            "capabilities=amd_gpu_power_dpm,battery_charge_type,cpu_power,fan_curves,firmware_attributes,gpu,hwmon,ideapad_toggles,leds,platform_profile,power_profiles,thermal_zones\n",
-            "capability_statuses=amd_gpu_power_dpm:probe_only:read_only,battery_charge_type:probe_only:read_only,cpu_power:probe_only:read_only,fan_curves:probe_only:read_only,firmware_attributes:probe_only:read_only,gpu:missing:read_only,hwmon:probe_only:read_only,ideapad_toggles:probe_only:read_only,leds:probe_only:read_only,platform_profile:probe_only:read_only,power_profiles:missing:read_only,thermal_zones:probe_only:read_only\n",
+            "capability_count=13\n",
+            "capabilities=amd_gpu_power_dpm,battery_charge_type,cpu_power,fan_curves,firmware_attributes,gpu,hwmon,ideapad_toggles,keyboard_rgb_candidates,leds,platform_profile,power_profiles,thermal_zones\n",
+            "capability_statuses=amd_gpu_power_dpm:probe_only:read_only,battery_charge_type:probe_only:read_only,cpu_power:probe_only:read_only,fan_curves:probe_only:read_only,firmware_attributes:probe_only:read_only,gpu:missing:read_only,hwmon:probe_only:read_only,ideapad_toggles:probe_only:read_only,keyboard_rgb_candidates:probe_only:read_only,leds:probe_only:read_only,platform_profile:probe_only:read_only,power_profiles:missing:read_only,thermal_zones:probe_only:read_only\n",
         )
     );
 }
@@ -397,6 +504,7 @@ fn overview_cli_prints_read_only_mvp_summary() {
             "fan_rpm=CPU Fan:2410\n",
             "temperatures=CPU Temp:52000\n",
             "gpu_mode=unknown\n",
+            "gpu_switch_type=unknown\n",
             "desktop_power_profiles=not_applicable\n",
             "gpu_pending_reboot=none\n",
             "last_known_good_fan_curve=none\n",
@@ -408,6 +516,8 @@ fn overview_cli_prints_read_only_mvp_summary() {
             "battery_power_now_w=30.4\n",
             "battery_cycle_count=219\n",
             "leds=platform::fnlock:0,platform::ylogo:1\n",
+            "keyboard_rgb_status=research_candidates=3 backend_ready=false vid_pid=048d:c103|048d:c985\n",
+            "keyboard_rgb_candidates=hidraw1:048d:c103:reports=unknown:shapes=unknown,hidraw2:048d:c985:reports=unknown:shapes=unknown,hidraw3:048d:c985:reports=unknown:shapes=unknown\n",
             "firmware_toggles=camera_power:1,conservation_mode:1,fan_mode:0,fn_lock:0\n",
         )
     );
@@ -502,6 +612,12 @@ fn diagnostics_cli_surfaces_durable_runtime_state_in_json() {
         &state_path,
         r#"schema_version = 1
 
+[[recent_platform_profile_changes]]
+timestamp_unix_secs = 1770000000
+previous_profile = "balanced"
+current_profile = "performance"
+source = "platform_profile_observer"
+
 [gpu_mode_pending]
 requested_mode = "hybrid"
 previous_mode = "nvidia"
@@ -539,17 +655,55 @@ value = "42000"
         json["last_known_good_fan_curve"]["points"][0]["value"],
         "42000"
     );
+    assert_eq!(json["fan_curve_drift"]["status"], "drifted");
+    assert_eq!(json["fan_curve_drift"]["checked_count"], 1);
+    assert_eq!(json["fan_curve_drift"]["drifted_count"], 1);
+    assert_eq!(
+        json["fan_curve_drift"]["items"][0]["status"],
+        "missing_live_value"
+    );
     assert_eq!(
         json["fan_preset_by_platform_profile"],
         serde_json::json!({})
     );
     assert_eq!(json["fan_preset_reapply_after_resume"], false);
+    assert_eq!(
+        json["recent_platform_profile_changes"][0]["previous_profile"],
+        "balanced"
+    );
+    assert_eq!(
+        json["recent_platform_profile_changes"][0]["current_profile"],
+        "performance"
+    );
+    assert_eq!(
+        json["recent_platform_profile_changes"][0]["source"],
+        "platform_profile_observer"
+    );
+
+    let output = Command::new(env!("CARGO_BIN_EXE_legion-control-ui"))
+        .args([
+            "--recent-platform-profile-changes",
+            "--bus-address",
+            &address,
+        ])
+        .output()
+        .unwrap();
+
+    assert!(output.status.success());
+    assert!(output.stderr.is_empty());
+
+    let json: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(json[0]["previous_profile"], "balanced");
+    assert_eq!(json[0]["current_profile"], "performance");
+    assert_eq!(json[0]["source"], "platform_profile_observer");
+
     let _ = std::fs::remove_file(state_path);
 }
 
 #[test]
 fn plan_cli_prints_read_only_write_preview_json() {
     let (_bus, _service_connection, address) = fixture_service();
+    let client = LegionControlClient::address(&address).unwrap();
     let output = Command::new(env!("CARGO_BIN_EXE_legion-control-ui"))
         .args([
             "--plan-platform-profile",
@@ -601,6 +755,351 @@ fn plan_cli_prints_read_only_write_preview_json() {
     assert_eq!(json["method"], "SetFirmwareAttribute");
     assert_eq!(json["previous_value"], "70");
     assert_eq!(json["requested_value"], "75");
+
+    let reset_plan = client
+        .plan_firmware_attribute_reset_write("ppt_pl1_spl")
+        .unwrap();
+    assert_eq!(reset_plan.method, "SetFirmwareAttribute");
+    assert_eq!(reset_plan.previous_value, "70");
+    assert_eq!(reset_plan.requested_value, "70");
+
+    let output = Command::new(env!("CARGO_BIN_EXE_legion-control-ui"))
+        .args([
+            "--plan-firmware-attribute-reset",
+            "ppt_pl1_spl",
+            "--bus-address",
+            &address,
+        ])
+        .output()
+        .unwrap();
+
+    assert!(output.status.success());
+    assert!(output.stderr.is_empty());
+    let json: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(json["method"], "SetFirmwareAttribute");
+    assert_eq!(json["requested_value"], "70");
+}
+
+#[test]
+fn reset_diagnostics_cli_prints_combined_read_only_reset_snapshot() {
+    let state_path = unique_state_path("ui-reset-diagnostics-state");
+    std::fs::write(
+        &state_path,
+        r#"schema_version = 1
+
+[gpu_mode_pending]
+requested_mode = "hybrid"
+previous_mode = "nvidia"
+reboot_required = true
+"#,
+    )
+    .unwrap();
+    let (_bus, _service_connection, address) = fixture_service_with_state(&state_path);
+
+    let output = Command::new(env!("CARGO_BIN_EXE_legion-control-ui"))
+        .args(["--reset-diagnostics", "--bus-address", &address])
+        .output()
+        .unwrap();
+
+    assert!(output.status.success());
+    assert!(output.stderr.is_empty());
+    let json: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(json["curve_optimizer_all_core_reset"]["ok"], true);
+    assert_eq!(
+        json["curve_optimizer_all_core_reset"]["value"]["method"],
+        "SetCurveOptimizerAllCore"
+    );
+    assert!(json["firmware_ppt_reset_defaults"]["ok"].is_boolean());
+    if json["firmware_ppt_reset_defaults"]["ok"] == true {
+        assert_eq!(
+            json["firmware_ppt_reset_defaults"]["value"]["preset_id"],
+            "reset-defaults"
+        );
+    } else {
+        assert!(json["firmware_ppt_reset_defaults"]["error"]
+            .as_str()
+            .is_some_and(|error| !error.is_empty()));
+    }
+    assert_eq!(json["restore_auto_fan"]["ok"], true);
+    assert_eq!(
+        json["restore_auto_fan"]["value"]["method"],
+        "RestoreAutoFan"
+    );
+    assert!(json["custom_thermal_restore_auto_fan"]["ok"].is_boolean());
+    if json["custom_thermal_restore_auto_fan"]["ok"] == false {
+        assert!(json["custom_thermal_restore_auto_fan"]["error"]
+            .as_str()
+            .is_some_and(|error| !error.is_empty()));
+    }
+    assert_eq!(json["keyboard_rgb_sdk_recovery"]["ok"], true);
+    assert_eq!(
+        json["keyboard_rgb_sdk_recovery"]["value"]["available"],
+        false
+    );
+    assert!(json["keyboard_rgb_sdk_recovery"]["value"]["reason"]
+        .as_str()
+        .is_some_and(|reason| reason.contains("OpenRGB")));
+    assert_eq!(json["gpu_mode_pending_recovery"]["ok"], true);
+    assert_eq!(
+        json["gpu_mode_pending_recovery"]["value"]["pending"]["requested_mode"],
+        "hybrid"
+    );
+    assert_eq!(
+        json["gpu_mode_pending_recovery"]["value"]["pending"]["previous_mode"],
+        "nvidia"
+    );
+    assert_eq!(
+        json["gpu_mode_pending_recovery"]["value"]["clear_command"],
+        "legion-control-ui --clear-gpu-mode-pending"
+    );
+    assert!(json["gpu_mode_pending_recovery"]["value"]["recovery_note"]
+        .as_str()
+        .is_some_and(|note| note.contains("clear the pending marker")));
+    assert_eq!(json["gpu_switching_recovery"]["ok"], true);
+    assert!(json["gpu_switching_recovery"]["value"]["available"].is_boolean());
+    if json["gpu_switching_recovery"]["value"]["available"] == true {
+        assert!(json["gpu_switching_recovery"]["value"]["switch_type"]
+            .as_str()
+            .is_some_and(|switch_type| !switch_type.is_empty()));
+        assert!(json["gpu_switching_recovery"]["value"]["steps"]
+            .as_array()
+            .is_some_and(|steps| !steps.is_empty()));
+    } else {
+        assert!(json["gpu_switching_recovery"]["value"]["reason"]
+            .as_str()
+            .is_some_and(|reason| !reason.is_empty()));
+    }
+    let _ = std::fs::remove_file(state_path);
+}
+
+#[test]
+fn keyboard_rgb_plan_cli_prints_read_only_write_preview_json() {
+    let (_bus, _service_connection, address, root) = keyboard_rgb_fixture_service();
+    let request_json = r##"{"effect":"breath","colors":{"left":"#333333","right":"#444444"},"brightness":80,"speed":30}"##;
+
+    let output = Command::new(env!("CARGO_BIN_EXE_legion-control-ui"))
+        .args([
+            "--plan-keyboard-rgb",
+            request_json,
+            "--bus-address",
+            &address,
+        ])
+        .output()
+        .unwrap();
+
+    assert!(output.status.success());
+    assert!(output.stderr.is_empty());
+    let json: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(json["method"], "SetKeyboardRgb");
+    assert_eq!(json["capability_id"], "keyboard_rgb");
+    assert_eq!(
+        json["previous_value"],
+        "effect=static;brightness=40;speed=10;colors=left:#111111,right:#222222"
+    );
+    assert_eq!(
+        json["requested_value"],
+        "effect=breath;brightness=80;speed=30;colors=left:#333333,right:#444444"
+    );
+    assert_eq!(json["readback_required"], true);
+
+    let client = LegionControlClient::address(&address).unwrap();
+    let request: legion_common::KeyboardRgbWriteRequest =
+        serde_json::from_str(request_json).unwrap();
+    let plan = client.plan_keyboard_rgb_write(&request).unwrap();
+    assert_eq!(plan.method, "SetKeyboardRgb");
+    assert_eq!(plan.capability_id, "keyboard_rgb");
+
+    fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+fn openrgb_sdk_keyboard_rgb_plan_cli_prints_read_only_preview_json() {
+    let root = std::path::PathBuf::from("/tmp").join(format!(
+        "ratvantage-ui-openrgb-sdk-plan-{}-{}",
+        std::process::id(),
+        std::thread::current().name().unwrap_or("test")
+    ));
+    let _ = fs::remove_dir_all(&root);
+    fs::create_dir_all(&root).unwrap();
+    fs::write(
+        root.join("ratvantage-keyboard-rgb-openrgb.json"),
+        serde_json::json!({
+            "installed": true,
+            "path": "/usr/bin/openrgb",
+            "devices": [{
+                "index": 0,
+                "name": "Lenovo 5 2023",
+                "device_type": "Laptop",
+                "description": "Lenovo 4-Zone device",
+                "modes": ["Direct", "Breathing"],
+                "current_mode": "Direct",
+                "zones": ["Keyboard"],
+                "leds": ["Left side", "Left center", "Right center", "Right side"]
+            }],
+            "backend_ready": true,
+            "write_support_claimed": true,
+            "sdk_helper_installed": true,
+            "sdk_server_running": true,
+            "sdk_snapshot_supported": true,
+            "sdk_active_mode": "Direct",
+            "sdk_color_zones": ["left_center", "left_side", "right_center", "right_side"],
+            "sdk_colors": {
+                "left_side": "#000000",
+                "left_center": "#000000",
+                "right_center": "#000000",
+                "right_side": "#000000"
+            }
+        })
+        .to_string(),
+    )
+    .unwrap();
+    let state_path = unique_state_path("ui-openrgb-sdk-plan-state");
+    let _ = fs::remove_file(&state_path);
+    let service = LegionControl::new_with_state_path(
+        ProbeOptions {
+            sysfs_root: root.clone(),
+        },
+        state_path,
+    );
+    let (_bus, _service_connection, address) = fixture_service_with_runtime(service);
+    let request_json = r##"{"effect":"Direct","colors":{"left_side":"#000000","left_center":"#000000","right_center":"#000000","right_side":"#000000"},"brightness":100,"speed":null}"##;
+
+    let output = Command::new(env!("CARGO_BIN_EXE_legion-control-ui"))
+        .args([
+            "--plan-openrgb-keyboard-rgb-sdk",
+            request_json,
+            "--bus-address",
+            &address,
+        ])
+        .output()
+        .unwrap();
+
+    assert!(output.status.success());
+    assert!(output.stderr.is_empty());
+    let json: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(json["method"], "SetOpenRgbKeyboardRgbSdk");
+    assert_eq!(json["capability_id"], "keyboard_rgb_openrgb:sdk");
+    assert_eq!(json["readback_required"], true);
+
+    let client = LegionControlClient::address(&address).unwrap();
+    let request: legion_common::KeyboardRgbWriteRequest =
+        serde_json::from_str(request_json).unwrap();
+    let plan = client
+        .plan_openrgb_keyboard_rgb_sdk_write(&request)
+        .unwrap();
+    assert_eq!(plan.method, "SetOpenRgbKeyboardRgbSdk");
+
+    let _ = fs::remove_file(unique_state_path("ui-openrgb-sdk-plan-state"));
+    let _ = fs::remove_dir_all(root);
+}
+
+#[test]
+fn set_keyboard_rgb_cli_reports_policy_block_when_write_is_disabled() {
+    let (_bus, _service_connection, address, root) = keyboard_rgb_fixture_service();
+    let request_json = r##"{"effect":"breath","colors":{"left":"#333333","right":"#444444"},"brightness":80,"speed":30}"##;
+
+    let output = Command::new(env!("CARGO_BIN_EXE_legion-control-ui"))
+        .args([
+            "--set-keyboard-rgb",
+            request_json,
+            "--bus-address",
+            &address,
+        ])
+        .output()
+        .unwrap();
+
+    assert!(output.status.success());
+    assert!(output.stderr.is_empty());
+    let json: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(json["status"], "blocked_by_policy");
+    assert_eq!(json["applied"], false);
+    assert_eq!(json["plan"]["method"], "SetKeyboardRgb");
+    assert_eq!(
+        json["plan"]["requested_value"],
+        "effect=breath;brightness=80;speed=30;colors=left:#333333,right:#444444"
+    );
+
+    fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+fn openrgb_access_setup_plan_cli_prints_setup_preview_json() {
+    let (_bus, _service_connection, address) = fixture_service();
+
+    let output = Command::new(env!("CARGO_BIN_EXE_legion-control-ui"))
+        .args([
+            "--plan-openrgb-access-setup",
+            "ratvantage-test",
+            "--bus-address",
+            &address,
+        ])
+        .output()
+        .unwrap();
+
+    assert!(output.status.success());
+    assert!(output.stderr.is_empty());
+    let json: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(json["method"], "SetupOpenRgbAccess");
+    assert_eq!(json["capability_id"], "keyboard_rgb_openrgb:access_setup");
+    assert_eq!(
+        json["polkit_action"],
+        "org.ratvantage.LegionControl1.setup-openrgb-access"
+    );
+    assert!(json["requested_value"]
+        .as_str()
+        .unwrap()
+        .contains("group=i2c;module=i2c-dev"));
+}
+
+#[test]
+fn setup_openrgb_access_cli_executes_gated_setup_writer() {
+    let state_path = unique_state_path("ui-openrgb-access-setup");
+    let calls = Arc::new(std::sync::Mutex::new(Vec::new()));
+    let service = LegionControl::new_with_runtime(
+        ProbeOptions {
+            sysfs_root: fixture_root(),
+        },
+        &state_path,
+        WriteAccessPolicy {
+            openrgb_access_setup_enabled: true,
+            ..Default::default()
+        },
+        Arc::new(AllowAllAuthorizer),
+        Arc::new(RealFixturePlatformProfileWriter),
+        Arc::new(RealFixtureBatteryChargeTypeWriter),
+        Arc::new(RealFixtureLedStateWriter),
+        Arc::new(RealFixtureIdeapadToggleWriter),
+        Arc::new(NoOpCpuGovernorWriter),
+        Arc::new(NoOpCpuEppWriter),
+    )
+    .with_openrgb_access_setup_writer(Arc::new(RecordingOpenRgbAccessSetupWriter {
+        calls: Arc::clone(&calls),
+    }));
+    let (_bus, _service_connection, address) = fixture_service_with_runtime(service);
+
+    let output = Command::new(env!("CARGO_BIN_EXE_legion-control-ui"))
+        .args([
+            "--setup-openrgb-access",
+            "ratvantage-test",
+            "--bus-address",
+            &address,
+        ])
+        .output()
+        .unwrap();
+
+    assert!(output.status.success());
+    assert!(output.stderr.is_empty());
+    let json: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(json["status"], "applied");
+    assert_eq!(json["applied"], true);
+    assert_eq!(json["plan"]["method"], "SetupOpenRgbAccess");
+    assert_eq!(
+        json["readback_value"],
+        "user=ratvantage-test;i2c_group_configured=true"
+    );
+    assert_eq!(calls.lock().unwrap().as_slice(), ["ratvantage-test"]);
+
+    let _ = fs::remove_file(state_path);
 }
 
 #[test]
@@ -639,6 +1138,7 @@ fn set_platform_profile_cli_executes_gated_write_and_prints_result() {
                 platform_profile_enabled: true,
                 battery_charge_type_enabled: false,
                 led_state_enabled: false,
+                keyboard_rgb_enabled: false,
                 ideapad_toggle_enabled: false,
                 camera_power_enabled: false,
                 usb_charging_enabled: false,
@@ -651,6 +1151,7 @@ fn set_platform_profile_cli_executes_gated_write_and_prints_result() {
                 conservation_mode_enabled: false,
                 amd_gpu_dpm_enabled: false,
                 curve_optimizer_enabled: false,
+                openrgb_access_setup_enabled: false,
                 hardware_profile_apply_enabled: false,
             },
             Arc::new(AllowAllAuthorizer),
@@ -748,6 +1249,7 @@ fn set_firmware_attribute_cli_executes_gated_write_and_prints_result() {
                 platform_profile_enabled: false,
                 battery_charge_type_enabled: false,
                 led_state_enabled: false,
+                keyboard_rgb_enabled: false,
                 ideapad_toggle_enabled: false,
                 camera_power_enabled: false,
                 usb_charging_enabled: false,
@@ -760,6 +1262,7 @@ fn set_firmware_attribute_cli_executes_gated_write_and_prints_result() {
                 conservation_mode_enabled: false,
                 amd_gpu_dpm_enabled: false,
                 curve_optimizer_enabled: false,
+                openrgb_access_setup_enabled: false,
                 hardware_profile_apply_enabled: false,
             },
             Arc::new(AllowAllAuthorizer),
@@ -817,6 +1320,7 @@ fn set_battery_charge_type_cli_executes_gated_write_and_prints_result() {
                 platform_profile_enabled: false,
                 battery_charge_type_enabled: true,
                 led_state_enabled: false,
+                keyboard_rgb_enabled: false,
                 ideapad_toggle_enabled: false,
                 camera_power_enabled: false,
                 usb_charging_enabled: false,
@@ -829,6 +1333,7 @@ fn set_battery_charge_type_cli_executes_gated_write_and_prints_result() {
                 conservation_mode_enabled: false,
                 amd_gpu_dpm_enabled: false,
                 curve_optimizer_enabled: false,
+                openrgb_access_setup_enabled: false,
                 hardware_profile_apply_enabled: false,
             },
             Arc::new(AllowAllAuthorizer),
@@ -904,6 +1409,7 @@ fn set_led_state_cli_executes_gated_write_and_prints_result() {
                 platform_profile_enabled: false,
                 battery_charge_type_enabled: false,
                 led_state_enabled: true,
+                keyboard_rgb_enabled: false,
                 ideapad_toggle_enabled: false,
                 camera_power_enabled: false,
                 usb_charging_enabled: false,
@@ -916,6 +1422,7 @@ fn set_led_state_cli_executes_gated_write_and_prints_result() {
                 conservation_mode_enabled: false,
                 amd_gpu_dpm_enabled: false,
                 curve_optimizer_enabled: false,
+                openrgb_access_setup_enabled: false,
                 hardware_profile_apply_enabled: false,
             },
             Arc::new(AllowAllAuthorizer),
@@ -990,6 +1497,7 @@ fn set_ideapad_toggle_cli_executes_gated_write_and_prints_result() {
                 platform_profile_enabled: false,
                 battery_charge_type_enabled: false,
                 led_state_enabled: false,
+                keyboard_rgb_enabled: false,
                 ideapad_toggle_enabled: true,
                 camera_power_enabled: false,
                 usb_charging_enabled: false,
@@ -1002,6 +1510,7 @@ fn set_ideapad_toggle_cli_executes_gated_write_and_prints_result() {
                 conservation_mode_enabled: false,
                 amd_gpu_dpm_enabled: false,
                 curve_optimizer_enabled: false,
+                openrgb_access_setup_enabled: false,
                 hardware_profile_apply_enabled: false,
             },
             Arc::new(AllowAllAuthorizer),
@@ -1084,6 +1593,7 @@ fn set_cpu_governor_cli_executes_gated_write_and_prints_result() {
                 platform_profile_enabled: false,
                 battery_charge_type_enabled: false,
                 led_state_enabled: false,
+                keyboard_rgb_enabled: false,
                 ideapad_toggle_enabled: false,
                 camera_power_enabled: false,
                 usb_charging_enabled: false,
@@ -1096,6 +1606,7 @@ fn set_cpu_governor_cli_executes_gated_write_and_prints_result() {
                 conservation_mode_enabled: false,
                 amd_gpu_dpm_enabled: false,
                 curve_optimizer_enabled: false,
+                openrgb_access_setup_enabled: false,
                 hardware_profile_apply_enabled: false,
             },
             Arc::new(AllowAllAuthorizer),
@@ -1170,6 +1681,7 @@ fn set_cpu_epp_cli_executes_gated_write_and_prints_result() {
                 platform_profile_enabled: false,
                 battery_charge_type_enabled: false,
                 led_state_enabled: false,
+                keyboard_rgb_enabled: false,
                 ideapad_toggle_enabled: false,
                 camera_power_enabled: false,
                 usb_charging_enabled: false,
@@ -1182,6 +1694,7 @@ fn set_cpu_epp_cli_executes_gated_write_and_prints_result() {
                 conservation_mode_enabled: false,
                 amd_gpu_dpm_enabled: false,
                 curve_optimizer_enabled: false,
+                openrgb_access_setup_enabled: false,
                 hardware_profile_apply_enabled: false,
             },
             Arc::new(AllowAllAuthorizer),
@@ -1258,6 +1771,7 @@ fn set_camera_power_cli_executes_gated_write_and_prints_result() {
                 platform_profile_enabled: false,
                 battery_charge_type_enabled: false,
                 led_state_enabled: false,
+                keyboard_rgb_enabled: false,
                 ideapad_toggle_enabled: false,
                 camera_power_enabled: true,
                 usb_charging_enabled: false,
@@ -1270,6 +1784,7 @@ fn set_camera_power_cli_executes_gated_write_and_prints_result() {
                 conservation_mode_enabled: false,
                 amd_gpu_dpm_enabled: false,
                 curve_optimizer_enabled: false,
+                openrgb_access_setup_enabled: false,
                 hardware_profile_apply_enabled: false,
             },
             Arc::new(AllowAllAuthorizer),
@@ -1325,6 +1840,7 @@ fn set_usb_charging_cli_reports_policy_block_when_write_is_disabled() {
                 platform_profile_enabled: false,
                 battery_charge_type_enabled: false,
                 led_state_enabled: false,
+                keyboard_rgb_enabled: false,
                 ideapad_toggle_enabled: false,
                 camera_power_enabled: false,
                 usb_charging_enabled: false,
@@ -1337,6 +1853,7 @@ fn set_usb_charging_cli_reports_policy_block_when_write_is_disabled() {
                 conservation_mode_enabled: false,
                 amd_gpu_dpm_enabled: false,
                 curve_optimizer_enabled: false,
+                openrgb_access_setup_enabled: false,
                 hardware_profile_apply_enabled: false,
             },
             Arc::new(AllowAllAuthorizer),
@@ -1384,6 +1901,7 @@ fn set_usb_charging_cli_executes_gated_write_and_prints_result() {
                 platform_profile_enabled: false,
                 battery_charge_type_enabled: false,
                 led_state_enabled: false,
+                keyboard_rgb_enabled: false,
                 ideapad_toggle_enabled: false,
                 camera_power_enabled: false,
                 usb_charging_enabled: true,
@@ -1396,6 +1914,7 @@ fn set_usb_charging_cli_executes_gated_write_and_prints_result() {
                 conservation_mode_enabled: false,
                 amd_gpu_dpm_enabled: false,
                 curve_optimizer_enabled: false,
+                openrgb_access_setup_enabled: false,
                 hardware_profile_apply_enabled: false,
             },
             Arc::new(AllowAllAuthorizer),
@@ -1611,9 +2130,26 @@ fn automation_rule_cli_prints_rules_and_last_runs() {
     client
         .set_automation_rule("fast_charge_until_80", &rule)
         .unwrap();
+    let ac_router = serde_json::json!({
+        "schema_version": 1,
+        "label": "AC profile router",
+        "enabled": true,
+        "kind": "ac_profile_router",
+        "ac_profile_id": "fast_charge",
+        "battery_profile_id": "battery_protect",
+        "cooldown_secs": 120
+    })
+    .to_string();
+    client.set_automation_rule("ac_router", &ac_router).unwrap();
     client
         .apply_automation_rule("fast_charge_until_80")
         .unwrap();
+    fs::write(
+        fixture.join("sys/class/power_supply/BAT0/charge_type"),
+        "Standard\n",
+    )
+    .unwrap();
+    client.refresh_capabilities().unwrap();
 
     let output = Command::new(env!("CARGO_BIN_EXE_legion-control-ui"))
         .args(["--automation-rules", "--bus-address", &address])
@@ -1626,6 +2162,8 @@ fn automation_rule_cli_prints_rules_and_last_runs() {
         json["fast_charge_until_80"]["label"],
         "Fast charge until 80%"
     );
+    assert_eq!(json["ac_router"]["kind"], "ac_profile_router");
+    assert_eq!(json["ac_router"]["ac_profile_id"], "fast_charge");
 
     let output = Command::new(env!("CARGO_BIN_EXE_legion-control-ui"))
         .args(["--last-automation-rule-apply", "--bus-address", &address])
@@ -1641,6 +2179,45 @@ fn automation_rule_cli_prints_rules_and_last_runs() {
     assert_eq!(
         json["fast_charge_until_80"]["profile_run"]["completed"],
         true
+    );
+
+    let output = Command::new(env!("CARGO_BIN_EXE_legion-control-ui"))
+        .args(["--automation-diagnostics", "--bus-address", &address])
+        .output()
+        .unwrap();
+    assert!(output.status.success());
+    assert!(output.stderr.is_empty());
+    let json: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(
+        json["hardware_profiles"]["fast_charge"]["label"],
+        "Fast charge"
+    );
+    assert_eq!(
+        json["automation_rules"]["ac_router"]["kind"],
+        "ac_profile_router"
+    );
+    assert_eq!(
+        json["last_automation_rule_apply"]["fast_charge_until_80"]["profile_run"]["completed"],
+        true
+    );
+    assert!(json["last_hardware_profile_apply"].is_object());
+    assert!(json["recent_platform_profile_changes"]
+        .as_array()
+        .unwrap()
+        .is_empty());
+    assert_eq!(json["hardware_profile_drift"]["status"], "drifted");
+    assert_eq!(json["hardware_profile_drift"]["drifted_count"], 1);
+    assert_eq!(
+        json["hardware_profile_drift"]["items"][0]["action_id"],
+        "battery_charge_type"
+    );
+    assert_eq!(
+        json["hardware_profile_drift"]["items"][0]["requested_value"],
+        "Fast"
+    );
+    assert_eq!(
+        json["hardware_profile_drift"]["items"][0]["current_value"],
+        "Standard"
     );
 
     let _ = std::fs::remove_file(state_path);
@@ -1816,6 +2393,64 @@ fn fixture_service() -> (PrivateBus, zbus::blocking::Connection, String) {
     fixture_service_with_state(&state_path)
 }
 
+fn keyboard_rgb_fixture_service() -> (
+    PrivateBus,
+    zbus::blocking::Connection,
+    String,
+    std::path::PathBuf,
+) {
+    let root = std::env::temp_dir().join(format!(
+        "ratvantage-ui-keyboard-rgb-{}-{}",
+        std::process::id(),
+        std::thread::current().name().unwrap_or("test")
+    ));
+    let _ = fs::remove_dir_all(&root);
+    let device = root.join("sys/class/hidraw/hidraw9/device");
+    fs::create_dir_all(&device).unwrap();
+    fs::write(
+        device.join("uevent"),
+        "DRIVER=hid-generic\nHID_ID=0003:0000048D:0000C985\nHID_NAME=ITE Tech. Inc. ITE Device(8295)\nMODALIAS=hid:b0003g0001v0000048Dp0000C985\n",
+    )
+    .unwrap();
+    let capability = serde_json::json!({
+        "backend": "hidraw",
+        "device_id": "hidraw9",
+        "path": root.join("sys/class/hidraw/hidraw9").display().to_string(),
+        "zones": [
+            { "id": "left", "label": "Left" },
+            { "id": "right", "label": "Right" }
+        ],
+        "effects": ["static", "breath"],
+        "current_effect": "static",
+        "current_colors": {
+            "left": "#111111",
+            "right": "#222222"
+        },
+        "current_brightness": 40,
+        "min_brightness": 0,
+        "max_brightness": 100,
+        "current_speed": 10,
+        "min_speed": 0,
+        "max_speed": 100
+    });
+    fs::write(
+        device.join("ratvantage-keyboard-rgb.json"),
+        serde_json::to_string(&capability).unwrap(),
+    )
+    .unwrap();
+
+    let state_path = unique_state_path("ui-keyboard-rgb-empty-state");
+    let _ = fs::remove_file(&state_path);
+    let service = LegionControl::new_with_state_path(
+        ProbeOptions {
+            sysfs_root: root.clone(),
+        },
+        state_path,
+    );
+    let (bus, service_connection, address) = fixture_service_with_runtime(service);
+    (bus, service_connection, address, root)
+}
+
 fn fixture_service_with_runtime(
     service: LegionControl,
 ) -> (PrivateBus, zbus::blocking::Connection, String) {
@@ -1932,6 +2567,17 @@ struct AllowAllAuthorizer;
 impl WriteAuthorizer for AllowAllAuthorizer {
     fn authorize(&self, _action: &str, _sender: &str) -> std::result::Result<(), String> {
         Ok(())
+    }
+}
+
+struct RecordingOpenRgbAccessSetupWriter {
+    calls: Arc<std::sync::Mutex<Vec<String>>>,
+}
+
+impl OpenRgbAccessSetupWriter for RecordingOpenRgbAccessSetupWriter {
+    fn setup_openrgb_access(&self, target_user: &str) -> std::result::Result<String, String> {
+        self.calls.lock().unwrap().push(target_user.to_owned());
+        Ok(format!("configured {target_user}"))
     }
 }
 

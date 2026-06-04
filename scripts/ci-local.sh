@@ -131,6 +131,22 @@ for control_id in ("hardware_profile", "hardware_profile_trigger"):
 PY
 scripts/test-verify-82wm-live-evidence.sh >/tmp/ratvantage-verify-82wm-live-evidence.txt
 scripts/test-review-write-validation-bundle.sh >/tmp/ratvantage-review-write-validation-bundle.txt
+scripts/test-capture-keyboard-rgb-evidence.sh >/tmp/ratvantage-keyboard-rgb-evidence-test.txt
+scripts/test-compare-keyboard-rgb-evidence.sh >/tmp/ratvantage-keyboard-rgb-compare-test.txt
+scripts/test-check-keyboard-rgb-openrgb.sh >/tmp/ratvantage-keyboard-rgb-openrgb-test.txt
+scripts/test-setup-keyboard-rgb-openrgb-access.sh >/tmp/ratvantage-keyboard-rgb-openrgb-access-test.txt
+scripts/test-capture-compatibility-bundle.sh >/tmp/ratvantage-compatibility-bundle-test.txt
+scripts/test-install-user-session-metadata.sh >/tmp/ratvantage-install-user-session-metadata-test.txt
+scripts/test-rgb-helper-packaging-metadata.sh >/tmp/ratvantage-rgb-helper-packaging-metadata-test.txt
+scripts/test-dev-daemon-args.sh >/tmp/ratvantage-dev-daemon-args-test.txt
+scripts/test-update-dev-install-passwordless.sh >/tmp/ratvantage-update-dev-install-passwordless-test.txt
+scripts/test-capture-keyboard-rgb-openrgb-bridge-evidence.sh >/tmp/ratvantage-keyboard-rgb-openrgb-bridge-test.txt
+scripts/test-review-keyboard-rgb-openrgb-bridge-evidence.sh >/tmp/ratvantage-keyboard-rgb-openrgb-bridge-review-test.txt
+scripts/test-status-keyboard-rgb-openrgb-bridge-evidence.sh >/tmp/ratvantage-keyboard-rgb-openrgb-bridge-status-test.txt
+scripts/test-capture-keyboard-rgb-openrgb-sdk-evidence.sh >/tmp/ratvantage-keyboard-rgb-openrgb-sdk-test.txt
+scripts/test-capture-keyboard-rgb-openrgb-sdk-write-evidence.sh >/tmp/ratvantage-keyboard-rgb-openrgb-sdk-write-test.txt
+scripts/test-openrgb-keyboard-rgb-sdk-helper.sh >/tmp/ratvantage-keyboard-rgb-openrgb-sdk-helper-test.txt
+scripts/test-openrgb-sdk-server-session.sh >/tmp/ratvantage-openrgb-sdk-server-session-test.txt
 scripts/run-local-session-app.sh \
   --frontend status \
   --sysfs-root tests/fixtures/sysfs-82wm-confirmed >/tmp/ratvantage-local-session-status.txt

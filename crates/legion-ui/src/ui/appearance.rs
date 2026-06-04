@@ -1,15 +1,44 @@
 use crate::DiagnosticsBundle;
 use adw::prelude::*;
 use anyhow::Result;
-use legion_common::{IdeapadToggleCapability, LedCapability};
+use legion_common::{
+    IdeapadToggleCapability, KeyboardRgbCandidate, KeyboardRgbOpenRgbStatus,
+    KeyboardRgbWriteRequest, LedCapability,
+};
 use std::cell::RefCell;
+use std::collections::{BTreeMap, BTreeSet};
+use std::env;
+use std::process::Command;
 use std::rc::Rc;
 
 use super::shared::{
-    append_error, info_row, make_client, request_dashboard_refresh, section_note, spawn_dbus_call,
-    status_pill, store_write_feedback_state, write_feedback_row, write_feedback_subtitle,
-    write_feedback_title, PillTone,
+    append_error, info_row, make_client, render_dry_run_plan_summary, request_dashboard_refresh,
+    section_note, selected_dropdown_value, spawn_dbus_call, status_pill,
+    store_write_feedback_state, write_feedback_row, write_feedback_subtitle, write_feedback_title,
+    PillTone,
 };
+
+const OPENRGB_ACCESS_SETUP_COMMAND: &str = "ratvantage-setup-keyboard-rgb-openrgb-access";
+const OPENRGB_BRIDGE_DRY_RUN_COMMAND: &str =
+    "ratvantage-capture-keyboard-rgb-openrgb-bridge-evidence --output target/validation/keyboard-rgb-openrgb-bridge-dry-run";
+const OPENRGB_BRIDGE_EXECUTE_COMMAND: &str =
+    "ratvantage-capture-keyboard-rgb-openrgb-bridge-evidence --output target/validation/keyboard-rgb-openrgb-bridge-execute --execute";
+const OPENRGB_BRIDGE_REVIEW_COMMAND: &str =
+    "ratvantage-review-keyboard-rgb-openrgb-bridge-evidence --require-promotable target/validation/keyboard-rgb-openrgb-bridge-execute";
+const OPENRGB_READINESS_OUTPUT: &str = "target/validation/keyboard-rgb-openrgb-readiness";
+const OPENRGB_READINESS_COMMAND: &str =
+    "ratvantage-check-keyboard-rgb-openrgb --output target/validation/keyboard-rgb-openrgb-readiness";
+const OPENRGB_BRIDGE_STATUS_BIN: &str = "ratvantage-keyboard-rgb-openrgb-bridge-status";
+const OPENRGB_BRIDGE_STATUS_COMMAND: &str =
+    "ratvantage-keyboard-rgb-openrgb-bridge-status --readiness target/validation/keyboard-rgb-openrgb-readiness --sdk target/validation/keyboard-rgb-openrgb-sdk --sdk-write target/validation/keyboard-rgb-openrgb-sdk-write";
+const OPENRGB_SDK_OUTPUT: &str = "target/validation/keyboard-rgb-openrgb-sdk";
+const OPENRGB_SDK_WRITE_OUTPUT: &str = "target/validation/keyboard-rgb-openrgb-sdk-write";
+const OPENRGB_SDK_EVIDENCE_COMMAND: &str =
+    "ratvantage-capture-keyboard-rgb-openrgb-sdk-evidence --output target/validation/keyboard-rgb-openrgb-sdk";
+const OPENRGB_SDK_WRITE_EVIDENCE_COMMAND: &str =
+    "ratvantage-capture-keyboard-rgb-openrgb-sdk-write-evidence --output target/validation/keyboard-rgb-openrgb-sdk-write --execute --mode Breathing";
+const OPENRGB_SDK_SERVER_COMMAND: &str = "ratvantage-openrgb-sdk-server start";
+const OPENRGB_ACCESS_SETUP_LABEL: &str = "OpenRGB access setup";
 
 pub fn appearance_page(diagnostics: Result<DiagnosticsBundle>) -> adw::PreferencesPage {
     let page = adw::PreferencesPage::new();
@@ -23,6 +52,8 @@ pub fn appearance_page(diagnostics: Result<DiagnosticsBundle>) -> adw::Preferenc
 }
 
 fn append_appearance(page: &adw::PreferencesPage, bundle: &DiagnosticsBundle) {
+    page.add(&build_keyboard_rgb_controls(bundle));
+
     let leds = adw::PreferencesGroup::new();
     leds.set_title("LEDs");
     if bundle.raw_probe_report.leds.is_empty() {
@@ -100,6 +131,1091 @@ fn append_appearance(page: &adw::PreferencesPage, bundle: &DiagnosticsBundle) {
             fan_mode_row,
         ));
     }
+}
+
+fn build_keyboard_rgb_controls(bundle: &DiagnosticsBundle) -> adw::PreferencesGroup {
+    let group = adw::PreferencesGroup::new();
+    group.set_title("Keyboard RGB");
+
+    if let Some(rgb) = bundle.raw_probe_report.keyboard_rgb.as_ref() {
+        let current_effect = rgb.current_effect.as_deref().unwrap_or("unknown");
+        let current_brightness = rgb
+            .current_brightness
+            .map(|value| value.to_string())
+            .unwrap_or_else(|| "unknown".to_owned());
+        let current_speed = rgb
+            .current_speed
+            .map(|value| value.to_string())
+            .unwrap_or_else(|| "unknown".to_owned());
+
+        let status = adw::ActionRow::builder()
+            .title("Backend readiness")
+            .subtitle(format!(
+                "backend={} device={} zones={} effect={} brightness={} speed={}",
+                rgb.backend,
+                rgb.device_id,
+                rgb.zones.len(),
+                current_effect,
+                current_brightness,
+                current_speed
+            ))
+            .selectable(false)
+            .build();
+        status.add_suffix(&status_pill("backend ready", PillTone::Good));
+        group.add(&status);
+    } else if bundle.raw_probe_report.keyboard_rgb_candidates.is_empty()
+        && bundle.raw_probe_report.keyboard_rgb_openrgb.is_none()
+    {
+        group.add(&info_row(
+            "Backend readiness",
+            "No keyboard RGB backend or HID research candidates detected.",
+        ));
+        return group;
+    } else if !bundle.raw_probe_report.keyboard_rgb_candidates.is_empty() {
+        let candidates = &bundle.raw_probe_report.keyboard_rgb_candidates;
+        let status = adw::ActionRow::builder()
+            .title("Backend readiness")
+            .subtitle(format_keyboard_rgb_candidate_summary(candidates))
+            .selectable(false)
+            .build();
+        status.add_suffix(&status_pill("research", PillTone::Warning));
+        group.add(&status);
+
+        group.add(&info_row(
+            "Observed firmware state",
+            "Fn+Space cycles firmware RGB modes; visible effect breathing. Observation only; not daemon read-back.",
+        ));
+    }
+
+    if let Some(openrgb) = bundle.raw_probe_report.keyboard_rgb_openrgb.as_ref() {
+        let status = adw::ActionRow::builder()
+            .title("OpenRGB readiness")
+            .subtitle(format_keyboard_rgb_openrgb_summary(openrgb))
+            .selectable(false)
+            .build();
+        status.add_suffix(&status_pill(
+            if openrgb.devices.is_empty() {
+                "not detected"
+            } else {
+                "detected"
+            },
+            if openrgb.devices.is_empty() {
+                PillTone::Neutral
+            } else {
+                PillTone::Warning
+            },
+        ));
+        group.add(&status);
+
+        if openrgb.installed && openrgb_linux_access_needs_setup(openrgb) {
+            let setup_row = adw::ActionRow::builder()
+                .title("OpenRGB access setup")
+                .subtitle(format!(
+                    "Daemon setup adds {} to i2c when needed, loads i2c-dev, and installs udev access rules; log out/in after success. Missing: {}",
+                    current_setup_user(),
+                    openrgb_missing_access_summary(openrgb)
+                ))
+                .selectable(false)
+                .build();
+            let setup = gtk4::Button::with_label("Set up");
+            setup.set_tooltip_text(Some(
+                "Ask the RatVantage daemon to set up OpenRGB i2c access with polkit authorization.",
+            ));
+            setup.add_css_class("pill");
+            setup.set_valign(gtk4::Align::Center);
+            let feedback_row = write_feedback_row(OPENRGB_ACCESS_SETUP_LABEL);
+            let feedback_row_for_click = feedback_row.clone();
+            setup.connect_clicked(move |_| {
+                handle_openrgb_access_setup_click(&feedback_row_for_click);
+            });
+            setup_row.add_suffix(&setup);
+            setup_row.add_suffix(&copy_command_button(
+                "Copy fallback",
+                OPENRGB_ACCESS_SETUP_COMMAND,
+                "Copy the fallback setup command if polkit setup is unavailable.",
+            ));
+            setup_row.add_suffix(&status_pill("setup needed", PillTone::Warning));
+            group.add(&setup_row);
+            group.add(&feedback_row);
+        }
+
+        if openrgb.installed && !openrgb.devices.is_empty() {
+            let status_row = adw::ActionRow::builder()
+                .title("OpenRGB bridge evidence status")
+                .subtitle(format!(
+                    "{}; then {}",
+                    OPENRGB_READINESS_COMMAND, OPENRGB_BRIDGE_STATUS_COMMAND
+                ))
+                .selectable(false)
+                .build();
+            let check_status = gtk4::Button::with_label("Check status");
+            check_status.set_tooltip_text(Some(
+                "Run the read-only OpenRGB bridge evidence status helper and show the result here.",
+            ));
+            check_status.add_css_class("pill");
+            check_status.set_valign(gtk4::Align::Center);
+            let bridge_status_feedback = write_feedback_row("OpenRGB bridge status");
+            let bridge_status_feedback_for_click = bridge_status_feedback.clone();
+            check_status.connect_clicked(move |_| {
+                handle_openrgb_bridge_status_click(&bridge_status_feedback_for_click);
+            });
+            status_row.add_suffix(&check_status);
+            status_row.add_suffix(&copy_command_button(
+                "Copy status",
+                OPENRGB_BRIDGE_STATUS_COMMAND,
+                "Copy the command that summarizes OpenRGB readiness, bridge evidence, and SDK read-back evidence.",
+            ));
+            status_row.add_suffix(&status_pill("read-only", PillTone::Neutral));
+            group.add(&status_row);
+            group.add(&bridge_status_feedback);
+
+            let sdk_row = adw::ActionRow::builder()
+                .title("OpenRGB SDK read-back evidence")
+                .subtitle(OPENRGB_SDK_EVIDENCE_COMMAND)
+                .selectable(false)
+                .build();
+            let check_sdk = gtk4::Button::with_label("Check SDK");
+            check_sdk.set_tooltip_text(Some(
+                "Run the read-only OpenRGB SDK controller probe and show whether active mode/color read-back is available.",
+            ));
+            check_sdk.add_css_class("pill");
+            check_sdk.set_valign(gtk4::Align::Center);
+            let sdk_feedback = write_feedback_row("OpenRGB SDK evidence");
+            let sdk_feedback_for_click = sdk_feedback.clone();
+            check_sdk.connect_clicked(move |_| {
+                handle_openrgb_sdk_evidence_click(&sdk_feedback_for_click);
+            });
+            sdk_row.add_suffix(&check_sdk);
+            sdk_row.add_suffix(&copy_command_button(
+                "Copy SDK",
+                OPENRGB_SDK_EVIDENCE_COMMAND,
+                "Copy the read-only OpenRGB SDK controller evidence command.",
+            ));
+            sdk_row.add_suffix(&status_pill("read-only", PillTone::Neutral));
+            group.add(&sdk_row);
+            group.add(&sdk_feedback);
+
+            let sdk_server_row = adw::ActionRow::builder()
+                .title("OpenRGB SDK server")
+                .subtitle(OPENRGB_SDK_SERVER_COMMAND)
+                .selectable(false)
+                .build();
+            let start_sdk_server = gtk4::Button::with_label("Start server");
+            start_sdk_server.set_tooltip_text(Some(
+                "Start a user-session OpenRGB SDK server for RatVantage helper connections.",
+            ));
+            start_sdk_server.add_css_class("pill");
+            start_sdk_server.set_valign(gtk4::Align::Center);
+            let sdk_server_feedback = write_feedback_row("OpenRGB SDK server");
+            let sdk_server_feedback_for_click = sdk_server_feedback.clone();
+            start_sdk_server.connect_clicked(move |_| {
+                handle_openrgb_sdk_server_click(&sdk_server_feedback_for_click);
+            });
+            sdk_server_row.add_suffix(&start_sdk_server);
+            sdk_server_row.add_suffix(&copy_command_button(
+                "Copy server",
+                OPENRGB_SDK_SERVER_COMMAND,
+                "Copy the user-session OpenRGB SDK server start command.",
+            ));
+            sdk_server_row.add_suffix(&status_pill("user", PillTone::Neutral));
+            group.add(&sdk_server_row);
+            group.add(&sdk_server_feedback);
+
+            let sdk_write_row = adw::ActionRow::builder()
+                .title("OpenRGB SDK write evidence")
+                .subtitle(OPENRGB_SDK_WRITE_EVIDENCE_COMMAND)
+                .selectable(false)
+                .build();
+            sdk_write_row.add_suffix(&copy_command_button(
+                "Copy SDK write",
+                OPENRGB_SDK_WRITE_EVIDENCE_COMMAND,
+                "Copy the operator-triggered OpenRGB SDK write/read-back/restore evidence command.",
+            ));
+            sdk_write_row.add_suffix(&status_pill("operator", PillTone::Warning));
+            group.add(&sdk_write_row);
+
+            let dry_run_row = adw::ActionRow::builder()
+                .title("OpenRGB bridge dry-run evidence")
+                .subtitle(OPENRGB_BRIDGE_DRY_RUN_COMMAND)
+                .selectable(false)
+                .build();
+            let capture_dry_run = gtk4::Button::with_label("Capture dry-run");
+            capture_dry_run.set_tooltip_text(Some(
+                "Run the non-mutating OpenRGB bridge evidence capture and refresh status.",
+            ));
+            capture_dry_run.add_css_class("pill");
+            capture_dry_run.set_valign(gtk4::Align::Center);
+            let dry_run_feedback = write_feedback_row("OpenRGB bridge dry-run");
+            let dry_run_feedback_for_click = dry_run_feedback.clone();
+            capture_dry_run.connect_clicked(move |_| {
+                handle_openrgb_bridge_dry_run_click(&dry_run_feedback_for_click);
+            });
+            dry_run_row.add_suffix(&capture_dry_run);
+            dry_run_row.add_suffix(&copy_command_button(
+                "Copy dry-run",
+                OPENRGB_BRIDGE_DRY_RUN_COMMAND,
+                "Copy the non-mutating OpenRGB bridge evidence command.",
+            ));
+            dry_run_row.add_suffix(&status_pill("safe", PillTone::Neutral));
+            group.add(&dry_run_row);
+            group.add(&dry_run_feedback);
+
+            let execute_row = adw::ActionRow::builder()
+                .title("OpenRGB bridge execute evidence")
+                .subtitle(format!(
+                    "{}; then {}",
+                    OPENRGB_BRIDGE_EXECUTE_COMMAND, OPENRGB_BRIDGE_REVIEW_COMMAND
+                ))
+                .selectable(false)
+                .build();
+            let review_execute = gtk4::Button::with_label("Review execute");
+            review_execute.set_tooltip_text(Some(
+                "Run the read-only promotion reviewer for the execute evidence bundle.",
+            ));
+            review_execute.add_css_class("pill");
+            review_execute.set_valign(gtk4::Align::Center);
+            let review_feedback = write_feedback_row("OpenRGB bridge review");
+            let review_feedback_for_click = review_feedback.clone();
+            review_execute.connect_clicked(move |_| {
+                handle_openrgb_bridge_review_click(&review_feedback_for_click);
+            });
+            execute_row.add_suffix(&review_execute);
+            execute_row.add_suffix(&copy_command_button(
+                "Copy execute",
+                OPENRGB_BRIDGE_EXECUTE_COMMAND,
+                "Copy the operator-triggered command that briefly changes RGB and restores it.",
+            ));
+            execute_row.add_suffix(&copy_command_button(
+                "Copy review",
+                OPENRGB_BRIDGE_REVIEW_COMMAND,
+                "Copy the promotion review command for the execute evidence bundle.",
+            ));
+            execute_row.add_suffix(&status_pill("operator", PillTone::Warning));
+            group.add(&execute_row);
+            group.add(&review_feedback);
+        }
+    }
+
+    let rgb_mode_choices = keyboard_rgb_mode_choices(bundle);
+    let rgb_mode_refs = rgb_mode_choices
+        .iter()
+        .map(String::as_str)
+        .collect::<Vec<_>>();
+    let selected_mode = selected_keyboard_rgb_mode(bundle, &rgb_mode_choices);
+    let selected_index = rgb_mode_choices
+        .iter()
+        .position(|mode| mode == &selected_mode)
+        .unwrap_or(0) as u32;
+    let effects = gtk4::StringList::new(&rgb_mode_refs);
+    let effect = gtk4::DropDown::builder()
+        .model(&effects)
+        .selected(selected_index)
+        .sensitive(true)
+        .build();
+    effect.set_valign(gtk4::Align::Center);
+    let effect_row = adw::ActionRow::builder()
+        .title("Effect")
+        .subtitle("Staged request mode; preview is read-only.")
+        .selectable(false)
+        .build();
+    effect_row.add_suffix(&effect);
+    group.add(&effect_row);
+
+    let mut color_entry_widgets = Vec::new();
+    for (zone_id, default_color) in keyboard_rgb_color_entries(bundle) {
+        let entry = gtk4::Entry::new();
+        entry.set_text(&default_color);
+        entry.set_width_chars(9);
+        entry.set_max_width_chars(9);
+        entry.set_valign(gtk4::Align::Center);
+        let row = adw::ActionRow::builder()
+            .title(format!("Zone color: {zone_id}"))
+            .subtitle("Use #RRGGBB. OpenRGB preview sends all listed zones together.")
+            .selectable(false)
+            .build();
+        row.add_suffix(&entry);
+        group.add(&row);
+        color_entry_widgets.push((zone_id, entry));
+    }
+    let color_entries = Rc::new(color_entry_widgets);
+
+    let brightness = gtk4::Scale::with_range(gtk4::Orientation::Horizontal, 0.0, 100.0, 1.0);
+    brightness.set_value(50.0);
+    brightness.set_draw_value(true);
+    brightness.set_sensitive(true);
+    brightness.set_hexpand(true);
+    let brightness_row = adw::ActionRow::builder()
+        .title("Brightness")
+        .subtitle("Staged request brightness; preview is read-only.")
+        .selectable(false)
+        .build();
+    brightness_row.add_suffix(&brightness);
+    group.add(&brightness_row);
+
+    let speed = gtk4::Scale::with_range(gtk4::Orientation::Horizontal, 0.0, 100.0, 1.0);
+    speed.set_value(50.0);
+    speed.set_draw_value(true);
+    speed.set_sensitive(true);
+    speed.set_hexpand(true);
+    let speed_row = adw::ActionRow::builder()
+        .title("Speed")
+        .subtitle("Staged request speed; preview is read-only.")
+        .selectable(false)
+        .build();
+    speed_row.add_suffix(&speed);
+    group.add(&speed_row);
+
+    let preview_row = write_feedback_row("Keyboard RGB preview");
+    let controls = KeyboardRgbControlWidgets {
+        effect: effect.clone(),
+        colors: Rc::clone(&color_entries),
+        brightness: brightness.clone(),
+        speed: speed.clone(),
+    };
+    let preview = gtk4::Button::with_label("Preview plan");
+    preview.add_css_class("pill");
+    preview.set_valign(gtk4::Align::Center);
+    let preview_row_for_click = preview_row.clone();
+    let preview_backend = bundle
+        .raw_probe_report
+        .keyboard_rgb_openrgb
+        .as_ref()
+        .map(|openrgb| {
+            if openrgb.backend_ready {
+                KeyboardRgbPreviewBackend::OpenRgbSdk
+            } else if openrgb_plan_available(openrgb) {
+                KeyboardRgbPreviewBackend::OpenRgbBridge
+            } else {
+                KeyboardRgbPreviewBackend::Native
+            }
+        })
+        .unwrap_or(KeyboardRgbPreviewBackend::Native);
+    let controls_for_preview = controls.clone();
+    preview.connect_clicked(move |_| {
+        handle_keyboard_rgb_preview_click(
+            &preview_row_for_click,
+            controls_for_preview.clone(),
+            preview_backend,
+        );
+    });
+    let copy_json = keyboard_rgb_copy_json_button("Copy request JSON", controls.clone());
+    let preview_action_row = adw::ActionRow::builder()
+        .title("RGB request preview")
+        .subtitle("Builds a validated D-Bus/OpenRGB dry-run plan; no RGB write is sent.")
+        .selectable(false)
+        .build();
+    preview_action_row.add_suffix(&preview);
+    preview_action_row.add_suffix(&copy_json);
+    preview_action_row.add_suffix(&status_pill("read-only", PillTone::Neutral));
+    group.add(&preview_action_row);
+    group.add(&preview_row);
+
+    let apply_row = adw::ActionRow::builder()
+        .title("Apply RGB")
+        .subtitle("Disabled until live backend evidence proves requested mode/color read-back and restore.")
+        .selectable(false)
+        .build();
+    let apply = gtk4::Button::with_label("Apply");
+    let apply_enabled = bundle.raw_probe_report.keyboard_rgb.is_some()
+        || bundle
+            .raw_probe_report
+            .keyboard_rgb_openrgb
+            .as_ref()
+            .is_some_and(|openrgb| openrgb.backend_ready);
+    apply.set_sensitive(apply_enabled);
+    apply.add_css_class("pill");
+    apply.set_valign(gtk4::Align::Center);
+    let apply_feedback_row = write_feedback_row("Keyboard RGB");
+    let apply_controls = KeyboardRgbControlWidgets {
+        effect,
+        colors: Rc::clone(&color_entries),
+        brightness,
+        speed,
+    };
+    let apply_feedback_for_click = apply_feedback_row.clone();
+    apply.connect_clicked(move |_| {
+        handle_keyboard_rgb_apply_click(&apply_feedback_for_click, apply_controls.clone());
+    });
+    apply_row.add_suffix(&apply);
+    apply_row.add_suffix(&status_pill(
+        if apply_enabled {
+            "guarded"
+        } else {
+            "evidence gate"
+        },
+        if apply_enabled {
+            PillTone::Warning
+        } else {
+            PillTone::Neutral
+        },
+    ));
+    group.add(&apply_row);
+    group.add(&apply_feedback_row);
+
+    group
+}
+
+#[derive(Clone)]
+struct KeyboardRgbControlWidgets {
+    effect: gtk4::DropDown,
+    colors: Rc<Vec<(String, gtk4::Entry)>>,
+    brightness: gtk4::Scale,
+    speed: gtk4::Scale,
+}
+
+#[derive(Clone, Copy)]
+enum KeyboardRgbPreviewBackend {
+    Native,
+    OpenRgbBridge,
+    OpenRgbSdk,
+}
+
+fn keyboard_rgb_mode_choices(bundle: &DiagnosticsBundle) -> Vec<String> {
+    if let Some(openrgb) = bundle.raw_probe_report.keyboard_rgb_openrgb.as_ref() {
+        if let Some(device) = openrgb.devices.first() {
+            if !device.modes.is_empty() {
+                return device.modes.clone();
+            }
+        }
+    }
+    if let Some(rgb) = bundle.raw_probe_report.keyboard_rgb.as_ref() {
+        if !rgb.effects.is_empty() {
+            return rgb.effects.clone();
+        }
+    }
+    vec![
+        "Direct".to_owned(),
+        "Breathing".to_owned(),
+        "Rainbow Wave".to_owned(),
+        "Spectrum Cycle".to_owned(),
+    ]
+}
+
+fn selected_keyboard_rgb_mode(bundle: &DiagnosticsBundle, choices: &[String]) -> String {
+    let selected = bundle
+        .raw_probe_report
+        .keyboard_rgb_openrgb
+        .as_ref()
+        .and_then(|openrgb| openrgb.devices.first())
+        .and_then(|device| device.current_mode.as_deref())
+        .or_else(|| {
+            bundle
+                .raw_probe_report
+                .keyboard_rgb
+                .as_ref()
+                .and_then(|rgb| rgb.current_effect.as_deref())
+        });
+    selected
+        .and_then(|selected| {
+            choices
+                .iter()
+                .find(|choice| choice.eq_ignore_ascii_case(selected))
+                .cloned()
+        })
+        .or_else(|| choices.first().cloned())
+        .unwrap_or_else(|| "Direct".to_owned())
+}
+
+fn keyboard_rgb_color_entries(bundle: &DiagnosticsBundle) -> Vec<(String, String)> {
+    if let Some(openrgb) = bundle.raw_probe_report.keyboard_rgb_openrgb.as_ref() {
+        if let Some(device) = openrgb.devices.first() {
+            if !device.leds.is_empty() {
+                return device
+                    .leds
+                    .iter()
+                    .map(|label| (label.clone(), "#00A8FF".to_owned()))
+                    .collect();
+            }
+        }
+    }
+    if let Some(rgb) = bundle.raw_probe_report.keyboard_rgb.as_ref() {
+        if !rgb.zones.is_empty() {
+            return rgb
+                .zones
+                .iter()
+                .map(|zone| {
+                    let color = rgb
+                        .current_colors
+                        .get(&zone.id)
+                        .cloned()
+                        .unwrap_or_else(|| "#00A8FF".to_owned());
+                    (zone.id.clone(), color)
+                })
+                .collect();
+        }
+    }
+    ["Left side", "Left center", "Right center", "Right side"]
+        .into_iter()
+        .map(|label| (label.to_owned(), "#00A8FF".to_owned()))
+        .collect()
+}
+
+fn openrgb_plan_available(openrgb: &KeyboardRgbOpenRgbStatus) -> bool {
+    openrgb.installed && !openrgb.devices.is_empty()
+}
+
+fn openrgb_linux_access_needs_setup(openrgb: &KeyboardRgbOpenRgbStatus) -> bool {
+    !openrgb.i2c_dev_loaded
+        || !openrgb.user_in_i2c_group
+        || !openrgb.has_i2c_rw_access
+        || !openrgb.has_hidraw_rw_access
+}
+
+fn openrgb_missing_access_summary(openrgb: &KeyboardRgbOpenRgbStatus) -> String {
+    let mut missing = Vec::new();
+    if !openrgb.i2c_dev_loaded {
+        missing.push("i2c-dev");
+    }
+    if !openrgb.user_in_i2c_group {
+        missing.push("i2c group");
+    }
+    if !openrgb.has_i2c_rw_access {
+        missing.push("i2c rw");
+    }
+    if !openrgb.has_hidraw_rw_access {
+        missing.push("hidraw rw");
+    }
+    if missing.is_empty() {
+        "none".to_owned()
+    } else {
+        missing.join(", ")
+    }
+}
+
+fn staged_keyboard_rgb_request(
+    controls: &KeyboardRgbControlWidgets,
+) -> Result<KeyboardRgbWriteRequest> {
+    let effect = selected_dropdown_value(&controls.effect).unwrap_or_else(|| "Direct".to_owned());
+    let mut colors = BTreeMap::new();
+    for (zone_id, entry) in controls.colors.iter() {
+        let color = entry.text().trim().to_owned();
+        if !is_hex_color(&color) {
+            anyhow::bail!("{zone_id} must be a #RRGGBB color");
+        }
+        colors.insert(zone_id.clone(), color);
+    }
+    Ok(KeyboardRgbWriteRequest {
+        effect,
+        colors,
+        brightness: scale_u8(&controls.brightness),
+        speed: Some(scale_u8(&controls.speed)),
+    })
+}
+
+fn scale_u8(scale: &gtk4::Scale) -> u8 {
+    scale.value().round().clamp(0.0, 100.0) as u8
+}
+
+fn is_hex_color(value: &str) -> bool {
+    value.len() == 7
+        && value.starts_with('#')
+        && value[1..].chars().all(|ch| ch.is_ascii_hexdigit())
+}
+
+fn keyboard_rgb_copy_json_button(label: &str, controls: KeyboardRgbControlWidgets) -> gtk4::Button {
+    let copy = gtk4::Button::with_label(label);
+    copy.set_tooltip_text(Some("Copy the staged keyboard RGB request JSON."));
+    copy.add_css_class("pill");
+    copy.set_valign(gtk4::Align::Center);
+    copy.connect_clicked(move |_| {
+        let text = match staged_keyboard_rgb_request(&controls)
+            .and_then(|request| Ok(serde_json::to_string_pretty(&request)?))
+        {
+            Ok(json) => json,
+            Err(error) => format!("invalid keyboard RGB request: {error}"),
+        };
+        if let Some(display) = gtk4::gdk::Display::default() {
+            display.clipboard().set_text(&text);
+        }
+    });
+    copy
+}
+
+fn handle_keyboard_rgb_preview_click(
+    feedback_row: &adw::ActionRow,
+    controls: KeyboardRgbControlWidgets,
+    preview_backend: KeyboardRgbPreviewBackend,
+) {
+    let request = match staged_keyboard_rgb_request(&controls) {
+        Ok(request) => request,
+        Err(error) => {
+            feedback_row.set_title("Preview invalid");
+            feedback_row.set_subtitle(&error.to_string());
+            return;
+        }
+    };
+    let feedback_row = feedback_row.clone();
+    feedback_row.set_title("Preview in progress");
+    feedback_row.set_subtitle("Request sent to daemon planning method; no RGB write is sent.");
+
+    spawn_dbus_call(
+        move || {
+            make_client().and_then(|client| match preview_backend {
+                KeyboardRgbPreviewBackend::Native => client.plan_keyboard_rgb_write(&request),
+                KeyboardRgbPreviewBackend::OpenRgbBridge => {
+                    client.plan_openrgb_keyboard_rgb_bridge(&request)
+                }
+                KeyboardRgbPreviewBackend::OpenRgbSdk => {
+                    client.plan_openrgb_keyboard_rgb_sdk_write(&request)
+                }
+            })
+        },
+        move |result| match result {
+            Ok(plan) => {
+                feedback_row.set_title("Preview plan");
+                feedback_row.set_subtitle(&render_dry_run_plan_summary(&plan));
+            }
+            Err(error) => {
+                feedback_row.set_title("Preview error");
+                feedback_row.set_subtitle(&format!("Failed to build RGB plan: {error}"));
+            }
+        },
+    );
+}
+
+fn handle_keyboard_rgb_apply_click(
+    feedback_row: &adw::ActionRow,
+    controls: KeyboardRgbControlWidgets,
+) {
+    let request = match staged_keyboard_rgb_request(&controls) {
+        Ok(request) => request,
+        Err(error) => {
+            feedback_row.set_title("Apply invalid");
+            feedback_row.set_subtitle(&error.to_string());
+            return;
+        }
+    };
+    let feedback_row = feedback_row.clone();
+    feedback_row.set_title("Apply in progress");
+    feedback_row
+        .set_subtitle("Request sent to the daemon; waiting for policy/auth/write result...");
+
+    spawn_dbus_call(
+        move || make_client().and_then(|client| client.set_keyboard_rgb(&request)),
+        move |result| match result {
+            Ok(result) => {
+                let title = write_feedback_title(Some(&result));
+                let subtitle = write_feedback_subtitle(Some(&result));
+                feedback_row.set_title(title);
+                feedback_row.set_subtitle(&subtitle);
+                store_write_feedback_state("Keyboard RGB", title, &subtitle);
+                let _ = request_dashboard_refresh();
+            }
+            Err(error) => {
+                feedback_row.set_title("Apply error");
+                let subtitle = format!("Failed - daemon call could not be completed: {error}");
+                feedback_row.set_subtitle(&subtitle);
+                store_write_feedback_state("Keyboard RGB", "Apply error", &subtitle);
+                let _ = request_dashboard_refresh();
+            }
+        },
+    );
+}
+
+fn handle_openrgb_bridge_status_click(feedback_row: &adw::ActionRow) {
+    let feedback_row = feedback_row.clone();
+    feedback_row.set_title("Status check in progress");
+    feedback_row.set_subtitle(
+        "Capturing OpenRGB readiness, then running the read-only bridge evidence status helper...",
+    );
+
+    spawn_dbus_call(run_openrgb_bridge_status, move |result| match result {
+        Ok(summary) => {
+            feedback_row.set_title("OpenRGB bridge status");
+            feedback_row.set_subtitle(&summary);
+            store_write_feedback_state("OpenRGB bridge status", "OpenRGB bridge status", &summary);
+        }
+        Err(error) => {
+            feedback_row.set_title("Status check error");
+            let subtitle = format!("Failed to run status helper: {error}");
+            feedback_row.set_subtitle(&subtitle);
+            store_write_feedback_state("OpenRGB bridge status", "Status check error", &subtitle);
+        }
+    });
+}
+
+fn handle_openrgb_bridge_dry_run_click(feedback_row: &adw::ActionRow) {
+    let feedback_row = feedback_row.clone();
+    feedback_row.set_title("Dry-run capture in progress");
+    feedback_row.set_subtitle(
+        "Running OpenRGB bridge dry-run evidence capture; no RGB apply command is sent.",
+    );
+
+    spawn_dbus_call(
+        run_openrgb_bridge_dry_run_capture,
+        move |result| match result {
+            Ok(summary) => {
+                feedback_row.set_title("Dry-run evidence captured");
+                feedback_row.set_subtitle(&summary);
+                store_write_feedback_state(
+                    "OpenRGB bridge dry-run",
+                    "Dry-run evidence captured",
+                    &summary,
+                );
+            }
+            Err(error) => {
+                feedback_row.set_title("Dry-run capture error");
+                let subtitle = format!("Failed to capture dry-run evidence: {error}");
+                feedback_row.set_subtitle(&subtitle);
+                store_write_feedback_state(
+                    "OpenRGB bridge dry-run",
+                    "Dry-run capture error",
+                    &subtitle,
+                );
+            }
+        },
+    );
+}
+
+fn handle_openrgb_bridge_review_click(feedback_row: &adw::ActionRow) {
+    let feedback_row = feedback_row.clone();
+    feedback_row.set_title("Review in progress");
+    feedback_row.set_subtitle("Running the read-only OpenRGB bridge promotion reviewer...");
+
+    spawn_dbus_call(run_openrgb_bridge_review, move |result| match result {
+        Ok(summary) => {
+            feedback_row.set_title("Execute evidence review passed");
+            feedback_row.set_subtitle(&summary);
+            store_write_feedback_state(
+                "OpenRGB bridge review",
+                "Execute evidence review passed",
+                &summary,
+            );
+        }
+        Err(error) => {
+            feedback_row.set_title("Execute evidence not promotable");
+            let subtitle = format!("{error}");
+            feedback_row.set_subtitle(&subtitle);
+            store_write_feedback_state(
+                "OpenRGB bridge review",
+                "Execute evidence not promotable",
+                &subtitle,
+            );
+        }
+    });
+}
+
+fn handle_openrgb_sdk_evidence_click(feedback_row: &adw::ActionRow) {
+    let feedback_row = feedback_row.clone();
+    feedback_row.set_title("SDK check in progress");
+    feedback_row.set_subtitle(
+        "Running the read-only OpenRGB SDK controller evidence probe; no RGB write is sent.",
+    );
+
+    spawn_dbus_call(
+        run_openrgb_sdk_evidence_capture,
+        move |result| match result {
+            Ok(summary) => {
+                feedback_row.set_title("OpenRGB SDK evidence");
+                feedback_row.set_subtitle(&summary);
+                store_write_feedback_state(
+                    "OpenRGB SDK evidence",
+                    "OpenRGB SDK evidence",
+                    &summary,
+                );
+            }
+            Err(error) => {
+                feedback_row.set_title("SDK check error");
+                let subtitle = format!("Failed to capture SDK evidence: {error}");
+                feedback_row.set_subtitle(&subtitle);
+                store_write_feedback_state("OpenRGB SDK evidence", "SDK check error", &subtitle);
+            }
+        },
+    );
+}
+
+fn handle_openrgb_sdk_server_click(feedback_row: &adw::ActionRow) {
+    let feedback_row = feedback_row.clone();
+    feedback_row.set_title("SDK server start in progress");
+    feedback_row
+        .set_subtitle("Starting the user-session OpenRGB SDK server; no RGB write is sent.");
+
+    spawn_dbus_call(run_openrgb_sdk_server_start, move |result| match result {
+        Ok(summary) => {
+            feedback_row.set_title("OpenRGB SDK server");
+            feedback_row.set_subtitle(&summary);
+            store_write_feedback_state("OpenRGB SDK server", "OpenRGB SDK server", &summary);
+        }
+        Err(error) => {
+            feedback_row.set_title("SDK server error");
+            let subtitle = format!("Failed to start OpenRGB SDK server: {error}");
+            feedback_row.set_subtitle(&subtitle);
+            store_write_feedback_state("OpenRGB SDK server", "SDK server error", &subtitle);
+        }
+    });
+}
+
+fn run_openrgb_bridge_dry_run_capture() -> Result<String> {
+    let output = Command::new("ratvantage-capture-keyboard-rgb-openrgb-bridge-evidence")
+        .args([
+            "--output",
+            "target/validation/keyboard-rgb-openrgb-bridge-dry-run",
+        ])
+        .output()?;
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    if !output.status.success() {
+        let stderr = stderr.trim();
+        anyhow::bail!(
+            "exit status {}; {}",
+            output.status,
+            if stderr.is_empty() {
+                "no stderr"
+            } else {
+                stderr
+            }
+        );
+    }
+
+    let capture = render_bridge_status_output(&stdout);
+    let status = run_openrgb_bridge_status()?;
+    if capture.is_empty() {
+        Ok(status)
+    } else {
+        Ok(format!("{capture}  {status}"))
+    }
+}
+
+fn run_openrgb_sdk_server_start() -> Result<String> {
+    let output = Command::new("ratvantage-openrgb-sdk-server")
+        .arg("start")
+        .output()?;
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    if !output.status.success() {
+        let stderr = stderr.trim();
+        anyhow::bail!(
+            "exit status {}; {}",
+            output.status,
+            if stderr.is_empty() {
+                "no stderr"
+            } else {
+                stderr
+            }
+        );
+    }
+    let server = stdout
+        .lines()
+        .find(|line| line.starts_with("openrgb_sdk_server="))
+        .unwrap_or_else(|| stdout.trim());
+    if let Ok(client) = make_client() {
+        let _ = client.refresh_capabilities();
+    }
+    let _ = request_dashboard_refresh();
+    let status = run_openrgb_bridge_status()
+        .unwrap_or_else(|error| format!("status refresh failed after server start: {error}"));
+    if status.is_empty() {
+        Ok(server.to_owned())
+    } else {
+        Ok(format!("{server}  {status}"))
+    }
+}
+
+fn run_openrgb_sdk_evidence_capture() -> Result<String> {
+    let output = Command::new("ratvantage-capture-keyboard-rgb-openrgb-sdk-evidence")
+        .args(["--output", OPENRGB_SDK_OUTPUT])
+        .output()?;
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    if !output.status.success() {
+        let stderr = stderr.trim();
+        anyhow::bail!(
+            "exit status {}; {}",
+            output.status,
+            if stderr.is_empty() {
+                "no stderr"
+            } else {
+                stderr
+            }
+        );
+    }
+    let json_path = format!("{OPENRGB_SDK_OUTPUT}/openrgb-keyboard-rgb-sdk-evidence.json");
+    let json = std::fs::read_to_string(&json_path)?;
+    let report: serde_json::Value = serde_json::from_str(&json)?;
+    let result = &report["result"];
+    let sdk = &report["sdk"];
+    let keyboard = &report["keyboard"];
+    let controller = &keyboard["controller"];
+    let status = result["status"].as_str().unwrap_or("unknown");
+    let connected = sdk["connected"].as_bool().unwrap_or(false);
+    let protocol = sdk["protocol_version"]
+        .as_i64()
+        .map(|value| value.to_string())
+        .unwrap_or_else(|| "unknown".to_owned());
+    let keyboard_detected = keyboard["detected"].as_bool().unwrap_or(false);
+    let active_mode = controller["active_mode"].as_str().unwrap_or("unknown");
+    let color_count = controller["colors"]
+        .as_array()
+        .map(Vec::len)
+        .unwrap_or_default();
+    let read_back_supported = result["read_back_supported"].as_bool().unwrap_or(false);
+    let blockers = result["promotion_blockers"]
+        .as_array()
+        .map(|items| {
+            items
+                .iter()
+                .filter_map(|item| item.as_str())
+                .take(2)
+                .collect::<Vec<_>>()
+                .join("; ")
+        })
+        .filter(|summary| !summary.is_empty())
+        .unwrap_or_else(|| "none".to_owned());
+    let capture = render_bridge_status_output(&stdout);
+    let summary = format!(
+        "status={status} connected={connected} protocol={protocol} keyboard_detected={keyboard_detected} active_mode={active_mode} colors={color_count} read_back_supported={read_back_supported} blockers={blockers}"
+    );
+    if capture.is_empty() {
+        Ok(summary)
+    } else {
+        Ok(format!("{capture}  {summary}"))
+    }
+}
+
+fn run_openrgb_bridge_review() -> Result<String> {
+    let output = Command::new("ratvantage-review-keyboard-rgb-openrgb-bridge-evidence")
+        .args([
+            "--require-promotable",
+            "target/validation/keyboard-rgb-openrgb-bridge-execute",
+        ])
+        .output()?;
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    let summary = render_bridge_status_output(&stdout);
+    if output.status.success() {
+        if summary.is_empty() {
+            Ok("Execute evidence is promotable; add production backend policy gates before enabling Apply RGB.".to_owned())
+        } else {
+            Ok(summary)
+        }
+    } else {
+        let stderr = stderr.trim();
+        let detail = if !summary.is_empty() {
+            summary
+        } else if !stderr.is_empty() {
+            stderr.to_owned()
+        } else {
+            "reviewer returned no detail".to_owned()
+        };
+        anyhow::bail!("{detail}")
+    }
+}
+
+fn run_openrgb_bridge_status() -> Result<String> {
+    let readiness = run_openrgb_readiness_capture()?;
+    let output = Command::new(OPENRGB_BRIDGE_STATUS_BIN)
+        .args([
+            "--readiness",
+            OPENRGB_READINESS_OUTPUT,
+            "--sdk",
+            OPENRGB_SDK_OUTPUT,
+            "--sdk-write",
+            OPENRGB_SDK_WRITE_OUTPUT,
+        ])
+        .output()?;
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    if !output.status.success() {
+        let stderr = stderr.trim();
+        anyhow::bail!(
+            "exit status {}; {}",
+            output.status,
+            if stderr.is_empty() {
+                "no stderr"
+            } else {
+                stderr
+            }
+        );
+    }
+    let summary = render_bridge_status_output(&stdout);
+    if summary.is_empty() {
+        anyhow::bail!("status helper returned no output");
+    }
+    if readiness.is_empty() {
+        Ok(summary)
+    } else {
+        Ok(format!("{readiness}  {summary}"))
+    }
+}
+
+fn run_openrgb_readiness_capture() -> Result<String> {
+    let output = Command::new("ratvantage-check-keyboard-rgb-openrgb")
+        .args(["--output", OPENRGB_READINESS_OUTPUT])
+        .output()?;
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    if !output.status.success() {
+        let stderr = stderr.trim();
+        anyhow::bail!(
+            "readiness exit status {}; {}",
+            output.status,
+            if stderr.is_empty() {
+                "no stderr"
+            } else {
+                stderr
+            }
+        );
+    }
+    Ok(render_bridge_status_output(&stdout))
+}
+
+fn render_bridge_status_output(stdout: &str) -> String {
+    stdout
+        .lines()
+        .map(str::trim)
+        .filter(|line| !line.is_empty())
+        .take(6)
+        .collect::<Vec<_>>()
+        .join("  ")
+}
+
+fn copy_command_button(label: &str, command: &'static str, tooltip: &str) -> gtk4::Button {
+    let copy = gtk4::Button::with_label(label);
+    copy.set_tooltip_text(Some(tooltip));
+    copy.add_css_class("pill");
+    copy.set_valign(gtk4::Align::Center);
+    copy.connect_clicked(move |_| {
+        if let Some(display) = gtk4::gdk::Display::default() {
+            display.clipboard().set_text(command);
+        }
+    });
+    copy
+}
+
+fn current_setup_user() -> String {
+    env::var("USER")
+        .or_else(|_| env::var("LOGNAME"))
+        .unwrap_or_else(|_| "current user".to_owned())
+}
+
+fn handle_openrgb_access_setup_click(feedback_row: &adw::ActionRow) {
+    let feedback_row = feedback_row.clone();
+    let target_user = current_setup_user();
+
+    feedback_row.set_title("Setup in progress");
+    feedback_row
+        .set_subtitle("Request sent to the daemon; waiting for policy/auth/setup result...");
+
+    spawn_dbus_call(
+        move || make_client().and_then(|client| client.setup_openrgb_access(&target_user)),
+        move |result| match result {
+            Ok(result) => {
+                let title = write_feedback_title(Some(&result));
+                let subtitle = write_feedback_subtitle(Some(&result));
+                feedback_row.set_title(title);
+                feedback_row.set_subtitle(&subtitle);
+                store_write_feedback_state(OPENRGB_ACCESS_SETUP_LABEL, title, &subtitle);
+                let _ = request_dashboard_refresh();
+            }
+            Err(error) => {
+                feedback_row.set_title("Setup error");
+                let subtitle = format!("Failed - daemon call could not be completed: {error}");
+                feedback_row.set_subtitle(&subtitle);
+                store_write_feedback_state(OPENRGB_ACCESS_SETUP_LABEL, "Setup error", &subtitle);
+                let _ = request_dashboard_refresh();
+            }
+        },
+    );
 }
 
 fn build_led_state_controls(
@@ -705,6 +1821,52 @@ fn writable_ylogo(leds: &[LedCapability]) -> Option<&LedCapability> {
     })
 }
 
+fn format_keyboard_rgb_candidate_summary(candidates: &[KeyboardRgbCandidate]) -> String {
+    let devices = candidates
+        .iter()
+        .map(|candidate| candidate.device_id.to_ascii_lowercase())
+        .collect::<BTreeSet<_>>()
+        .into_iter()
+        .collect::<Vec<_>>();
+    let mut parts = vec![format!("{} HID research candidates", candidates.len())];
+    if !devices.is_empty() {
+        parts.push(format!("devices={}", devices.join(", ")));
+    }
+    parts.push("backend_ready=false".to_owned());
+    parts.join("; ")
+}
+
+fn format_keyboard_rgb_openrgb_summary(
+    openrgb: &legion_common::KeyboardRgbOpenRgbStatus,
+) -> String {
+    let device = openrgb
+        .devices
+        .first()
+        .map(|device| {
+            format!(
+                "{} ({})",
+                device.description.as_deref().unwrap_or(&device.name),
+                if device.modes.is_empty() {
+                    "modes unknown".to_owned()
+                } else {
+                    format!("modes: {}", device.modes.join(", "))
+                }
+            )
+        })
+        .unwrap_or_else(|| "no Lenovo keyboard RGB device detected by OpenRGB".to_owned());
+    format!(
+        "{device}; i2c_dev_loaded={} user_in_i2c_group={} i2c_rw={} hidraw_rw={} sdk_helper={} sdk_server={} sdk_snapshot={} backend_ready={}",
+        openrgb.i2c_dev_loaded,
+        openrgb.user_in_i2c_group,
+        openrgb.has_i2c_rw_access,
+        openrgb.has_hidraw_rw_access,
+        openrgb.sdk_helper_installed,
+        openrgb.sdk_server_running,
+        openrgb.sdk_snapshot_supported,
+        openrgb.backend_ready
+    )
+}
+
 fn writable_fn_lock_toggle<'a>(
     toggles: &'a [IdeapadToggleCapability],
     leds: &[LedCapability],
@@ -854,5 +2016,28 @@ fn render_ideapad_toggle_value(toggle_name: &str, value: &str) -> String {
         ("fan_mode", "0") => "Auto (0)".to_owned(),
         ("fan_mode", "1") => "Full speed (1)".to_owned(),
         _ => value.to_owned(),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn bridge_status_renderer_keeps_sdk_and_next_action_lines() {
+        let rendered = render_bridge_status_output(
+            "\
+dry_run=present status=dry_run
+execute=present status=executed
+readiness=present ready_for_execute=true
+sdk=present status=keyboard_not_found connected=true
+next_action=review execute bundle and SDK read-back failures before promotion
+",
+        );
+
+        assert!(rendered.contains("sdk=present status=keyboard_not_found"));
+        assert!(rendered.contains(
+            "next_action=review execute bundle and SDK read-back failures before promotion"
+        ));
     }
 }

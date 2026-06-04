@@ -40,6 +40,15 @@
       <allow_active>auth_admin_keep</allow_active>
     </defaults>
   </action>
+  <action id="org.ratvantage.LegionControl1.set-keyboard-rgb">
+    <description>Set Legion keyboard RGB</description>
+    <message>Authentication is required to change the Legion keyboard RGB state.</message>
+    <defaults>
+      <allow_any>no</allow_any>
+      <allow_inactive>no</allow_inactive>
+      <allow_active>auth_admin_keep</allow_active>
+    </defaults>
+  </action>
   <action id="org.ratvantage.LegionControl1.set-ideapad-toggle">
     <description>Set Legion ideapad toggle state</description>
     <message>Authentication is required to change the Legion ideapad toggle state.</message>
@@ -115,6 +124,15 @@
   <action id="org.ratvantage.LegionControl1.set-curve-optimizer">
     <description>Set AMD Curve Optimizer offset</description>
     <message>Authentication is required to change the AMD Curve Optimizer offset.</message>
+    <defaults>
+      <allow_any>no</allow_any>
+      <allow_inactive>no</allow_inactive>
+      <allow_active>auth_admin_keep</allow_active>
+    </defaults>
+  </action>
+  <action id="org.ratvantage.LegionControl1.setup-openrgb-access">
+    <description>Set up OpenRGB keyboard RGB device access</description>
+    <message>Authentication is required to add OpenRGB keyboard RGB device access.</message>
     <defaults>
       <allow_any>no</allow_any>
       <allow_inactive>no</allow_inactive>

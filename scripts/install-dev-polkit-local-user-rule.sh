@@ -25,6 +25,7 @@ polkit.addRule(function(action, subject) {
     "org.ratvantage.LegionControl1.set-platform-profile",
     "org.ratvantage.LegionControl1.set-battery-charge-type",
     "org.ratvantage.LegionControl1.set-led-state",
+    "org.ratvantage.LegionControl1.set-keyboard-rgb",
     "org.ratvantage.LegionControl1.set-ideapad-toggle",
     "org.ratvantage.LegionControl1.set-gpu-mode",
     "org.ratvantage.LegionControl1.set-cpu-governor",
@@ -34,6 +35,7 @@ polkit.addRule(function(action, subject) {
     "org.ratvantage.LegionControl1.set-conservation-mode",
     "org.ratvantage.LegionControl1.set-amd-gpu-dpm-force-level",
     "org.ratvantage.LegionControl1.set-curve-optimizer",
+    "org.ratvantage.LegionControl1.setup-openrgb-access",
     "org.ratvantage.LegionControl1.apply-hardware-profile"
   ];
 

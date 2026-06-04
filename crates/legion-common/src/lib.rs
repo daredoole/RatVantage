@@ -10,6 +10,15 @@ pub struct CapabilityRegistry {
     pub hwmon_sensors: Vec<HwmonSensor>,
     pub fan_curves: Vec<FanCurveCapability>,
     pub leds: Vec<LedCapability>,
+    /// True keyboard RGB zones/effects. This is separate from simple Linux LED backlight nodes.
+    #[serde(default)]
+    pub keyboard_rgb: Option<KeyboardRgbCapability>,
+    /// Read-only evidence for possible keyboard RGB controllers. These are not write-capable claims.
+    #[serde(default)]
+    pub keyboard_rgb_candidates: Vec<KeyboardRgbCandidate>,
+    /// Read-only OpenRGB discovery/access evidence. This is not a RatVantage write backend claim.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub keyboard_rgb_openrgb: Option<KeyboardRgbOpenRgbStatus>,
     pub firmware_attributes: Vec<FirmwareAttributeCapability>,
     pub ideapad_toggles: Vec<IdeapadToggleCapability>,
     pub gpu: Option<GpuCapability>,
@@ -53,6 +62,12 @@ pub struct DaemonState {
     /// Last manual hardware profile application run, including per-action write results.
     #[serde(default)]
     pub last_hardware_profile_apply: Option<HardwareProfileApplyRun>,
+    /// Last platform profile sampled by the daemon-owned profile-change observer.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub last_observed_platform_profile: Option<String>,
+    /// Recent external platform profile changes observed by the daemon.
+    #[serde(default)]
+    pub recent_platform_profile_changes: Vec<PlatformProfileChangeEvent>,
     /// Daemon-owned automation rules. Rules resolve to hardware profiles before execution.
     #[serde(default)]
     pub automation_rules: BTreeMap<String, AutomationRule>,
@@ -73,6 +88,8 @@ impl Default for DaemonState {
             hardware_profiles: BTreeMap::new(),
             hardware_profile_triggers: BTreeMap::new(),
             last_hardware_profile_apply: None,
+            last_observed_platform_profile: None,
+            recent_platform_profile_changes: Vec::new(),
             automation_rules: BTreeMap::new(),
             last_automation_rule_apply: BTreeMap::new(),
         }
@@ -84,6 +101,7 @@ pub const HARDWARE_PROFILE_TRIGGER_IDS: &[&str] = &[
     "ac_disconnected",
     "resume",
     "platform_profile_changed",
+    "gpu_mode_reboot_completed",
     "manual",
 ];
 
@@ -103,6 +121,10 @@ pub struct HardwareProfileActions {
     pub platform_profile: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub battery_charge_type: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub gpu_mode: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub keyboard_rgb: Option<KeyboardRgbWriteRequest>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub cpu_governor: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -124,6 +146,24 @@ pub struct HardwareProfileApplyPreview {
     pub profile_id: String,
     pub profile_label: String,
     pub plans: Vec<WriteDryRunPlan>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct CustomThermalPlanPreview {
+    pub sequence_id: String,
+    pub target: String,
+    pub plans: Vec<WriteDryRunPlan>,
+    pub rollback_order: Vec<String>,
+    pub safety_notes: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct FirmwarePptPreset {
+    pub id: String,
+    pub label: String,
+    pub description: String,
+    pub values: BTreeMap<String, String>,
+    pub safety_note: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -172,6 +212,22 @@ pub enum AutomationRuleKind {
         #[serde(default = "default_automation_cooldown_secs")]
         cooldown_secs: u64,
     },
+    AcProfileRouter {
+        ac_profile_id: String,
+        battery_profile_id: String,
+        #[serde(default = "default_automation_cooldown_secs")]
+        cooldown_secs: u64,
+    },
+    BatteryProfileThreshold {
+        threshold_percent: u8,
+        profile_id: String,
+        #[serde(default)]
+        when_below_or_equal: bool,
+        #[serde(default)]
+        require_ac: Option<bool>,
+        #[serde(default = "default_automation_cooldown_secs")]
+        cooldown_secs: u64,
+    },
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -192,6 +248,14 @@ pub struct AutomationRuleApplyRun {
     pub timestamp_unix_secs: u64,
     pub evaluation: AutomationRuleEvaluation,
     pub profile_run: Option<HardwareProfileApplyRun>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct PlatformProfileChangeEvent {
+    pub timestamp_unix_secs: u64,
+    pub previous_profile: String,
+    pub current_profile: String,
+    pub source: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -650,11 +714,137 @@ pub struct LedCapability {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct KeyboardRgbCapability {
+    pub backend: String,
+    pub device_id: String,
+    pub path: String,
+    pub zones: Vec<KeyboardRgbZone>,
+    pub effects: Vec<String>,
+    pub current_effect: Option<String>,
+    #[serde(default)]
+    pub current_colors: BTreeMap<String, String>,
+    pub current_brightness: Option<u8>,
+    pub min_brightness: u8,
+    pub max_brightness: u8,
+    pub current_speed: Option<u8>,
+    pub min_speed: u8,
+    pub max_speed: u8,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct KeyboardRgbCandidate {
+    pub backend: String,
+    pub device_id: String,
+    pub path: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub vendor_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub product_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub name: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub modalias: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub report_descriptor_bytes: Option<usize>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub report_ids: Vec<u8>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub hid_reports: Vec<KeyboardRgbHidReport>,
+    #[serde(default)]
+    pub evidence: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct KeyboardRgbHidReport {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub report_id: Option<u8>,
+    pub kind: String,
+    pub report_size_bits: u32,
+    pub report_count: u32,
+    pub bit_length: u32,
+    pub byte_length: u32,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct KeyboardRgbOpenRgbStatus {
+    pub installed: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub path: Option<String>,
+    #[serde(default)]
+    pub devices: Vec<KeyboardRgbOpenRgbDevice>,
+    #[serde(default)]
+    pub i2c_dev_loaded: bool,
+    #[serde(default)]
+    pub user_in_i2c_group: bool,
+    #[serde(default)]
+    pub has_i2c_rw_access: bool,
+    #[serde(default)]
+    pub has_hidraw_rw_access: bool,
+    /// True only after RatVantage has a backend with read-back and rollback coverage.
+    #[serde(default)]
+    pub backend_ready: bool,
+    #[serde(default)]
+    pub write_support_claimed: bool,
+    #[serde(default)]
+    pub sdk_helper_installed: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub sdk_helper_path: Option<String>,
+    #[serde(default)]
+    pub sdk_server_running: bool,
+    #[serde(default)]
+    pub sdk_snapshot_supported: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub sdk_active_mode: Option<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub sdk_color_zones: Vec<String>,
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub sdk_colors: BTreeMap<String, String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct KeyboardRgbOpenRgbDevice {
+    pub index: u32,
+    pub name: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub device_type: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub description: Option<String>,
+    #[serde(default)]
+    pub modes: Vec<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub current_mode: Option<String>,
+    #[serde(default)]
+    pub zones: Vec<String>,
+    #[serde(default)]
+    pub leds: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct KeyboardRgbZone {
+    pub id: String,
+    pub label: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct KeyboardRgbWriteRequest {
+    pub effect: String,
+    #[serde(default)]
+    pub colors: BTreeMap<String, String>,
+    pub brightness: u8,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub speed: Option<u8>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct FirmwareAttributeCapability {
     pub name: String,
     pub current_value: Option<String>,
     pub display_name: Option<String>,
     pub path: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub attribute_type: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub default_value: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub min_value: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -665,6 +855,12 @@ pub struct FirmwareAttributeCapability {
 
 pub const SUPPORTED_FIRMWARE_SCALAR_ATTRIBUTES: &[&str] =
     &["ppt_pl1_spl", "ppt_pl2_sppt", "ppt_pl3_fppt"];
+pub const FIRMWARE_PPT_PRESET_IDS: &[&str] = &[
+    "conservative",
+    "balanced-custom",
+    "performance-custom",
+    "reset-defaults",
+];
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct IdeapadToggleCapability {
@@ -679,6 +875,29 @@ pub struct GpuCapability {
     pub provider: String,
     pub status: CapabilityStatus,
     pub mode: Option<String>,
+    #[serde(default)]
+    pub switch_type: GpuSwitchType,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub switch_notes: Vec<String>,
+}
+
+#[derive(Debug, Clone, Copy, Default, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum GpuSwitchType {
+    #[default]
+    Unknown,
+    RebootRequired,
+    SessionRestartRequired,
+    RuntimeMux,
+}
+
+pub fn format_gpu_switch_type(switch_type: GpuSwitchType) -> &'static str {
+    match switch_type {
+        GpuSwitchType::Unknown => "unknown",
+        GpuSwitchType::RebootRequired => "reboot-required",
+        GpuSwitchType::SessionRestartRequired => "session-restart-required",
+        GpuSwitchType::RuntimeMux => "runtime-mux",
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -755,6 +974,32 @@ pub const WRITE_METHOD_CONTRACTS: &[WriteMethodContract] = &[
         safety_notes: &["write method remains disabled; dry-run planning only"],
     },
     WriteMethodContract {
+        method: "PrepareCustomThermalMode",
+        capability_id: "platform_profile",
+        polkit_action: "org.ratvantage.LegionControl1.set-platform-profile",
+        request_type: r#"{}"#,
+        risk: RiskLevel::ReversibleWrite,
+        enabled: false,
+        reboot_required: false,
+        preconditions: &[
+            "platform_profile capability is detected",
+            "daemon has read current profile and platform_profile_choices",
+            "platform_profile_choices lists custom",
+        ],
+        validators: &[
+            "custom exactly matches one listed platform_profile_choices value",
+            "post-write read-back matches custom before dependent PPT or fan plan runs",
+        ],
+        rollback: &[
+            "store previous profile before switching to custom",
+            "restore previous profile after dependent PPT or fan operation unless caller explicitly keeps custom",
+        ],
+        safety_notes: &[
+            "plan-only custom thermal prerequisite; use before firmware PPT or fan writes",
+            "normal SetPlatformProfile still blocks custom until a live execution bundle proves safety",
+        ],
+    },
+    WriteMethodContract {
         method: "SetBatteryChargeType",
         capability_id: "battery_charge_type",
         polkit_action: "org.ratvantage.LegionControl1.set-battery-charge-type",
@@ -799,6 +1044,34 @@ pub const WRITE_METHOD_CONTRACTS: &[WriteMethodContract] = &[
             "restore previous LED brightness if read-back fails",
         ],
         safety_notes: &["write method remains disabled; dry-run planning only"],
+    },
+    WriteMethodContract {
+        method: "SetKeyboardRgb",
+        capability_id: "keyboard_rgb",
+        polkit_action: "org.ratvantage.LegionControl1.set-keyboard-rgb",
+        request_type: r##"{"effect":"string","colors":{"zone_id":"#RRGGBB"},"brightness":"u8","speed":"u8|null"}"##,
+        risk: RiskLevel::ReversibleWrite,
+        enabled: false,
+        reboot_required: false,
+        preconditions: &[
+            "keyboard_rgb capability is detected",
+            "daemon has read backend identity, zones, effects, current effect, current colors, brightness, and speed",
+        ],
+        validators: &[
+            "requested effect exactly matches a detected effect id",
+            "requested zone ids exactly match detected keyboard RGB zones",
+            "requested colors are #RRGGBB hex values",
+            "requested brightness and speed are inside backend ranges",
+            "post-write read-back matches requested RGB state",
+        ],
+        rollback: &[
+            "store previous keyboard RGB effect, colors, brightness, and speed before write",
+            "restore previous keyboard RGB state if read-back fails",
+        ],
+        safety_notes: &[
+            "keyboard RGB protocol support is plan-only until backend read-back and live reset evidence exist",
+            "write method remains disabled; dry-run planning only",
+        ],
     },
     WriteMethodContract {
         method: "SetIdeapadToggle",
@@ -1143,6 +1416,28 @@ pub fn validate_platform_profile_choice(
     )
 }
 
+pub fn validate_custom_thermal_mode_prepare(
+    capability: Option<&PlatformProfileCapability>,
+) -> Result<(), ValidationError> {
+    let capability = capability.ok_or_else(|| ValidationError::MissingCapability {
+        capability_id: "platform_profile".to_owned(),
+    })?;
+    require_current("platform_profile", capability.current.as_deref())?;
+    if capability.choices.is_empty() {
+        return Err(ValidationError::NoChoicesDetected {
+            capability_id: "platform_profile".to_owned(),
+        });
+    }
+    if !capability.choices.iter().any(|choice| choice == "custom") {
+        return Err(ValidationError::UnsupportedChoice {
+            capability_id: "platform_profile".to_owned(),
+            requested: "custom".to_owned(),
+            choices: capability.choices.clone(),
+        });
+    }
+    Ok(())
+}
+
 pub fn validate_battery_charge_type_choice(
     capability: Option<&BatteryChargeTypeCapability>,
     requested: &str,
@@ -1420,6 +1715,16 @@ pub fn validate_gpu_mode_choice(
             capability_id: "gpu".to_owned(),
         });
     }
+    if !matches!(
+        capability.switch_type,
+        GpuSwitchType::Unknown | GpuSwitchType::RebootRequired
+    ) {
+        return Err(ValidationError::BlockedChoice {
+            capability_id: "gpu:switch_type".to_owned(),
+            requested: format_gpu_switch_type(capability.switch_type).to_owned(),
+            reason: "session-restart and runtime-mux GPU switching are research-only until a dedicated backend and live display recovery evidence exist".to_owned(),
+        });
+    }
     require_current("gpu", capability.mode.as_deref())?;
     validate_choice(
         "gpu",
@@ -1499,6 +1804,127 @@ pub fn validate_led_state_request(
             capability_id: format!("leds:{led_id}"),
         }),
     }
+}
+
+pub fn validate_keyboard_rgb_request(
+    capability: Option<&KeyboardRgbCapability>,
+    request: &KeyboardRgbWriteRequest,
+) -> Result<(), ValidationError> {
+    let capability = capability.ok_or_else(|| ValidationError::MissingCapability {
+        capability_id: "keyboard_rgb".to_owned(),
+    })?;
+
+    if capability.backend.trim().is_empty() {
+        return Err(ValidationError::MissingCapability {
+            capability_id: "keyboard_rgb:backend".to_owned(),
+        });
+    }
+    if capability.device_id.trim().is_empty() {
+        return Err(ValidationError::MissingCapability {
+            capability_id: "keyboard_rgb:device_id".to_owned(),
+        });
+    }
+    if capability.path.trim().is_empty() {
+        return Err(ValidationError::MissingCapability {
+            capability_id: "keyboard_rgb:path".to_owned(),
+        });
+    }
+    require_current("keyboard_rgb:effect", capability.current_effect.as_deref())?;
+    if capability.current_brightness.is_none() {
+        return Err(ValidationError::MissingCurrentValue {
+            capability_id: "keyboard_rgb:brightness".to_owned(),
+        });
+    }
+    if capability.min_brightness > capability.max_brightness {
+        return Err(ValidationError::BlockedChoice {
+            capability_id: "keyboard_rgb".to_owned(),
+            requested: request.brightness.to_string(),
+            reason: format!(
+                "invalid brightness range {}..={}",
+                capability.min_brightness, capability.max_brightness
+            ),
+        });
+    }
+    if capability.min_speed > capability.max_speed {
+        return Err(ValidationError::BlockedChoice {
+            capability_id: "keyboard_rgb".to_owned(),
+            requested: request.speed.unwrap_or_default().to_string(),
+            reason: format!(
+                "invalid speed range {}..={}",
+                capability.min_speed, capability.max_speed
+            ),
+        });
+    }
+
+    validate_choice(
+        "keyboard_rgb",
+        "effect",
+        &request.effect,
+        &capability.effects,
+        &[],
+    )?;
+    if request.brightness < capability.min_brightness
+        || request.brightness > capability.max_brightness
+    {
+        return Err(ValidationError::UnsupportedChoice {
+            capability_id: "keyboard_rgb:brightness".to_owned(),
+            requested: request.brightness.to_string(),
+            choices: u8_range_choices(capability.min_brightness, capability.max_brightness),
+        });
+    }
+    if let Some(speed) = request.speed {
+        if speed < capability.min_speed || speed > capability.max_speed {
+            return Err(ValidationError::UnsupportedChoice {
+                capability_id: "keyboard_rgb:speed".to_owned(),
+                requested: speed.to_string(),
+                choices: u8_range_choices(capability.min_speed, capability.max_speed),
+            });
+        }
+    }
+
+    let supported_zones = capability
+        .zones
+        .iter()
+        .map(|zone| zone.id.as_str())
+        .collect::<Vec<_>>();
+    if supported_zones.is_empty() {
+        return Err(ValidationError::NoChoicesDetected {
+            capability_id: "keyboard_rgb:zones".to_owned(),
+        });
+    }
+    if request.colors.is_empty() {
+        return Err(ValidationError::EmptyValue {
+            field: "colors".to_owned(),
+        });
+    }
+    for (zone_id, color) in &request.colors {
+        if !supported_zones.iter().any(|supported| supported == zone_id) {
+            return Err(ValidationError::UnsupportedChoice {
+                capability_id: "keyboard_rgb:zone".to_owned(),
+                requested: zone_id.clone(),
+                choices: supported_zones
+                    .iter()
+                    .map(|zone| (*zone).to_owned())
+                    .collect(),
+            });
+        }
+        if !is_hex_rgb_color(color) {
+            return Err(ValidationError::BlockedChoice {
+                capability_id: "keyboard_rgb:color".to_owned(),
+                requested: color.clone(),
+                reason: "keyboard RGB colors must use #RRGGBB hex".to_owned(),
+            });
+        }
+    }
+    for zone in &capability.zones {
+        if !capability.current_colors.contains_key(&zone.id) {
+            return Err(ValidationError::MissingCurrentValue {
+                capability_id: format!("keyboard_rgb:zone:{}", zone.id),
+            });
+        }
+    }
+
+    Ok(())
 }
 
 pub fn validate_ideapad_toggle_request(
@@ -1777,6 +2203,50 @@ pub fn validate_automation_rule(rule: &AutomationRule) -> Result<(), ValidationE
                 });
             }
         }
+        AutomationRuleKind::AcProfileRouter {
+            ac_profile_id,
+            battery_profile_id,
+            cooldown_secs,
+        } => {
+            validate_hardware_profile_id(ac_profile_id)?;
+            validate_hardware_profile_id(battery_profile_id)?;
+            if ac_profile_id == battery_profile_id {
+                return Err(ValidationError::BlockedChoice {
+                    capability_id: "automation_rules".to_owned(),
+                    requested: ac_profile_id.clone(),
+                    reason: "ac_profile_id and battery_profile_id must be different".to_owned(),
+                });
+            }
+            if *cooldown_secs > 86_400 {
+                return Err(ValidationError::BlockedChoice {
+                    capability_id: "automation_rules:cooldown_secs".to_owned(),
+                    requested: cooldown_secs.to_string(),
+                    reason: "cooldown_secs must be 0..=86400".to_owned(),
+                });
+            }
+        }
+        AutomationRuleKind::BatteryProfileThreshold {
+            threshold_percent,
+            profile_id,
+            cooldown_secs,
+            ..
+        } => {
+            if !(1..=100).contains(threshold_percent) {
+                return Err(ValidationError::BlockedChoice {
+                    capability_id: "automation_rules:threshold_percent".to_owned(),
+                    requested: threshold_percent.to_string(),
+                    reason: "threshold_percent must be 1..=100".to_owned(),
+                });
+            }
+            validate_hardware_profile_id(profile_id)?;
+            if *cooldown_secs > 86_400 {
+                return Err(ValidationError::BlockedChoice {
+                    capability_id: "automation_rules:cooldown_secs".to_owned(),
+                    requested: cooldown_secs.to_string(),
+                    reason: "cooldown_secs must be 0..=86400".to_owned(),
+                });
+            }
+        }
     }
     Ok(())
 }
@@ -1893,6 +2363,34 @@ pub fn plan_platform_profile_write(
     )
 }
 
+pub fn plan_prepare_custom_thermal_mode(
+    capability: Option<&PlatformProfileCapability>,
+) -> Result<WriteDryRunPlan, ValidationError> {
+    validate_custom_thermal_mode_prepare(capability)?;
+    let capability = capability.expect("validated platform profile capability must exist");
+    let current = capability
+        .current
+        .as_deref()
+        .expect("validated platform profile current value must exist");
+    let mut plan = plan_write(
+        write_contract("PrepareCustomThermalMode"),
+        &capability.path,
+        current,
+        "custom",
+    )?;
+    if current == "custom" {
+        plan.safety_notes.push(
+            "custom thermal mode is already active; caller can verify read-back and skip the profile write"
+                .to_owned(),
+        );
+    } else {
+        plan.safety_notes.push(format!(
+            "custom thermal mode preparation required: switch platform_profile from `{current}` to `custom`, read back `custom`, then run dependent PPT or fan plan"
+        ));
+    }
+    Ok(plan)
+}
+
 pub fn plan_battery_charge_type_write(
     capability: Option<&BatteryChargeTypeCapability>,
     requested: &str,
@@ -1916,7 +2414,7 @@ pub fn plan_gpu_mode_write(
 ) -> Result<WriteDryRunPlan, ValidationError> {
     validate_gpu_mode_choice(capability, requested)?;
     let capability = capability.expect("validated GPU capability must exist");
-    plan_write(
+    let mut plan = plan_write(
         write_contract("SetGpuMode"),
         "envycontrol",
         capability
@@ -1924,7 +2422,16 @@ pub fn plan_gpu_mode_write(
             .as_deref()
             .expect("validated GPU mode current value must exist"),
         requested,
-    )
+    )?;
+    plan.safety_notes.push(format!(
+        "GPU switch type is {}; current promoted backend is EnvyControl and remains reboot-required",
+        format_gpu_switch_type(capability.switch_type)
+    ));
+    for note in &capability.switch_notes {
+        plan.safety_notes
+            .push(format!("GPU switch evidence: {note}"));
+    }
+    Ok(plan)
 }
 
 pub fn plan_led_state_write(
@@ -1948,6 +2455,224 @@ pub fn plan_led_state_write(
         &previous_value,
         requested_value,
     )
+}
+
+pub fn plan_keyboard_rgb_write(
+    capability: Option<&KeyboardRgbCapability>,
+    request: &KeyboardRgbWriteRequest,
+) -> Result<WriteDryRunPlan, ValidationError> {
+    validate_keyboard_rgb_request(capability, request)?;
+    let capability = capability.expect("validated keyboard RGB capability must exist");
+    plan_write(
+        write_contract("SetKeyboardRgb"),
+        &capability.path,
+        &format_keyboard_rgb_state(
+            capability
+                .current_effect
+                .as_deref()
+                .expect("validated keyboard RGB current effect must exist"),
+            &capability.current_colors,
+            capability
+                .current_brightness
+                .expect("validated keyboard RGB current brightness must exist"),
+            capability.current_speed,
+        ),
+        &format_keyboard_rgb_request(request),
+    )
+}
+
+pub fn plan_openrgb_keyboard_rgb_bridge(
+    openrgb: Option<&KeyboardRgbOpenRgbStatus>,
+    request: &KeyboardRgbWriteRequest,
+) -> Result<WriteDryRunPlan, ValidationError> {
+    let openrgb = openrgb.ok_or_else(|| ValidationError::MissingCapability {
+        capability_id: "keyboard_rgb_openrgb".to_owned(),
+    })?;
+    if !openrgb.installed {
+        return Err(ValidationError::MissingCapability {
+            capability_id: "keyboard_rgb_openrgb:openrgb".to_owned(),
+        });
+    }
+    let device = openrgb
+        .devices
+        .first()
+        .ok_or_else(|| ValidationError::NoChoicesDetected {
+            capability_id: "keyboard_rgb_openrgb:devices".to_owned(),
+        })?;
+    let mode = device
+        .modes
+        .iter()
+        .find(|mode| mode.eq_ignore_ascii_case(&request.effect))
+        .ok_or_else(|| ValidationError::UnsupportedChoice {
+            capability_id: "keyboard_rgb_openrgb:mode".to_owned(),
+            requested: request.effect.clone(),
+            choices: device.modes.clone(),
+        })?;
+    if request.brightness > 100 {
+        return Err(ValidationError::UnsupportedChoice {
+            capability_id: "keyboard_rgb_openrgb:brightness".to_owned(),
+            requested: request.brightness.to_string(),
+            choices: u8_range_choices(0, 100),
+        });
+    }
+    if let Some(speed) = request.speed {
+        if speed > 100 {
+            return Err(ValidationError::UnsupportedChoice {
+                capability_id: "keyboard_rgb_openrgb:speed".to_owned(),
+                requested: speed.to_string(),
+                choices: u8_range_choices(0, 100),
+            });
+        }
+    }
+
+    let colors = openrgb_color_argument(device, &request.colors)?;
+    let mut command = vec![
+        "openrgb".to_owned(),
+        "--device".to_owned(),
+        shell_word(&device.name),
+        "--mode".to_owned(),
+        shell_word(mode),
+        "--brightness".to_owned(),
+        request.brightness.to_string(),
+    ];
+    if let Some(speed) = request.speed {
+        command.extend(["--speed".to_owned(), speed.to_string()]);
+    }
+    if let Some(colors) = colors {
+        command.extend(["--color".to_owned(), shell_word(&colors)]);
+    }
+
+    Ok(WriteDryRunPlan {
+        method: "PlanOpenRgbKeyboardRgbBridge".to_owned(),
+        capability_id: "keyboard_rgb_openrgb".to_owned(),
+        polkit_action: "org.ratvantage.LegionControl1.set-keyboard-rgb".to_owned(),
+        path: openrgb
+            .path
+            .as_deref()
+            .map(|path| format!("openrgb:{path}"))
+            .unwrap_or_else(|| "openrgb:openrgb".to_owned()),
+        previous_value: "unknown; capture OpenRGB profile/read-back before execution".to_owned(),
+        requested_value: format!(
+            "{};command={}",
+            format_keyboard_rgb_request(request),
+            command.join(" ")
+        ),
+        readback_required: true,
+        rollback_value: "saved OpenRGB profile or previous mode/colors".to_owned(),
+        rollback_instructions: vec![
+            "save current OpenRGB profile before executing any command".to_owned(),
+            "after command execution, re-list/read back OpenRGB device mode and colors".to_owned(),
+            "restore the saved OpenRGB profile if read-back disagrees".to_owned(),
+        ],
+        reboot_required: false,
+        safety_notes: vec![
+            "OpenRGB bridge is dry-run only; RatVantage does not execute this command yet".to_owned(),
+            "promotion requires live read-back and reset-to-previous-mode evidence".to_owned(),
+            "do not silently change Linux groups from the GUI; report access state and use setup flow when needed".to_owned(),
+        ],
+        steps: vec![
+            WritePlanStep::StorePreviousValue,
+            WritePlanStep::WriteRequestedValue,
+            WritePlanStep::ReadBackValue,
+            WritePlanStep::RestorePreviousOnReadbackFailure,
+        ],
+    })
+}
+
+pub fn plan_openrgb_keyboard_rgb_sdk_write(
+    openrgb: Option<&KeyboardRgbOpenRgbStatus>,
+    request: &KeyboardRgbWriteRequest,
+) -> Result<WriteDryRunPlan, ValidationError> {
+    let openrgb = openrgb.ok_or_else(|| ValidationError::MissingCapability {
+        capability_id: "keyboard_rgb_openrgb:sdk".to_owned(),
+    })?;
+    if !openrgb.installed {
+        return Err(ValidationError::MissingCapability {
+            capability_id: "keyboard_rgb_openrgb:openrgb".to_owned(),
+        });
+    }
+    let device = openrgb
+        .devices
+        .first()
+        .ok_or_else(|| ValidationError::NoChoicesDetected {
+            capability_id: "keyboard_rgb_openrgb:devices".to_owned(),
+        })?;
+    let mode = device
+        .modes
+        .iter()
+        .find(|mode| mode.eq_ignore_ascii_case(&request.effect))
+        .ok_or_else(|| ValidationError::UnsupportedChoice {
+            capability_id: "keyboard_rgb_openrgb:mode".to_owned(),
+            requested: request.effect.clone(),
+            choices: device.modes.clone(),
+        })?;
+    if request.brightness > 100 {
+        return Err(ValidationError::UnsupportedChoice {
+            capability_id: "keyboard_rgb_openrgb:brightness".to_owned(),
+            requested: request.brightness.to_string(),
+            choices: u8_range_choices(0, 100),
+        });
+    }
+    if let Some(speed) = request.speed {
+        if speed > 100 {
+            return Err(ValidationError::UnsupportedChoice {
+                capability_id: "keyboard_rgb_openrgb:speed".to_owned(),
+                requested: speed.to_string(),
+                choices: u8_range_choices(0, 100),
+            });
+        }
+    }
+
+    let colors = openrgb_color_argument(device, &request.colors)?;
+    Ok(WriteDryRunPlan {
+        method: "SetOpenRgbKeyboardRgbSdk".to_owned(),
+        capability_id: "keyboard_rgb_openrgb:sdk".to_owned(),
+        polkit_action: "org.ratvantage.LegionControl1.set-keyboard-rgb".to_owned(),
+        path: openrgb
+            .path
+            .as_deref()
+            .map(|path| format!("openrgb-sdk:{path}"))
+            .unwrap_or_else(|| "openrgb-sdk:openrgb".to_owned()),
+        previous_value: "SDK read-back snapshot of active mode and per-zone colors".to_owned(),
+        requested_value: format!(
+            "{};sdk_packet=RGBCONTROLLER_UPDATELEDS;mode={};colors={}",
+            format_keyboard_rgb_request(request),
+            mode,
+            colors.unwrap_or_else(|| "unchanged".to_owned())
+        ),
+        readback_required: true,
+        rollback_value: "SDK before snapshot colors and active mode".to_owned(),
+        rollback_instructions: vec![
+            "read active mode and colors from OpenRGB SDK before writing".to_owned(),
+            "send RGBCONTROLLER_UPDATELEDS through the OpenRGB SDK only".to_owned(),
+            "read back requested colors from the SDK after write".to_owned(),
+            "restore the before-snapshot colors through the SDK if read-back disagrees".to_owned(),
+        ],
+        reboot_required: false,
+        safety_notes: vec![
+            "OpenRGB SDK execution remains disabled in the real daemon until a process-boundary SDK writer ships".to_owned(),
+            "live operator evidence must prove requested mode/colors and restore mode/colors through SDK read-back".to_owned(),
+            "daemon must not write hidraw, i2c, sysfs, WMI, or EC directly for this backend".to_owned(),
+        ],
+        steps: vec![
+            WritePlanStep::StorePreviousValue,
+            WritePlanStep::WriteRequestedValue,
+            WritePlanStep::ReadBackValue,
+            WritePlanStep::RestorePreviousOnReadbackFailure,
+        ],
+    })
+}
+
+pub fn plan_hardware_profile_keyboard_rgb_write(
+    capability: Option<&KeyboardRgbCapability>,
+    openrgb: Option<&KeyboardRgbOpenRgbStatus>,
+    request: &KeyboardRgbWriteRequest,
+) -> Result<WriteDryRunPlan, ValidationError> {
+    if capability.is_some() {
+        plan_keyboard_rgb_write(capability, request)
+    } else {
+        plan_openrgb_keyboard_rgb_sdk_write(openrgb, request)
+    }
 }
 
 pub fn plan_ideapad_toggle_write(
@@ -1982,6 +2707,15 @@ pub fn plan_fan_preset_write(
     presets: &[FanPreset],
     requested: &str,
 ) -> Result<WriteDryRunPlan, ValidationError> {
+    plan_fan_preset_write_with_platform_profile(fan_curves, presets, None, requested)
+}
+
+pub fn plan_fan_preset_write_with_platform_profile(
+    fan_curves: &[FanCurveCapability],
+    presets: &[FanPreset],
+    platform_profile: Option<&PlatformProfileCapability>,
+    requested: &str,
+) -> Result<WriteDryRunPlan, ValidationError> {
     validate_fan_preset_choice(fan_curves, presets, requested)?;
     let preset = find_fan_preset(presets, requested).expect("validated fan preset must exist");
     let curve = select_fan_curve(fan_curves).expect("validated fan curve capability must exist");
@@ -1991,6 +2725,7 @@ pub fn plan_fan_preset_write(
         "current fan curve snapshot",
         &preset.id,
     )?;
+    add_custom_thermal_prerequisite(&mut plan, platform_profile, "fan preset writes");
     plan.safety_notes.push(preset.safety_note.clone());
     Ok(plan)
 }
@@ -1998,15 +2733,24 @@ pub fn plan_fan_preset_write(
 pub fn plan_restore_auto_fan_write(
     fan_curves: &[FanCurveCapability],
 ) -> Result<WriteDryRunPlan, ValidationError> {
+    plan_restore_auto_fan_write_with_platform_profile(fan_curves, None)
+}
+
+pub fn plan_restore_auto_fan_write_with_platform_profile(
+    fan_curves: &[FanCurveCapability],
+    platform_profile: Option<&PlatformProfileCapability>,
+) -> Result<WriteDryRunPlan, ValidationError> {
     let curve = select_fan_curve(fan_curves).ok_or_else(|| ValidationError::MissingCapability {
         capability_id: "fan_curves".to_owned(),
     })?;
-    plan_write(
+    let mut plan = plan_write(
         write_contract("RestoreAutoFan"),
         curve.path.as_deref().unwrap_or("fan_curves"),
         "current fan-control state",
         "auto/default fan control",
-    )
+    )?;
+    add_custom_thermal_prerequisite(&mut plan, platform_profile, "fan restore/default writes");
+    Ok(plan)
 }
 
 pub fn plan_cpu_governor_write(
@@ -2140,6 +2884,138 @@ pub fn plan_firmware_attribute_write(
     attribute_id: &str,
     requested: &str,
 ) -> Result<WriteDryRunPlan, ValidationError> {
+    plan_firmware_attribute_write_with_platform_profile(attributes, None, attribute_id, requested)
+}
+
+pub fn plan_firmware_attribute_reset_write(
+    attributes: &[FirmwareAttributeCapability],
+    attribute_id: &str,
+) -> Result<WriteDryRunPlan, ValidationError> {
+    plan_firmware_attribute_reset_write_with_platform_profile(attributes, None, attribute_id)
+}
+
+pub fn plan_firmware_attribute_reset_write_with_platform_profile(
+    attributes: &[FirmwareAttributeCapability],
+    platform_profile: Option<&PlatformProfileCapability>,
+    attribute_id: &str,
+) -> Result<WriteDryRunPlan, ValidationError> {
+    let attribute = attributes
+        .iter()
+        .find(|attribute| attribute.name == attribute_id)
+        .ok_or_else(|| ValidationError::MissingCapability {
+            capability_id: format!("firmware_attributes:{attribute_id}"),
+        })?;
+    let default_value =
+        attribute
+            .default_value
+            .as_deref()
+            .ok_or_else(|| ValidationError::MissingCapability {
+                capability_id: format!("firmware_attributes:{attribute_id}:default_value"),
+            })?;
+    if default_value.trim().is_empty() {
+        return Err(ValidationError::EmptyValue {
+            field: format!("firmware_attributes:{attribute_id}:default_value"),
+        });
+    }
+    let mut plan = plan_firmware_attribute_write_with_platform_profile(
+        attributes,
+        platform_profile,
+        attribute_id,
+        default_value,
+    )?;
+    plan.safety_notes.push(format!(
+        "reset-to-default plan uses firmware default_value `{default_value}` for `{attribute_id}`"
+    ));
+    Ok(plan)
+}
+
+pub fn firmware_ppt_preset(
+    attributes: &[FirmwareAttributeCapability],
+    preset_id: &str,
+) -> Result<FirmwarePptPreset, ValidationError> {
+    if preset_id.trim().is_empty() {
+        return Err(ValidationError::EmptyValue {
+            field: "preset_id".to_owned(),
+        });
+    }
+
+    let preset = match preset_id {
+        "conservative" => static_firmware_ppt_preset(
+            "conservative",
+            "Conservative",
+            "Lower PPT limits for cooler sustained loads.",
+            &[("ppt_pl1_spl", "60"), ("ppt_pl2_sppt", "75"), ("ppt_pl3_fppt", "90")],
+            "conservative PPT preset is preview-only until live thermal/read-back evidence exists",
+        ),
+        "balanced-custom" => static_firmware_ppt_preset(
+            "balanced-custom",
+            "Balanced Custom",
+            "Fixture-confirmed default-like PPT limits for custom thermal mode.",
+            &[("ppt_pl1_spl", "70"), ("ppt_pl2_sppt", "85"), ("ppt_pl3_fppt", "102")],
+            "balanced custom PPT preset is preview-only and matches the current 82WM fixture defaults",
+        ),
+        "performance-custom" => static_firmware_ppt_preset(
+            "performance-custom",
+            "Performance Custom",
+            "Higher PPT limits that remain inside detected firmware ranges.",
+            &[("ppt_pl1_spl", "80"), ("ppt_pl2_sppt", "115"), ("ppt_pl3_fppt", "135")],
+            "performance custom PPT preset needs live thermal validation before any execution path is enabled",
+        ),
+        "reset-defaults" => firmware_ppt_reset_defaults_preset(attributes)?,
+        _ => {
+            return Err(ValidationError::UnsupportedChoice {
+                capability_id: "firmware_ppt_preset".to_owned(),
+                requested: preset_id.to_owned(),
+                choices: FIRMWARE_PPT_PRESET_IDS
+                    .iter()
+                    .map(|preset| (*preset).to_owned())
+                    .collect(),
+            })
+        }
+    };
+
+    for attribute_id in SUPPORTED_FIRMWARE_SCALAR_ATTRIBUTES {
+        let Some(value) = preset.values.get(*attribute_id) else {
+            return Err(ValidationError::MissingCapability {
+                capability_id: format!("firmware_ppt_preset:{preset_id}:{attribute_id}"),
+            });
+        };
+        validate_firmware_scalar_attribute_request(attributes, attribute_id, value)?;
+    }
+
+    Ok(preset)
+}
+
+pub fn plan_firmware_ppt_preset_write_with_platform_profile(
+    attributes: &[FirmwareAttributeCapability],
+    platform_profile: Option<&PlatformProfileCapability>,
+    preset_id: &str,
+) -> Result<Vec<WriteDryRunPlan>, ValidationError> {
+    let preset = firmware_ppt_preset(attributes, preset_id)?;
+    let mut plans = Vec::new();
+    for attribute_id in SUPPORTED_FIRMWARE_SCALAR_ATTRIBUTES {
+        let requested = preset
+            .values
+            .get(*attribute_id)
+            .expect("validated firmware PPT preset value must exist");
+        let mut plan = plan_firmware_attribute_write_with_platform_profile(
+            attributes,
+            platform_profile,
+            attribute_id,
+            requested,
+        )?;
+        plan.safety_notes.push(preset.safety_note.clone());
+        plans.push(plan);
+    }
+    Ok(plans)
+}
+
+pub fn plan_firmware_attribute_write_with_platform_profile(
+    attributes: &[FirmwareAttributeCapability],
+    platform_profile: Option<&PlatformProfileCapability>,
+    attribute_id: &str,
+    requested: &str,
+) -> Result<WriteDryRunPlan, ValidationError> {
     validate_firmware_scalar_attribute_request(attributes, attribute_id, requested)?;
     let attribute = attributes
         .iter()
@@ -2150,12 +3026,69 @@ pub fn plan_firmware_attribute_write(
         .as_deref()
         .expect("validated firmware attribute current value must exist");
     let current_value_path = format!("{}/current_value", attribute.path);
-    plan_write(
+    let mut plan = plan_write(
         write_contract("SetFirmwareAttribute"),
         &current_value_path,
         current_value,
         requested,
-    )
+    )?;
+    add_custom_thermal_prerequisite(&mut plan, platform_profile, "firmware PPT writes");
+    Ok(plan)
+}
+
+fn static_firmware_ppt_preset(
+    id: &str,
+    label: &str,
+    description: &str,
+    values: &[(&str, &str)],
+    safety_note: &str,
+) -> FirmwarePptPreset {
+    FirmwarePptPreset {
+        id: id.to_owned(),
+        label: label.to_owned(),
+        description: description.to_owned(),
+        values: values
+            .iter()
+            .map(|(attribute_id, value)| ((*attribute_id).to_owned(), (*value).to_owned()))
+            .collect(),
+        safety_note: safety_note.to_owned(),
+    }
+}
+
+fn firmware_ppt_reset_defaults_preset(
+    attributes: &[FirmwareAttributeCapability],
+) -> Result<FirmwarePptPreset, ValidationError> {
+    let mut values = BTreeMap::new();
+    for attribute_id in SUPPORTED_FIRMWARE_SCALAR_ATTRIBUTES {
+        let attribute = attributes
+            .iter()
+            .find(|attribute| attribute.name == *attribute_id)
+            .ok_or_else(|| ValidationError::MissingCapability {
+                capability_id: format!("firmware_attributes:{attribute_id}"),
+            })?;
+        let default_value = attribute.default_value.as_deref().ok_or_else(|| {
+            ValidationError::MissingCapability {
+                capability_id: format!("firmware_attributes:{attribute_id}:default_value"),
+            }
+        })?;
+        if default_value.trim().is_empty() {
+            return Err(ValidationError::EmptyValue {
+                field: format!("firmware_attributes:{attribute_id}:default_value"),
+            });
+        }
+        values.insert((*attribute_id).to_owned(), default_value.to_owned());
+    }
+
+    Ok(FirmwarePptPreset {
+        id: "reset-defaults".to_owned(),
+        label: "Reset Defaults".to_owned(),
+        description: "Use each firmware PPT attribute default_value from the detected platform."
+            .to_owned(),
+        values,
+        safety_note:
+            "reset-defaults PPT preset uses detected firmware default_value metadata for each PPT attribute"
+                .to_owned(),
+    })
 }
 
 fn write_contract(method: &str) -> &'static WriteMethodContract {
@@ -2226,6 +3159,39 @@ fn rollback_instructions(
     instructions
 }
 
+fn add_custom_thermal_prerequisite(
+    plan: &mut WriteDryRunPlan,
+    platform_profile: Option<&PlatformProfileCapability>,
+    target: &str,
+) {
+    match platform_profile {
+        None => {
+            plan.safety_notes.push(format!(
+                "custom thermal prerequisite unknown for {target}: platform_profile capability is missing; keep execution disabled"
+            ));
+        }
+        Some(profile) if !profile.choices.iter().any(|choice| choice == "custom") => {
+            plan.safety_notes.push(format!(
+                "custom thermal prerequisite unavailable for {target}: platform_profile_choices does not list `custom`; keep execution disabled"
+            ));
+        }
+        Some(profile) if profile.current.as_deref() == Some("custom") => {
+            plan.safety_notes.push(format!(
+                "custom thermal prerequisite satisfied for {target}: current platform_profile is `custom`"
+            ));
+        }
+        Some(profile) => {
+            let current = profile.current.as_deref().unwrap_or("unknown");
+            plan.safety_notes.push(format!(
+                "custom thermal prerequisite required for {target}: switch platform_profile from `{current}` to `custom`, read back `custom`, then apply this plan"
+            ));
+            plan.rollback_instructions.push(format!(
+                "after {target}, restore previous platform_profile `{current}` unless the caller explicitly keeps `custom`"
+            ));
+        }
+    }
+}
+
 fn require_current(capability_id: &str, current: Option<&str>) -> Result<(), ValidationError> {
     match current {
         Some(value) if !value.is_empty() => Ok(()),
@@ -2260,6 +3226,125 @@ fn firmware_integer_choices(min_value: i64, max_value: i64, step: i64) -> Vec<St
         value += step;
     }
     choices
+}
+
+fn u8_range_choices(min_value: u8, max_value: u8) -> Vec<String> {
+    (min_value..=max_value)
+        .map(|value| value.to_string())
+        .collect()
+}
+
+fn is_hex_rgb_color(value: &str) -> bool {
+    value.len() == 7
+        && value.starts_with('#')
+        && value[1..].chars().all(|ch| ch.is_ascii_hexdigit())
+}
+
+fn format_keyboard_rgb_state(
+    effect: &str,
+    colors: &BTreeMap<String, String>,
+    brightness: u8,
+    speed: Option<u8>,
+) -> String {
+    format!(
+        "effect={effect};brightness={brightness};speed={};colors={}",
+        speed
+            .map(|value| value.to_string())
+            .unwrap_or_else(|| "none".to_owned()),
+        colors
+            .iter()
+            .map(|(zone, color)| format!("{zone}:{color}"))
+            .collect::<Vec<_>>()
+            .join(",")
+    )
+}
+
+fn format_keyboard_rgb_request(request: &KeyboardRgbWriteRequest) -> String {
+    format_keyboard_rgb_state(
+        &request.effect,
+        &request.colors,
+        request.brightness,
+        request.speed,
+    )
+}
+
+fn openrgb_color_argument(
+    device: &KeyboardRgbOpenRgbDevice,
+    colors: &BTreeMap<String, String>,
+) -> Result<Option<String>, ValidationError> {
+    if colors.is_empty() {
+        return Ok(None);
+    }
+    if device.leds.is_empty() {
+        return Err(ValidationError::NoChoicesDetected {
+            capability_id: "keyboard_rgb_openrgb:leds".to_owned(),
+        });
+    }
+    let choices = device
+        .leds
+        .iter()
+        .flat_map(|label| [label.clone(), openrgb_zone_key(label)])
+        .collect::<Vec<_>>();
+    for (zone_id, color) in colors {
+        if !is_hex_rgb_color(color) {
+            return Err(ValidationError::BlockedChoice {
+                capability_id: "keyboard_rgb_openrgb:color".to_owned(),
+                requested: color.clone(),
+                reason: "OpenRGB colors must use #RRGGBB hex".to_owned(),
+            });
+        }
+        if !device
+            .leds
+            .iter()
+            .any(|label| zone_id == label || zone_id == &openrgb_zone_key(label))
+        {
+            return Err(ValidationError::UnsupportedChoice {
+                capability_id: "keyboard_rgb_openrgb:zone".to_owned(),
+                requested: zone_id.clone(),
+                choices: choices.clone(),
+            });
+        }
+    }
+
+    let mut ordered = Vec::new();
+    for label in &device.leds {
+        let color = colors
+            .get(label)
+            .or_else(|| colors.get(&openrgb_zone_key(label)))
+            .ok_or_else(|| ValidationError::MissingCapability {
+                capability_id: format!("keyboard_rgb_openrgb:zone:{}", openrgb_zone_key(label)),
+            })?;
+        ordered.push(color.trim_start_matches('#').to_ascii_uppercase());
+    }
+    Ok(Some(ordered.join(",")))
+}
+
+fn openrgb_zone_key(label: &str) -> String {
+    label
+        .chars()
+        .map(|ch| {
+            if ch.is_ascii_alphanumeric() {
+                ch.to_ascii_lowercase()
+            } else {
+                '_'
+            }
+        })
+        .collect::<String>()
+        .split('_')
+        .filter(|part| !part.is_empty())
+        .collect::<Vec<_>>()
+        .join("_")
+}
+
+fn shell_word(value: &str) -> String {
+    if value
+        .chars()
+        .all(|ch| ch.is_ascii_alphanumeric() || matches!(ch, '-' | '_' | '.' | '/' | ':' | ','))
+    {
+        value.to_owned()
+    } else {
+        format!("'{}'", value.replace('\'', "'\\''"))
+    }
 }
 
 fn curve_optimizer_offset_choices() -> Vec<String> {
@@ -2773,8 +3858,48 @@ mod tests {
     fn hardware_profile_trigger_ids_are_allowlisted() {
         assert!(validate_hardware_profile_trigger_id("ac_connected").is_ok());
         assert!(validate_hardware_profile_trigger_id("resume").is_ok());
+        assert!(validate_hardware_profile_trigger_id("gpu_mode_reboot_completed").is_ok());
         assert!(matches!(
             validate_hardware_profile_trigger_id("lid_open"),
+            Err(ValidationError::BlockedChoice { .. })
+        ));
+    }
+
+    #[test]
+    fn ac_profile_router_automation_rule_validates_profiles_and_cooldown() {
+        let rule = AutomationRule {
+            schema_version: 1,
+            label: "AC profile router".to_owned(),
+            enabled: true,
+            kind: AutomationRuleKind::AcProfileRouter {
+                ac_profile_id: "plugged_in".to_owned(),
+                battery_profile_id: "on_battery".to_owned(),
+                cooldown_secs: 120,
+            },
+        };
+        validate_automation_rule(&rule).unwrap();
+        let encoded = serde_json::to_value(&rule).unwrap();
+        assert_eq!(encoded["kind"], "ac_profile_router");
+
+        let mut invalid = rule.clone();
+        invalid.kind = AutomationRuleKind::AcProfileRouter {
+            ac_profile_id: "plugged_in".to_owned(),
+            battery_profile_id: "plugged_in".to_owned(),
+            cooldown_secs: 120,
+        };
+        assert!(matches!(
+            validate_automation_rule(&invalid),
+            Err(ValidationError::BlockedChoice { .. })
+        ));
+
+        let mut invalid = rule;
+        invalid.kind = AutomationRuleKind::AcProfileRouter {
+            ac_profile_id: "plugged_in".to_owned(),
+            battery_profile_id: "on_battery".to_owned(),
+            cooldown_secs: 86_401,
+        };
+        assert!(matches!(
+            validate_automation_rule(&invalid),
             Err(ValidationError::BlockedChoice { .. })
         ));
     }
@@ -2790,8 +3915,10 @@ mod tests {
             methods,
             [
                 "SetPlatformProfile",
+                "PrepareCustomThermalMode",
                 "SetBatteryChargeType",
                 "SetLedState",
+                "SetKeyboardRgb",
                 "SetIdeapadToggle",
                 "SetGpuMode",
                 "ApplyFanPreset",
@@ -2967,6 +4094,314 @@ mod tests {
                 "platform::fnlock"
             ),
             Err(ValidationError::BlockedChoice { .. })
+        ));
+    }
+
+    #[test]
+    fn keyboard_rgb_validator_accepts_supported_effect_zones_and_colors() {
+        let capability = keyboard_rgb_capability();
+        let request = KeyboardRgbWriteRequest {
+            effect: "static".to_owned(),
+            colors: BTreeMap::from([
+                ("left".to_owned(), "#ff0000".to_owned()),
+                ("right".to_owned(), "#00AAff".to_owned()),
+            ]),
+            brightness: 80,
+            speed: Some(40),
+        };
+
+        assert_eq!(
+            validate_keyboard_rgb_request(Some(&capability), &request),
+            Ok(())
+        );
+    }
+
+    #[test]
+    fn keyboard_rgb_validator_rejects_missing_and_unsupported_requests() {
+        let capability = keyboard_rgb_capability();
+        let valid = KeyboardRgbWriteRequest {
+            effect: "static".to_owned(),
+            colors: BTreeMap::from([("left".to_owned(), "#ffffff".to_owned())]),
+            brightness: 80,
+            speed: Some(40),
+        };
+
+        assert!(matches!(
+            validate_keyboard_rgb_request(None, &valid),
+            Err(ValidationError::MissingCapability { .. })
+        ));
+        assert!(matches!(
+            validate_keyboard_rgb_request(
+                Some(&capability),
+                &KeyboardRgbWriteRequest {
+                    effect: "rain".to_owned(),
+                    ..valid.clone()
+                }
+            ),
+            Err(ValidationError::UnsupportedChoice { .. })
+        ));
+        assert!(matches!(
+            validate_keyboard_rgb_request(
+                Some(&capability),
+                &KeyboardRgbWriteRequest {
+                    colors: BTreeMap::from([("center".to_owned(), "#ffffff".to_owned())]),
+                    ..valid.clone()
+                }
+            ),
+            Err(ValidationError::UnsupportedChoice { .. })
+        ));
+        assert!(matches!(
+            validate_keyboard_rgb_request(
+                Some(&capability),
+                &KeyboardRgbWriteRequest {
+                    colors: BTreeMap::from([("left".to_owned(), "ffffff".to_owned())]),
+                    ..valid.clone()
+                }
+            ),
+            Err(ValidationError::BlockedChoice { .. })
+        ));
+        assert!(matches!(
+            validate_keyboard_rgb_request(
+                Some(&capability),
+                &KeyboardRgbWriteRequest {
+                    brightness: 101,
+                    ..valid.clone()
+                }
+            ),
+            Err(ValidationError::UnsupportedChoice { .. })
+        ));
+        assert!(matches!(
+            validate_keyboard_rgb_request(
+                Some(&capability),
+                &KeyboardRgbWriteRequest {
+                    speed: Some(101),
+                    ..valid
+                }
+            ),
+            Err(ValidationError::UnsupportedChoice { .. })
+        ));
+    }
+
+    #[test]
+    fn keyboard_rgb_plan_records_previous_and_requested_state() {
+        let capability = keyboard_rgb_capability();
+        let request = KeyboardRgbWriteRequest {
+            effect: "breath".to_owned(),
+            colors: BTreeMap::from([
+                ("left".to_owned(), "#112233".to_owned()),
+                ("right".to_owned(), "#445566".to_owned()),
+            ]),
+            brightness: 75,
+            speed: Some(30),
+        };
+
+        let plan = plan_keyboard_rgb_write(Some(&capability), &request).unwrap();
+
+        assert_eq!(plan.method, "SetKeyboardRgb");
+        assert_eq!(plan.capability_id, "keyboard_rgb");
+        assert_eq!(
+            plan.polkit_action,
+            "org.ratvantage.LegionControl1.set-keyboard-rgb"
+        );
+        assert_eq!(plan.path, "hidraw:legion-test");
+        assert!(plan
+            .previous_value
+            .contains("colors=left:#111111,right:#222222"));
+        assert!(plan
+            .requested_value
+            .contains("colors=left:#112233,right:#445566"));
+        assert_eq!(plan.rollback_value, plan.previous_value);
+        assert!(plan.readback_required);
+        assert!(plan
+            .safety_notes
+            .iter()
+            .any(|note| note.contains("plan-only")));
+    }
+
+    #[test]
+    fn openrgb_keyboard_rgb_bridge_plan_builds_command_preview() {
+        let status = keyboard_rgb_openrgb_status();
+        let request = KeyboardRgbWriteRequest {
+            effect: "Breathing".to_owned(),
+            colors: BTreeMap::from([
+                ("left_side".to_owned(), "#ff0000".to_owned()),
+                ("left_center".to_owned(), "#00ff00".to_owned()),
+                ("right_center".to_owned(), "#0000ff".to_owned()),
+                ("right_side".to_owned(), "#ffffff".to_owned()),
+            ]),
+            brightness: 75,
+            speed: Some(30),
+        };
+
+        let plan = plan_openrgb_keyboard_rgb_bridge(Some(&status), &request).unwrap();
+
+        assert_eq!(plan.method, "PlanOpenRgbKeyboardRgbBridge");
+        assert_eq!(plan.capability_id, "keyboard_rgb_openrgb");
+        assert_eq!(plan.path, "openrgb:/usr/bin/openrgb");
+        assert!(plan.readback_required);
+        assert!(plan.requested_value.contains(
+            "command=openrgb --device 'Lenovo 5 2023' --mode Breathing --brightness 75 --speed 30 --color FF0000,00FF00,0000FF,FFFFFF"
+        ));
+        assert!(plan
+            .rollback_instructions
+            .iter()
+            .any(|step| step.contains("save current OpenRGB profile")));
+        assert!(plan
+            .safety_notes
+            .iter()
+            .any(|note| note.contains("dry-run only")));
+    }
+
+    #[test]
+    fn openrgb_keyboard_rgb_sdk_write_plan_builds_sdk_backend_preview() {
+        let status = keyboard_rgb_openrgb_status();
+        let request = KeyboardRgbWriteRequest {
+            effect: "Breathing".to_owned(),
+            colors: BTreeMap::from([
+                ("left_side".to_owned(), "#ff0000".to_owned()),
+                ("left_center".to_owned(), "#00ff00".to_owned()),
+                ("right_center".to_owned(), "#0000ff".to_owned()),
+                ("right_side".to_owned(), "#ffffff".to_owned()),
+            ]),
+            brightness: 75,
+            speed: Some(30),
+        };
+
+        let plan = plan_openrgb_keyboard_rgb_sdk_write(Some(&status), &request).unwrap();
+
+        assert_eq!(plan.method, "SetOpenRgbKeyboardRgbSdk");
+        assert_eq!(plan.capability_id, "keyboard_rgb_openrgb:sdk");
+        assert_eq!(plan.path, "openrgb-sdk:/usr/bin/openrgb");
+        assert!(plan.readback_required);
+        assert!(plan
+            .requested_value
+            .contains("sdk_packet=RGBCONTROLLER_UPDATELEDS"));
+        assert!(plan
+            .requested_value
+            .contains("colors=FF0000,00FF00,0000FF,FFFFFF"));
+        assert!(plan
+            .rollback_instructions
+            .iter()
+            .any(|step| step.contains("before-snapshot colors")));
+        assert!(plan.safety_notes.iter().any(|note| {
+            note.contains("daemon must not write hidraw, i2c, sysfs, WMI, or EC directly")
+        }));
+    }
+
+    #[test]
+    fn hardware_profile_keyboard_rgb_plan_uses_native_backend_when_available() {
+        let capability = keyboard_rgb_capability();
+        let status = keyboard_rgb_openrgb_status();
+        let request = KeyboardRgbWriteRequest {
+            effect: "breath".to_owned(),
+            colors: BTreeMap::from([
+                ("left".to_owned(), "#333333".to_owned()),
+                ("right".to_owned(), "#444444".to_owned()),
+            ]),
+            brightness: 80,
+            speed: Some(30),
+        };
+
+        let plan =
+            plan_hardware_profile_keyboard_rgb_write(Some(&capability), Some(&status), &request)
+                .unwrap();
+
+        assert_eq!(plan.method, "SetKeyboardRgb");
+        assert_eq!(plan.capability_id, "keyboard_rgb");
+    }
+
+    #[test]
+    fn hardware_profile_keyboard_rgb_plan_falls_back_to_openrgb_sdk_write() {
+        let status = keyboard_rgb_openrgb_status();
+        let request = KeyboardRgbWriteRequest {
+            effect: "Breathing".to_owned(),
+            colors: BTreeMap::from([
+                ("left_side".to_owned(), "#ff0000".to_owned()),
+                ("left_center".to_owned(), "#00ff00".to_owned()),
+                ("right_center".to_owned(), "#0000ff".to_owned()),
+                ("right_side".to_owned(), "#ffffff".to_owned()),
+            ]),
+            brightness: 75,
+            speed: Some(30),
+        };
+
+        let plan = plan_hardware_profile_keyboard_rgb_write(None, Some(&status), &request).unwrap();
+
+        assert_eq!(plan.method, "SetOpenRgbKeyboardRgbSdk");
+        assert_eq!(plan.capability_id, "keyboard_rgb_openrgb:sdk");
+        assert!(plan.requested_value.contains("mode=Breathing"));
+        assert!(plan
+            .safety_notes
+            .iter()
+            .any(|note| note.contains("process-boundary SDK writer")));
+    }
+
+    #[test]
+    fn openrgb_keyboard_rgb_bridge_plan_rejects_unsupported_inputs() {
+        let status = keyboard_rgb_openrgb_status();
+        let valid = KeyboardRgbWriteRequest {
+            effect: "Breathing".to_owned(),
+            colors: BTreeMap::from([
+                ("left_side".to_owned(), "#ff0000".to_owned()),
+                ("left_center".to_owned(), "#00ff00".to_owned()),
+                ("right_center".to_owned(), "#0000ff".to_owned()),
+                ("right_side".to_owned(), "#ffffff".to_owned()),
+            ]),
+            brightness: 75,
+            speed: Some(30),
+        };
+
+        assert!(matches!(
+            plan_openrgb_keyboard_rgb_bridge(
+                Some(&status),
+                &KeyboardRgbWriteRequest {
+                    effect: "Twinkle".to_owned(),
+                    ..valid.clone()
+                }
+            ),
+            Err(ValidationError::UnsupportedChoice { capability_id, .. })
+                if capability_id == "keyboard_rgb_openrgb:mode"
+        ));
+        assert!(matches!(
+            plan_openrgb_keyboard_rgb_bridge(
+                Some(&status),
+                &KeyboardRgbWriteRequest {
+                    brightness: 101,
+                    ..valid.clone()
+                }
+            ),
+            Err(ValidationError::UnsupportedChoice { capability_id, .. })
+                if capability_id == "keyboard_rgb_openrgb:brightness"
+        ));
+        assert!(matches!(
+            plan_openrgb_keyboard_rgb_bridge(
+                Some(&status),
+                &KeyboardRgbWriteRequest {
+                    colors: BTreeMap::from([
+                        ("left_side".to_owned(), "#ff0000".to_owned()),
+                        ("left_center".to_owned(), "#00ff00".to_owned()),
+                    ]),
+                    ..valid.clone()
+                }
+            ),
+            Err(ValidationError::MissingCapability { capability_id })
+                if capability_id == "keyboard_rgb_openrgb:zone:right_center"
+        ));
+        assert!(matches!(
+            plan_openrgb_keyboard_rgb_bridge(
+                Some(&status),
+                &KeyboardRgbWriteRequest {
+                    colors: BTreeMap::from([
+                        ("left_side".to_owned(), "red".to_owned()),
+                        ("left_center".to_owned(), "#00ff00".to_owned()),
+                        ("right_center".to_owned(), "#0000ff".to_owned()),
+                        ("right_side".to_owned(), "#ffffff".to_owned()),
+                    ]),
+                    ..valid
+                }
+            ),
+            Err(ValidationError::BlockedChoice { capability_id, .. })
+                if capability_id == "keyboard_rgb_openrgb:color"
         ));
     }
 
@@ -3184,6 +4619,8 @@ mod tests {
             provider: "envycontrol".to_owned(),
             status: CapabilityStatus::ProbeOnly,
             mode: Some("hybrid".to_owned()),
+            switch_type: GpuSwitchType::RebootRequired,
+            switch_notes: vec![],
         };
 
         assert_eq!(
@@ -3201,11 +4638,38 @@ mod tests {
     }
 
     #[test]
+    fn gpu_switch_type_defaults_to_unknown_for_older_json() {
+        let capability: GpuCapability = serde_json::from_value(serde_json::json!({
+            "provider": "envycontrol",
+            "status": "probe_only",
+            "mode": "hybrid"
+        }))
+        .unwrap();
+
+        assert_eq!(capability.switch_type, GpuSwitchType::Unknown);
+        assert!(capability.switch_notes.is_empty());
+        assert_eq!(
+            format_gpu_switch_type(GpuSwitchType::RebootRequired),
+            "reboot-required"
+        );
+        assert_eq!(
+            format_gpu_switch_type(GpuSwitchType::SessionRestartRequired),
+            "session-restart-required"
+        );
+        assert_eq!(
+            format_gpu_switch_type(GpuSwitchType::RuntimeMux),
+            "runtime-mux"
+        );
+    }
+
+    #[test]
     fn gpu_mode_validator_rejects_missing_unsupported_and_non_exact_choices() {
         let capability = GpuCapability {
             provider: "envycontrol".to_owned(),
             status: CapabilityStatus::ProbeOnly,
             mode: Some("hybrid".to_owned()),
+            switch_type: GpuSwitchType::RebootRequired,
+            switch_notes: vec![],
         };
         let missing_current = GpuCapability {
             mode: None,
@@ -3217,6 +4681,14 @@ mod tests {
         };
         let unsupported_provider = GpuCapability {
             provider: "other".to_owned(),
+            ..capability.clone()
+        };
+        let session_restart_switch = GpuCapability {
+            switch_type: GpuSwitchType::SessionRestartRequired,
+            ..capability.clone()
+        };
+        let runtime_mux_switch = GpuCapability {
+            switch_type: GpuSwitchType::RuntimeMux,
             ..capability.clone()
         };
 
@@ -3234,6 +4706,14 @@ mod tests {
         ));
         assert!(matches!(
             validate_gpu_mode_choice(Some(&unsupported_provider), "hybrid"),
+            Err(ValidationError::BlockedChoice { .. })
+        ));
+        assert!(matches!(
+            validate_gpu_mode_choice(Some(&session_restart_switch), "hybrid"),
+            Err(ValidationError::BlockedChoice { .. })
+        ));
+        assert!(matches!(
+            validate_gpu_mode_choice(Some(&runtime_mux_switch), "hybrid"),
             Err(ValidationError::BlockedChoice { .. })
         ));
         assert!(matches!(
@@ -3272,6 +4752,59 @@ mod tests {
         assert!(plan
             .steps
             .contains(&WritePlanStep::RestorePreviousOnReadbackFailure));
+    }
+
+    #[test]
+    fn prepare_custom_thermal_mode_plan_allows_listed_custom_without_unblocking_normal_write() {
+        let capability = platform_profile("balanced", &["balanced", "performance", "custom"]);
+
+        assert!(matches!(
+            plan_platform_profile_write(Some(&capability), "custom"),
+            Err(ValidationError::BlockedChoice { .. })
+        ));
+
+        let plan = plan_prepare_custom_thermal_mode(Some(&capability)).unwrap();
+
+        assert_eq!(plan.method, "PrepareCustomThermalMode");
+        assert_eq!(plan.capability_id, "platform_profile");
+        assert_eq!(
+            plan.polkit_action,
+            "org.ratvantage.LegionControl1.set-platform-profile"
+        );
+        assert_eq!(plan.previous_value, "balanced");
+        assert_eq!(plan.requested_value, "custom");
+        assert_eq!(plan.rollback_value, "balanced");
+        assert!(plan.readback_required);
+        assert!(!plan.reboot_required);
+        assert!(plan
+            .steps
+            .contains(&WritePlanStep::RestorePreviousOnReadbackFailure));
+        assert!(plan
+            .safety_notes
+            .iter()
+            .any(|note| note.contains("custom thermal mode preparation required")));
+    }
+
+    #[test]
+    fn prepare_custom_thermal_mode_plan_handles_active_and_missing_custom() {
+        let active = platform_profile("custom", &["balanced", "performance", "custom"]);
+        let plan = plan_prepare_custom_thermal_mode(Some(&active)).unwrap();
+        assert_eq!(plan.previous_value, "custom");
+        assert_eq!(plan.requested_value, "custom");
+        assert!(plan
+            .safety_notes
+            .iter()
+            .any(|note| note.contains("already active")));
+
+        let unavailable = platform_profile("balanced", &["balanced", "performance"]);
+        assert!(matches!(
+            plan_prepare_custom_thermal_mode(Some(&unavailable)),
+            Err(ValidationError::UnsupportedChoice { .. })
+        ));
+        assert!(matches!(
+            plan_prepare_custom_thermal_mode(None),
+            Err(ValidationError::MissingCapability { .. })
+        ));
     }
 
     #[test]
@@ -3420,6 +4953,8 @@ mod tests {
             provider: "envycontrol".to_owned(),
             status: CapabilityStatus::ProbeOnly,
             mode: Some("hybrid".to_owned()),
+            switch_type: GpuSwitchType::RebootRequired,
+            switch_notes: vec!["fixture classifies EnvyControl as reboot-required".to_owned()],
         };
 
         let plan = plan_gpu_mode_write(Some(&capability), "nvidia").unwrap();
@@ -3445,6 +4980,14 @@ mod tests {
             plan.polkit_action,
             "org.ratvantage.LegionControl1.set-gpu-mode"
         );
+        assert!(plan
+            .safety_notes
+            .iter()
+            .any(|note| note.contains("GPU switch type is reboot-required")));
+        assert!(plan
+            .safety_notes
+            .iter()
+            .any(|note| note.contains("fixture classifies EnvyControl")));
         assert!(plan
             .safety_notes
             .iter()
@@ -3731,6 +5274,28 @@ mod tests {
     }
 
     #[test]
+    fn fan_preset_dry_run_plan_notes_custom_thermal_prerequisite() {
+        let preset = fan_preset("balanced-daily");
+        let curve = complete_fan_curve();
+        let platform = platform_profile("balanced", &["balanced", "performance", "custom"]);
+
+        let plan = plan_fan_preset_write_with_platform_profile(
+            &[curve],
+            &[preset],
+            Some(&platform),
+            "balanced-daily",
+        )
+        .unwrap();
+
+        assert!(plan.safety_notes.iter().any(
+            |note| note.contains("custom thermal prerequisite required for fan preset writes")
+        ));
+        assert!(plan.rollback_instructions.iter().any(|instruction| {
+            instruction.contains("restore previous platform_profile `balanced`")
+        }));
+    }
+
+    #[test]
     fn restore_auto_fan_dry_run_plan_requires_detected_fan_curve() {
         let plan = plan_restore_auto_fan_write(&[complete_fan_curve()]).unwrap();
 
@@ -3794,6 +5359,8 @@ mod tests {
             display_name: Some("Set the CPU sustained power limit".to_owned()),
             path: "/sys/class/firmware-attributes/lenovo-wmi-other-0/attributes/ppt_pl1_spl"
                 .to_owned(),
+            attribute_type: Some("integer".to_owned()),
+            default_value: Some("70".to_owned()),
             min_value: Some("50".to_owned()),
             max_value: Some("85".to_owned()),
             scalar_increment: Some("5".to_owned()),
@@ -3829,6 +5396,8 @@ mod tests {
             display_name: None,
             path: "/sys/class/firmware-attributes/lenovo-wmi-other-0/attributes/ppt_pl2_sppt"
                 .to_owned(),
+            attribute_type: Some("integer".to_owned()),
+            default_value: Some("90".to_owned()),
             min_value: Some("60".to_owned()),
             max_value: Some("130".to_owned()),
             scalar_increment: Some("1".to_owned()),
@@ -3850,6 +5419,154 @@ mod tests {
         assert_eq!(plan.requested_value, "90");
         assert_eq!(plan.rollback_value, "85");
         assert!(plan.readback_required);
+    }
+
+    #[test]
+    fn firmware_attribute_reset_plan_requires_and_validates_default_value() {
+        let attrs = vec![firmware_ppt_attribute_with_default("85", Some("90"))];
+        let platform = platform_profile("custom", &["balanced", "performance", "custom"]);
+
+        let plan = plan_firmware_attribute_reset_write_with_platform_profile(
+            &attrs,
+            Some(&platform),
+            "ppt_pl2_sppt",
+        )
+        .unwrap();
+
+        assert_eq!(plan.method, "SetFirmwareAttribute");
+        assert_eq!(plan.previous_value, "85");
+        assert_eq!(plan.requested_value, "90");
+        assert!(plan.safety_notes.iter().any(|note| {
+            note.contains("reset-to-default plan uses firmware default_value `90`")
+        }));
+        assert!(plan.safety_notes.iter().any(|note| {
+            note.contains("custom thermal prerequisite satisfied for firmware PPT writes")
+        }));
+
+        let missing_default = vec![firmware_ppt_attribute_with_default("85", None)];
+        assert!(matches!(
+            plan_firmware_attribute_reset_write(&missing_default, "ppt_pl2_sppt"),
+            Err(ValidationError::MissingCapability { .. })
+        ));
+
+        let invalid_default = vec![firmware_ppt_attribute_with_default("85", Some("999"))];
+        assert!(matches!(
+            plan_firmware_attribute_reset_write(&invalid_default, "ppt_pl2_sppt"),
+            Err(ValidationError::UnsupportedChoice { .. })
+        ));
+    }
+
+    #[test]
+    fn firmware_ppt_preset_plans_validate_static_values_and_defaults() {
+        let attrs = firmware_ppt_attributes_with_defaults();
+        let platform = platform_profile("custom", &["balanced", "performance", "custom"]);
+
+        let preset = firmware_ppt_preset(&attrs, "performance-custom").unwrap();
+        assert_eq!(preset.id, "performance-custom");
+        assert_eq!(preset.values["ppt_pl1_spl"], "80");
+        assert_eq!(preset.values["ppt_pl2_sppt"], "115");
+        assert_eq!(preset.values["ppt_pl3_fppt"], "135");
+
+        let plans = plan_firmware_ppt_preset_write_with_platform_profile(
+            &attrs,
+            Some(&platform),
+            &preset.id,
+        )
+        .unwrap();
+        assert_eq!(plans.len(), 3);
+        assert_eq!(plans[0].method, "SetFirmwareAttribute");
+        assert_eq!(plans[0].requested_value, "80");
+        assert_eq!(plans[1].requested_value, "115");
+        assert_eq!(plans[2].requested_value, "135");
+        assert!(plans
+            .iter()
+            .all(|plan| plan.safety_notes.iter().any(|note| {
+                note.contains("custom thermal prerequisite satisfied for firmware PPT writes")
+            })));
+        assert!(plans
+            .iter()
+            .all(|plan| plan.safety_notes.iter().any(|note| {
+                note.contains("performance custom PPT preset needs live thermal validation")
+            })));
+
+        let reset = firmware_ppt_preset(&attrs, "reset-defaults").unwrap();
+        assert_eq!(reset.values["ppt_pl1_spl"], "70");
+        assert_eq!(reset.values["ppt_pl2_sppt"], "85");
+        assert_eq!(reset.values["ppt_pl3_fppt"], "102");
+    }
+
+    #[test]
+    fn firmware_ppt_preset_rejects_bad_id_range_and_missing_defaults() {
+        let attrs = firmware_ppt_attributes_with_defaults();
+
+        assert!(matches!(
+            firmware_ppt_preset(&attrs, "unknown"),
+            Err(ValidationError::UnsupportedChoice { .. })
+        ));
+
+        let mut constrained = attrs.clone();
+        constrained[0].max_value = Some("75".to_owned());
+        assert!(matches!(
+            firmware_ppt_preset(&constrained, "performance-custom"),
+            Err(ValidationError::UnsupportedChoice { .. })
+        ));
+
+        let mut missing_default = attrs;
+        missing_default[2].default_value = None;
+        assert!(matches!(
+            firmware_ppt_preset(&missing_default, "reset-defaults"),
+            Err(ValidationError::MissingCapability { .. })
+        ));
+    }
+
+    #[test]
+    fn firmware_attribute_plan_notes_custom_thermal_prerequisite_states() {
+        let attrs = vec![firmware_ppt_attribute("85")];
+
+        let balanced = platform_profile("balanced", &["balanced", "performance", "custom"]);
+        let plan = plan_firmware_attribute_write_with_platform_profile(
+            &attrs,
+            Some(&balanced),
+            "ppt_pl2_sppt",
+            "90",
+        )
+        .unwrap();
+        assert!(plan
+            .safety_notes
+            .iter()
+            .any(|note| note
+                .contains("custom thermal prerequisite required for firmware PPT writes")));
+        assert!(plan.rollback_instructions.iter().any(|instruction| {
+            instruction.contains("restore previous platform_profile `balanced`")
+        }));
+
+        let custom = platform_profile("custom", &["balanced", "performance", "custom"]);
+        let plan = plan_firmware_attribute_write_with_platform_profile(
+            &attrs,
+            Some(&custom),
+            "ppt_pl2_sppt",
+            "90",
+        )
+        .unwrap();
+        assert!(plan
+            .safety_notes
+            .iter()
+            .any(|note| note
+                .contains("custom thermal prerequisite satisfied for firmware PPT writes")));
+
+        let unavailable = platform_profile("balanced", &["balanced", "performance"]);
+        let plan = plan_firmware_attribute_write_with_platform_profile(
+            &attrs,
+            Some(&unavailable),
+            "ppt_pl2_sppt",
+            "90",
+        )
+        .unwrap();
+        assert!(plan
+            .safety_notes
+            .iter()
+            .any(|note| note
+                .contains("custom thermal prerequisite unavailable for firmware PPT writes")));
     }
 
     #[test]
@@ -3885,6 +5602,88 @@ mod tests {
             .any(|note| note.contains("read-back is unavailable")));
     }
 
+    fn keyboard_rgb_capability() -> KeyboardRgbCapability {
+        KeyboardRgbCapability {
+            backend: "hidraw".to_owned(),
+            device_id: "legion-test".to_owned(),
+            path: "hidraw:legion-test".to_owned(),
+            zones: vec![
+                KeyboardRgbZone {
+                    id: "left".to_owned(),
+                    label: "Left".to_owned(),
+                },
+                KeyboardRgbZone {
+                    id: "right".to_owned(),
+                    label: "Right".to_owned(),
+                },
+            ],
+            effects: vec!["static".to_owned(), "breath".to_owned()],
+            current_effect: Some("static".to_owned()),
+            current_colors: BTreeMap::from([
+                ("left".to_owned(), "#111111".to_owned()),
+                ("right".to_owned(), "#222222".to_owned()),
+            ]),
+            current_brightness: Some(50),
+            min_brightness: 0,
+            max_brightness: 100,
+            current_speed: Some(20),
+            min_speed: 0,
+            max_speed: 100,
+        }
+    }
+
+    fn keyboard_rgb_openrgb_status() -> KeyboardRgbOpenRgbStatus {
+        KeyboardRgbOpenRgbStatus {
+            installed: true,
+            path: Some("/usr/bin/openrgb".to_owned()),
+            devices: vec![KeyboardRgbOpenRgbDevice {
+                index: 0,
+                name: "Lenovo 5 2023".to_owned(),
+                device_type: Some("Laptop".to_owned()),
+                description: Some("Lenovo 4-Zone device".to_owned()),
+                modes: vec![
+                    "Direct".to_owned(),
+                    "Breathing".to_owned(),
+                    "Rainbow Wave".to_owned(),
+                    "Spectrum Cycle".to_owned(),
+                ],
+                current_mode: Some("Direct".to_owned()),
+                zones: vec!["Keyboard".to_owned()],
+                leds: vec![
+                    "Left side".to_owned(),
+                    "Left center".to_owned(),
+                    "Right center".to_owned(),
+                    "Right side".to_owned(),
+                ],
+            }],
+            i2c_dev_loaded: true,
+            user_in_i2c_group: true,
+            has_i2c_rw_access: true,
+            has_hidraw_rw_access: true,
+            backend_ready: false,
+            write_support_claimed: false,
+            sdk_helper_installed: true,
+            sdk_helper_path: Some(
+                "/home/test/.local/bin/ratvantage-openrgb-keyboard-rgb-sdk-helper".to_owned(),
+            ),
+            sdk_server_running: true,
+            sdk_snapshot_supported: true,
+            sdk_active_mode: Some("Direct".to_owned()),
+            sdk_color_zones: vec![
+                "left_center".to_owned(),
+                "left_side".to_owned(),
+                "right_center".to_owned(),
+                "right_side".to_owned(),
+            ],
+            sdk_colors: BTreeMap::from([
+                ("left_center".to_owned(), "#000000".to_owned()),
+                ("left_side".to_owned(), "#000000".to_owned()),
+                ("right_center".to_owned(), "#000000".to_owned()),
+                ("right_side".to_owned(), "#000000".to_owned()),
+            ]),
+        }
+    }
+
     fn fan_preset(id: &str) -> FanPreset {
         FanPreset {
             schema_version: 1,
@@ -3901,6 +5700,54 @@ mod tests {
                     pwm: 10 + (index as u16 * 20),
                 })
                 .collect(),
+        }
+    }
+
+    fn platform_profile(current: &str, choices: &[&str]) -> PlatformProfileCapability {
+        PlatformProfileCapability {
+            current: Some(current.to_owned()),
+            choices: choices.iter().map(|choice| (*choice).to_owned()).collect(),
+            path: "/sys/firmware/acpi/platform_profile".to_owned(),
+            choices_path: "/sys/firmware/acpi/platform_profile_choices".to_owned(),
+        }
+    }
+
+    fn firmware_ppt_attribute(current_value: &str) -> FirmwareAttributeCapability {
+        firmware_ppt_attribute_with_default(current_value, Some("90"))
+    }
+
+    fn firmware_ppt_attribute_with_default(
+        current_value: &str,
+        default_value: Option<&str>,
+    ) -> FirmwareAttributeCapability {
+        firmware_ppt_attribute_named("ppt_pl2_sppt", current_value, default_value, "60", "130")
+    }
+
+    fn firmware_ppt_attributes_with_defaults() -> Vec<FirmwareAttributeCapability> {
+        vec![
+            firmware_ppt_attribute_named("ppt_pl1_spl", "70", Some("70"), "50", "85"),
+            firmware_ppt_attribute_named("ppt_pl2_sppt", "85", Some("85"), "60", "130"),
+            firmware_ppt_attribute_named("ppt_pl3_fppt", "102", Some("102"), "70", "150"),
+        ]
+    }
+
+    fn firmware_ppt_attribute_named(
+        name: &str,
+        current_value: &str,
+        default_value: Option<&str>,
+        min_value: &str,
+        max_value: &str,
+    ) -> FirmwareAttributeCapability {
+        FirmwareAttributeCapability {
+            name: name.to_owned(),
+            current_value: Some(current_value.to_owned()),
+            display_name: None,
+            path: format!("/sys/class/firmware-attributes/lenovo-wmi-other-0/attributes/{name}"),
+            attribute_type: Some("integer".to_owned()),
+            default_value: default_value.map(ToOwned::to_owned),
+            min_value: Some(min_value.to_owned()),
+            max_value: Some(max_value.to_owned()),
+            scalar_increment: Some("1".to_owned()),
         }
     }
 

@@ -1,7 +1,10 @@
 use crate::{capability_status_label, DiagnosticsBundle, GpuModePending};
 use adw::prelude::*;
 use anyhow::Result;
-use legion_common::{format_gpu_mode_pending_summary, AmdGpuPowerDpmCapability, GpuCapability};
+use legion_common::{
+    format_gpu_mode_pending_summary, format_gpu_switch_type, AmdGpuPowerDpmCapability,
+    GpuCapability,
+};
 
 use super::shared::{
     append_error, build_confirmed_write_controls, info_row, make_client,
@@ -45,6 +48,32 @@ fn append_gpu(
             "Current mode",
             gpu.mode.as_deref().unwrap_or("unknown"),
         ));
+        mode.add(&info_row(
+            "Switch type",
+            format_gpu_switch_type(gpu.switch_type),
+        ));
+        mode.add(&info_row(
+            "GPU switching status",
+            &bundle.gpu_switching.status,
+        ));
+        mode.add(&info_row(
+            "Execution model",
+            &bundle.gpu_switching.execution_model,
+        ));
+        mode.add(&info_row(
+            "Runtime plan",
+            if bundle.gpu_switching.runtime_plan_available {
+                "available"
+            } else {
+                "blocked"
+            },
+        ));
+        for blocker in &bundle.gpu_switching.blockers {
+            mode.add(&info_row("Switch blocker", blocker));
+        }
+        for note in &gpu.switch_notes {
+            mode.add(&info_row("Switch evidence", note));
+        }
     } else {
         mode.add(&info_row("GPU mode", "unavailable"));
     }

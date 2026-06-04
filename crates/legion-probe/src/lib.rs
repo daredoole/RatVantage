@@ -1,3 +1,4 @@
+use std::collections::BTreeMap;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -5,9 +6,10 @@ use std::process::Command;
 use legion_common::{
     AcAdapterTelemetry, AmdGpuPowerDpmCapability, BatteryChargeTypeCapability, BatteryTelemetry,
     Capability, CapabilityRegistry, CapabilityStatus, CpuPowerCapability, FanCurveCapability,
-    FirmwareAttributeCapability, GpuCapability, HardwareSummary, HwmonSensor,
-    IdeapadToggleCapability, LedCapability, PlatformProfileCapability, RiskLevel,
-    TelemetrySnapshot, ThermalZone,
+    FirmwareAttributeCapability, GpuCapability, GpuSwitchType, HardwareSummary, HwmonSensor,
+    IdeapadToggleCapability, KeyboardRgbCandidate, KeyboardRgbCapability, KeyboardRgbHidReport,
+    KeyboardRgbOpenRgbDevice, KeyboardRgbOpenRgbStatus, LedCapability, PlatformProfileCapability,
+    RiskLevel, TelemetrySnapshot, ThermalZone,
 };
 
 mod power_profiles;
@@ -32,6 +34,9 @@ pub fn probe(options: &ProbeOptions) -> CapabilityRegistry {
     let hwmon_sensors = detect_hwmon_sensors(&options.sysfs_root);
     let fan_curves = detect_fan_curves(&options.sysfs_root);
     let leds = detect_leds(&options.sysfs_root);
+    let keyboard_rgb_candidates = detect_keyboard_rgb_candidates(&options.sysfs_root);
+    let keyboard_rgb = detect_keyboard_rgb_capability(&keyboard_rgb_candidates);
+    let keyboard_rgb_openrgb = detect_keyboard_rgb_openrgb(&options.sysfs_root);
     let firmware_attributes = detect_firmware_attributes(&options.sysfs_root);
     let ideapad_toggles = detect_ideapad_toggles(&options.sysfs_root);
     let gpu = detect_envycontrol_gpu(&options.sysfs_root);
@@ -73,6 +78,12 @@ pub fn probe(options: &ProbeOptions) -> CapabilityRegistry {
         !fan_curves.is_empty(),
     );
     push_capability(&mut capabilities, "leds", "LED nodes", !leds.is_empty());
+    push_capability(
+        &mut capabilities,
+        "keyboard_rgb_candidates",
+        "Keyboard RGB candidates",
+        !keyboard_rgb_candidates.is_empty(),
+    );
     push_capability(
         &mut capabilities,
         "ideapad_toggles",
@@ -121,6 +132,9 @@ pub fn probe(options: &ProbeOptions) -> CapabilityRegistry {
         hwmon_sensors,
         fan_curves,
         leds,
+        keyboard_rgb,
+        keyboard_rgb_candidates,
+        keyboard_rgb_openrgb,
         firmware_attributes,
         ideapad_toggles,
         gpu,
@@ -539,6 +553,603 @@ fn detect_leds(root: &Path) -> Vec<LedCapability> {
     leds
 }
 
+fn detect_keyboard_rgb_candidates(root: &Path) -> Vec<KeyboardRgbCandidate> {
+    let hidraw_root = root.join("sys/class/hidraw");
+    let Ok(entries) = fs::read_dir(hidraw_root) else {
+        return Vec::new();
+    };
+
+    let mut candidates = Vec::new();
+    for entry in entries.flatten() {
+        let path = entry.path();
+        let Some(device_id) = path
+            .file_name()
+            .and_then(|name| name.to_str())
+            .map(str::to_owned)
+        else {
+            continue;
+        };
+        let device_dir = path.join("device");
+        let uevent = read_uevent(&device_dir.join("uevent"));
+        let hid_id = uevent.get("HID_ID").map(String::as_str);
+        let name = uevent.get("HID_NAME").cloned();
+        let modalias = uevent
+            .get("MODALIAS")
+            .cloned()
+            .or_else(|| read_trim(device_dir.join("modalias")));
+        let (hid_vendor, hid_product) = hid_id.and_then(parse_hid_id).unwrap_or((None, None));
+        let (modalias_vendor, modalias_product) = modalias
+            .as_deref()
+            .and_then(parse_hid_modalias_ids)
+            .unwrap_or((None, None));
+        let vendor_id = hid_vendor.or(modalias_vendor);
+        let product_id = hid_product.or(modalias_product);
+
+        if !is_keyboard_rgb_candidate(vendor_id.as_deref(), name.as_deref(), modalias.as_deref()) {
+            continue;
+        }
+
+        let mut evidence = Vec::new();
+        if let Some(hid_id) = hid_id {
+            evidence.push(format!("HID_ID={hid_id}"));
+        }
+        if let Some(name) = &name {
+            evidence.push(format!("HID_NAME={name}"));
+        }
+        if let Some(modalias) = &modalias {
+            evidence.push(format!("MODALIAS={modalias}"));
+        }
+        let descriptor = read_hid_report_descriptor(&device_dir);
+        if let Some(bytes) = descriptor.bytes {
+            evidence.push(format!("REPORT_DESCRIPTOR_BYTES={bytes}"));
+        }
+        if !descriptor.report_ids.is_empty() {
+            evidence.push(format!(
+                "REPORT_IDS={}",
+                descriptor
+                    .report_ids
+                    .iter()
+                    .map(|id| id.to_string())
+                    .collect::<Vec<_>>()
+                    .join(",")
+            ));
+        }
+
+        candidates.push(KeyboardRgbCandidate {
+            backend: "hidraw".to_owned(),
+            device_id,
+            path: path.display().to_string(),
+            vendor_id,
+            product_id,
+            name,
+            modalias,
+            report_descriptor_bytes: descriptor.bytes,
+            report_ids: descriptor.report_ids,
+            hid_reports: descriptor.hid_reports,
+            evidence,
+        });
+    }
+
+    candidates.sort_by(|left, right| left.device_id.cmp(&right.device_id));
+    candidates
+}
+
+struct HidReportDescriptorSummary {
+    bytes: Option<usize>,
+    report_ids: Vec<u8>,
+    hid_reports: Vec<KeyboardRgbHidReport>,
+}
+
+fn read_hid_report_descriptor(device_dir: &Path) -> HidReportDescriptorSummary {
+    let Ok(bytes) = fs::read(device_dir.join("report_descriptor")) else {
+        return HidReportDescriptorSummary {
+            bytes: None,
+            report_ids: Vec::new(),
+            hid_reports: Vec::new(),
+        };
+    };
+    HidReportDescriptorSummary {
+        bytes: Some(bytes.len()),
+        report_ids: parse_hid_report_ids(&bytes),
+        hid_reports: parse_hid_report_summaries(&bytes),
+    }
+}
+
+fn parse_hid_report_ids(bytes: &[u8]) -> Vec<u8> {
+    let mut ids = Vec::new();
+    let mut index = 0usize;
+    while index < bytes.len() {
+        let prefix = bytes[index];
+        index += 1;
+        if prefix == 0xfe {
+            if index + 2 > bytes.len() {
+                break;
+            }
+            let size = bytes[index] as usize;
+            index = index.saturating_add(2 + size);
+            continue;
+        }
+
+        let size = match prefix & 0b11 {
+            0 => 0usize,
+            1 => 1,
+            2 => 2,
+            _ => 4,
+        };
+        let item_type = (prefix >> 2) & 0b11;
+        let item_tag = (prefix >> 4) & 0b1111;
+        if item_type == 1 && item_tag == 8 && size > 0 && index < bytes.len() {
+            let id = bytes[index];
+            if !ids.contains(&id) {
+                ids.push(id);
+            }
+        }
+        index = index.saturating_add(size);
+    }
+    ids.sort_unstable();
+    ids
+}
+
+fn parse_hid_report_summaries(bytes: &[u8]) -> Vec<KeyboardRgbHidReport> {
+    let mut reports = Vec::new();
+    let mut index = 0usize;
+    let mut report_id = None;
+    let mut report_size_bits = 0u32;
+    let mut report_count = 0u32;
+
+    while index < bytes.len() {
+        let prefix = bytes[index];
+        index += 1;
+        if prefix == 0xfe {
+            if index + 2 > bytes.len() {
+                break;
+            }
+            let size = bytes[index] as usize;
+            index = index.saturating_add(2 + size);
+            continue;
+        }
+
+        let size = match prefix & 0b11 {
+            0 => 0usize,
+            1 => 1,
+            2 => 2,
+            _ => 4,
+        };
+        if index + size > bytes.len() {
+            break;
+        }
+        let item_type = (prefix >> 2) & 0b11;
+        let item_tag = (prefix >> 4) & 0b1111;
+        let value = hid_item_u32(&bytes[index..index + size]);
+
+        match (item_type, item_tag) {
+            (1, 7) => report_size_bits = value,
+            (1, 8) if size > 0 => report_id = Some(bytes[index]),
+            (1, 9) => report_count = value,
+            (0, 8) => push_hid_report_summary(
+                &mut reports,
+                report_id,
+                "input",
+                report_size_bits,
+                report_count,
+            ),
+            (0, 9) => push_hid_report_summary(
+                &mut reports,
+                report_id,
+                "output",
+                report_size_bits,
+                report_count,
+            ),
+            (0, 11) => push_hid_report_summary(
+                &mut reports,
+                report_id,
+                "feature",
+                report_size_bits,
+                report_count,
+            ),
+            _ => {}
+        }
+
+        index = index.saturating_add(size);
+    }
+
+    reports
+}
+
+fn hid_item_u32(bytes: &[u8]) -> u32 {
+    bytes.iter().enumerate().fold(0u32, |value, (index, byte)| {
+        value | ((*byte as u32) << (index * 8))
+    })
+}
+
+fn push_hid_report_summary(
+    reports: &mut Vec<KeyboardRgbHidReport>,
+    report_id: Option<u8>,
+    kind: &str,
+    report_size_bits: u32,
+    report_count: u32,
+) {
+    let bit_length = report_size_bits.saturating_mul(report_count);
+    reports.push(KeyboardRgbHidReport {
+        report_id,
+        kind: kind.to_owned(),
+        report_size_bits,
+        report_count,
+        bit_length,
+        byte_length: bit_length.div_ceil(8),
+    });
+}
+
+fn detect_keyboard_rgb_capability(
+    candidates: &[KeyboardRgbCandidate],
+) -> Option<KeyboardRgbCapability> {
+    candidates.iter().find_map(|candidate| {
+        let metadata_path = Path::new(&candidate.path)
+            .join("device")
+            .join("ratvantage-keyboard-rgb.json");
+        let raw = fs::read_to_string(metadata_path).ok()?;
+        let capability = serde_json::from_str::<KeyboardRgbCapability>(&raw).ok()?;
+        if capability.backend == candidate.backend
+            && capability.device_id == candidate.device_id
+            && !capability.path.trim().is_empty()
+        {
+            Some(capability)
+        } else {
+            None
+        }
+    })
+}
+
+fn detect_keyboard_rgb_openrgb(root: &Path) -> Option<KeyboardRgbOpenRgbStatus> {
+    if root != Path::new("/") {
+        let fixture_path = root.join("ratvantage-keyboard-rgb-openrgb.json");
+        return fs::read_to_string(fixture_path)
+            .ok()
+            .and_then(|raw| serde_json::from_str::<KeyboardRgbOpenRgbStatus>(&raw).ok());
+    }
+
+    let openrgb_path = command_path("openrgb");
+    let sdk_helper_path = command_path("ratvantage-openrgb-keyboard-rgb-sdk-helper");
+    let devices = openrgb_path
+        .as_ref()
+        .and_then(|path| Command::new(path).arg("--list-devices").output().ok())
+        .map(|output| String::from_utf8_lossy(&output.stdout).into_owned())
+        .map(|stdout| parse_openrgb_keyboard_devices(&stdout))
+        .unwrap_or_default();
+    let sdk_snapshot = openrgb_path
+        .as_ref()
+        .zip(sdk_helper_path.as_ref())
+        .and_then(|(openrgb, helper)| read_openrgb_sdk_snapshot(helper, openrgb));
+    let sdk_snapshot_supported = sdk_snapshot.is_some();
+    let sdk_active_mode = sdk_snapshot
+        .as_ref()
+        .and_then(|snapshot| snapshot.active_mode.clone());
+    let sdk_color_zones = sdk_snapshot
+        .as_ref()
+        .map(|snapshot| snapshot.color_zones.clone())
+        .unwrap_or_default();
+    let sdk_colors = sdk_snapshot
+        .as_ref()
+        .map(|snapshot| snapshot.colors.clone())
+        .unwrap_or_default();
+    let backend_ready = !devices.is_empty() && sdk_snapshot_supported;
+
+    Some(KeyboardRgbOpenRgbStatus {
+        installed: openrgb_path.is_some(),
+        path: openrgb_path,
+        devices,
+        i2c_dev_loaded: kernel_module_loaded("i2c_dev"),
+        user_in_i2c_group: current_user_in_group("i2c"),
+        has_i2c_rw_access: device_prefix_has_rw_access(Path::new("/dev"), "i2c-"),
+        has_hidraw_rw_access: device_prefix_has_rw_access(Path::new("/dev"), "hidraw"),
+        backend_ready,
+        write_support_claimed: backend_ready,
+        sdk_helper_installed: sdk_helper_path.is_some(),
+        sdk_helper_path,
+        sdk_server_running: sdk_snapshot_supported,
+        sdk_snapshot_supported,
+        sdk_active_mode,
+        sdk_color_zones,
+        sdk_colors,
+    })
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct OpenRgbSdkSnapshotProbe {
+    active_mode: Option<String>,
+    color_zones: Vec<String>,
+    colors: BTreeMap<String, String>,
+}
+
+fn read_openrgb_sdk_snapshot(
+    helper_path: &str,
+    openrgb_path: &str,
+) -> Option<OpenRgbSdkSnapshotProbe> {
+    let output = Command::new(helper_path)
+        .arg("snapshot")
+        .arg(format!("openrgb-sdk:{openrgb_path}"))
+        .output()
+        .ok()?;
+    if !output.status.success() {
+        return None;
+    }
+    parse_openrgb_sdk_snapshot(&String::from_utf8_lossy(&output.stdout))
+}
+
+fn parse_openrgb_sdk_snapshot(raw: &str) -> Option<OpenRgbSdkSnapshotProbe> {
+    let value: serde_json::Value = serde_json::from_str(raw).ok()?;
+    let active_mode = value
+        .get("active_mode")
+        .and_then(|mode| mode.as_str())
+        .filter(|mode| !mode.is_empty())
+        .map(ToOwned::to_owned);
+    let colors: BTreeMap<String, String> = value
+        .get("colors")
+        .and_then(|colors| colors.as_object())
+        .map(|colors| {
+            colors
+                .iter()
+                .filter_map(|(zone, color)| {
+                    color.as_str().map(|color| (zone.clone(), color.to_owned()))
+                })
+                .collect()
+        })
+        .unwrap_or_default();
+    let mut color_zones: Vec<String> = colors.keys().cloned().collect();
+    color_zones.sort();
+    Some(OpenRgbSdkSnapshotProbe {
+        active_mode,
+        color_zones,
+        colors,
+    })
+}
+
+fn current_user_in_group(group: &str) -> bool {
+    Command::new("id")
+        .arg("-nG")
+        .output()
+        .ok()
+        .and_then(|output| String::from_utf8(output.stdout).ok())
+        .map(|groups| groups.split_whitespace().any(|name| name == group))
+        .unwrap_or(false)
+}
+
+fn command_path(command: &str) -> Option<String> {
+    let output = Command::new("sh")
+        .arg("-c")
+        .arg(format!("command -v {command}"))
+        .output()
+        .ok()?;
+    if !output.status.success() {
+        return None;
+    }
+    let path = String::from_utf8_lossy(&output.stdout).trim().to_owned();
+    (!path.is_empty()).then_some(path)
+}
+
+fn kernel_module_loaded(module: &str) -> bool {
+    fs::read_to_string("/proc/modules")
+        .map(|raw| {
+            raw.lines()
+                .any(|line| line.split_whitespace().next() == Some(module))
+        })
+        .unwrap_or(false)
+}
+
+fn device_prefix_has_rw_access(dev_root: &Path, prefix: &str) -> bool {
+    let Ok(entries) = fs::read_dir(dev_root) else {
+        return false;
+    };
+    entries.flatten().any(|entry| {
+        let path = entry.path();
+        let Some(name) = path.file_name().and_then(|name| name.to_str()) else {
+            return false;
+        };
+        name.starts_with(prefix) && access_path(&path, "-r") && access_path(&path, "-w")
+    })
+}
+
+fn access_path(path: &Path, flag: &str) -> bool {
+    Command::new("test")
+        .arg(flag)
+        .arg(path)
+        .status()
+        .map(|status| status.success())
+        .unwrap_or(false)
+}
+
+fn parse_openrgb_keyboard_devices(raw: &str) -> Vec<KeyboardRgbOpenRgbDevice> {
+    let mut devices = Vec::new();
+    let mut current: Option<KeyboardRgbOpenRgbDevice> = None;
+    for line in raw.lines() {
+        if let Some((index, name)) = parse_openrgb_device_header(line) {
+            if let Some(device) = current.take() {
+                if is_openrgb_keyboard_device(&device) {
+                    devices.push(device);
+                }
+            }
+            current = Some(KeyboardRgbOpenRgbDevice {
+                index,
+                name,
+                device_type: None,
+                description: None,
+                modes: Vec::new(),
+                current_mode: None,
+                zones: Vec::new(),
+                leds: Vec::new(),
+            });
+            continue;
+        }
+
+        let Some(device) = current.as_mut() else {
+            continue;
+        };
+        let Some((key, value)) = line.split_once(':') else {
+            continue;
+        };
+        match key.trim() {
+            "Type" => device.device_type = Some(value.trim().to_owned()),
+            "Description" => device.description = Some(value.trim().to_owned()),
+            "Modes" => {
+                let (modes, current_mode) = parse_openrgb_list_with_current(value.trim());
+                device.modes = modes;
+                device.current_mode = current_mode;
+            }
+            "Zones" => device.zones = parse_openrgb_list(value.trim()),
+            "LEDs" => device.leds = parse_openrgb_list(value.trim()),
+            _ => {}
+        }
+    }
+
+    if let Some(device) = current {
+        if is_openrgb_keyboard_device(&device) {
+            devices.push(device);
+        }
+    }
+    devices
+}
+
+fn parse_openrgb_device_header(line: &str) -> Option<(u32, String)> {
+    let (index, name) = line.split_once(':')?;
+    let index = index.trim().parse().ok()?;
+    let name = name.trim();
+    (!name.is_empty()).then(|| (index, name.to_owned()))
+}
+
+fn is_openrgb_keyboard_device(device: &KeyboardRgbOpenRgbDevice) -> bool {
+    let haystack = format!(
+        "{} {} {} {}",
+        device.name,
+        device.description.as_deref().unwrap_or(""),
+        device.zones.join(" "),
+        device.leds.join(" ")
+    )
+    .to_ascii_lowercase();
+    haystack.contains("lenovo")
+        && (haystack.contains("keyboard")
+            || haystack.contains("4-zone")
+            || haystack.contains("left side"))
+}
+
+fn parse_openrgb_list_with_current(raw: &str) -> (Vec<String>, Option<String>) {
+    let tokens = parse_openrgb_list(raw);
+    let current = tokens.iter().find_map(|token| {
+        token
+            .strip_prefix('[')?
+            .strip_suffix(']')
+            .map(str::to_owned)
+    });
+    let modes = tokens
+        .into_iter()
+        .map(|token| {
+            token
+                .strip_prefix('[')
+                .and_then(|token| token.strip_suffix(']'))
+                .unwrap_or(&token)
+                .to_owned()
+        })
+        .collect();
+    (modes, current)
+}
+
+fn parse_openrgb_list(raw: &str) -> Vec<String> {
+    let mut values = Vec::new();
+    let mut current = String::new();
+    let mut in_quote = false;
+    for ch in raw.chars() {
+        match ch {
+            '\'' => {
+                in_quote = !in_quote;
+                if !in_quote && !current.trim().is_empty() {
+                    values.push(current.trim().to_owned());
+                    current.clear();
+                }
+            }
+            ' ' | '\t' if !in_quote => {
+                if !current.trim().is_empty() {
+                    values.push(current.trim().to_owned());
+                    current.clear();
+                }
+            }
+            _ => current.push(ch),
+        }
+    }
+    if !current.trim().is_empty() {
+        values.push(current.trim().to_owned());
+    }
+    values
+}
+
+fn read_uevent(path: &Path) -> BTreeMap<String, String> {
+    let Some(raw) = read_trim(path) else {
+        return BTreeMap::new();
+    };
+    raw.lines()
+        .filter_map(|line| line.split_once('='))
+        .map(|(key, value)| (key.to_owned(), value.to_owned()))
+        .collect()
+}
+
+fn parse_hid_id(raw: &str) -> Option<(Option<String>, Option<String>)> {
+    let parts = raw.split(':').collect::<Vec<_>>();
+    if parts.len() < 3 {
+        return None;
+    }
+    Some((
+        normalize_hex_id(parts[parts.len() - 2]),
+        normalize_hex_id(parts[parts.len() - 1]),
+    ))
+}
+
+fn parse_hid_modalias_ids(raw: &str) -> Option<(Option<String>, Option<String>)> {
+    let vendor = extract_modalias_hex(raw, 'v').and_then(|value| normalize_hex_id(&value));
+    let product = extract_modalias_hex(raw, 'p').and_then(|value| normalize_hex_id(&value));
+    if vendor.is_none() && product.is_none() {
+        None
+    } else {
+        Some((vendor, product))
+    }
+}
+
+fn extract_modalias_hex(raw: &str, marker: char) -> Option<String> {
+    let marker_index = raw.find(marker)?;
+    let value = raw[marker_index + marker.len_utf8()..]
+        .chars()
+        .take_while(|ch| ch.is_ascii_hexdigit())
+        .collect::<String>();
+    if value.is_empty() {
+        None
+    } else {
+        Some(value)
+    }
+}
+
+fn normalize_hex_id(raw: &str) -> Option<String> {
+    let hex = raw
+        .trim()
+        .trim_start_matches("0x")
+        .trim_start_matches("0X")
+        .chars()
+        .filter(|ch| ch.is_ascii_hexdigit())
+        .collect::<String>();
+    if hex.is_empty() {
+        return None;
+    }
+    let trimmed = hex.trim_start_matches('0');
+    let normalized = if trimmed.is_empty() { "0" } else { trimmed };
+    Some(format!("{normalized:0>4}").to_ascii_uppercase())
+}
+
+fn is_keyboard_rgb_candidate(
+    vendor_id: Option<&str>,
+    name: Option<&str>,
+    modalias: Option<&str>,
+) -> bool {
+    vendor_id == Some("048D")
+        || name.is_some_and(|name| name.contains("ITE"))
+        || modalias.is_some_and(|modalias| modalias.to_ascii_uppercase().contains("V0000048D"))
+}
+
 fn detect_firmware_attributes(root: &Path) -> Vec<FirmwareAttributeCapability> {
     let attributes_root = root.join("sys/class/firmware-attributes");
     let Ok(providers) = fs::read_dir(attributes_root) else {
@@ -567,6 +1178,8 @@ fn detect_firmware_attributes(root: &Path) -> Vec<FirmwareAttributeCapability> {
                 name,
                 current_value: read_trim(path.join("current_value")),
                 display_name: read_trim(path.join("display_name")),
+                attribute_type: read_trim(path.join("type")),
+                default_value: read_trim(path.join("default_value")),
                 min_value: read_trim(path.join("min_value")),
                 max_value: read_trim(path.join("max_value")),
                 scalar_increment: read_trim(path.join("scalar_increment")),
@@ -632,6 +1245,10 @@ fn detect_envycontrol_gpu(root: &Path) -> Option<GpuCapability> {
             CapabilityStatus::Unsupported
         },
         mode,
+        switch_type: GpuSwitchType::RebootRequired,
+        switch_notes: vec![
+            "EnvyControl mode changes are treated as reboot-required until a runtime mux path is detected and validated".to_owned(),
+        ],
     })
 }
 
@@ -699,6 +1316,55 @@ mod tests {
             Some("integrated")
         );
         assert!(parse_envycontrol_mode("unsupported").is_none());
+    }
+
+    #[test]
+    fn parses_openrgb_lenovo_keyboard_device() {
+        let devices = parse_openrgb_keyboard_devices(
+            r#"Connection attempt failed
+0: Lenovo 5 2023
+  Type:           Laptop
+  Description:    Lenovo 4-Zone device
+  Modes: [Direct] Breathing 'Rainbow Wave' 'Spectrum Cycle'
+  Zones: Keyboard
+  LEDs: 'Left side' 'Left center' 'Right center' 'Right side'
+1: Other device
+  Type:           GPU
+  Description:    Not keyboard
+"#,
+        );
+
+        assert_eq!(devices.len(), 1);
+        let device = &devices[0];
+        assert_eq!(device.index, 0);
+        assert_eq!(device.name, "Lenovo 5 2023");
+        assert_eq!(device.device_type.as_deref(), Some("Laptop"));
+        assert_eq!(device.description.as_deref(), Some("Lenovo 4-Zone device"));
+        assert_eq!(
+            device.modes,
+            ["Direct", "Breathing", "Rainbow Wave", "Spectrum Cycle"]
+        );
+        assert_eq!(device.current_mode.as_deref(), Some("Direct"));
+        assert_eq!(device.zones, ["Keyboard"]);
+        assert_eq!(
+            device.leds,
+            ["Left side", "Left center", "Right center", "Right side"]
+        );
+    }
+
+    #[test]
+    fn parses_openrgb_sdk_snapshot_probe() {
+        let snapshot = parse_openrgb_sdk_snapshot(
+            r##"{"active_mode":"Direct","colors":{"right_side":"#000000","left_side":"#FFFFFF"}}"##,
+        )
+        .unwrap();
+
+        assert_eq!(snapshot.active_mode.as_deref(), Some("Direct"));
+        assert_eq!(
+            snapshot.color_zones,
+            vec!["left_side".to_owned(), "right_side".to_owned()]
+        );
+        assert_eq!(snapshot.colors["left_side"], "#FFFFFF");
     }
 
     #[test]
@@ -862,6 +1528,229 @@ mod tests {
     }
 
     #[test]
+    fn detects_keyboard_rgb_hidraw_candidates_without_claiming_support() {
+        let root = std::env::temp_dir().join(format!(
+            "legion-probe-keyboard-rgb-{}",
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        let ite = root.join("sys/class/hidraw/hidraw7/device");
+        let elan = root.join("sys/class/hidraw/hidraw8/device");
+        fs::create_dir_all(&ite).unwrap();
+        fs::create_dir_all(&elan).unwrap();
+        fs::write(
+            ite.join("uevent"),
+            "DRIVER=hid-generic\nHID_ID=0003:0000048D:0000C985\nHID_NAME=ITE Tech. Inc. ITE Device(8295)\nMODALIAS=hid:b0003g0001v0000048Dp0000C985\n",
+        )
+        .unwrap();
+        fs::write(
+            ite.join("report_descriptor"),
+            [
+                0x05, 0x0c, 0x09, 0x01, 0xa1, 0x01, 0x85, 0x0f, 0x85, 0x10, 0xc0,
+            ],
+        )
+        .unwrap();
+        fs::write(
+            elan.join("uevent"),
+            "DRIVER=hid-generic\nHID_ID=0003:000004F3:0000327E\nHID_NAME=ELAN Touchpad\nMODALIAS=hid:b0003g0001v000004F3p0000327E\n",
+        )
+        .unwrap();
+
+        let registry = probe(&ProbeOptions {
+            sysfs_root: root.clone(),
+        });
+
+        assert!(registry.keyboard_rgb.is_none());
+        assert_eq!(registry.keyboard_rgb_candidates.len(), 1);
+        let candidate = &registry.keyboard_rgb_candidates[0];
+        assert_eq!(candidate.backend, "hidraw");
+        assert_eq!(candidate.device_id, "hidraw7");
+        assert_eq!(candidate.vendor_id.as_deref(), Some("048D"));
+        assert_eq!(candidate.product_id.as_deref(), Some("C985"));
+        assert_eq!(
+            candidate.name.as_deref(),
+            Some("ITE Tech. Inc. ITE Device(8295)")
+        );
+        assert_eq!(candidate.report_descriptor_bytes, Some(11));
+        assert_eq!(candidate.report_ids, [15, 16]);
+        assert!(candidate.hid_reports.is_empty());
+        assert!(candidate
+            .evidence
+            .iter()
+            .any(|entry| entry == "REPORT_DESCRIPTOR_BYTES=11"));
+        assert!(candidate
+            .evidence
+            .iter()
+            .any(|entry| entry == "REPORT_IDS=15,16"));
+        assert!(registry.capabilities.iter().any(|capability| {
+            capability.id == "keyboard_rgb_candidates"
+                && capability.status == CapabilityStatus::ProbeOnly
+        }));
+
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn parses_hid_report_ids_from_short_items_only() {
+        assert_eq!(parse_hid_report_ids(&[0x85, 0x01, 0x85, 0x02]), [1, 2]);
+        assert_eq!(
+            parse_hid_report_ids(&[0xfe, 0x04, 0x00, 0xaa, 0xbb, 0xcc, 0xdd, 0x85, 0x07]),
+            [7]
+        );
+        assert!(parse_hid_report_ids(&[0xfe, 0x04]).is_empty());
+    }
+
+    #[test]
+    fn parses_hid_report_summaries_from_main_items() {
+        let reports = parse_hid_report_summaries(&[
+            0x85, 0x05, // Report ID 5
+            0x75, 0x08, // Report Size 8 bits
+            0x95, 0x40, // Report Count 64
+            0x91, 0x02, // Output
+            0xb1, 0x02, // Feature
+            0x95, 0x02, // Report Count 2
+            0x81, 0x02, // Input
+        ]);
+
+        assert_eq!(reports.len(), 3);
+        assert_eq!(reports[0].report_id, Some(5));
+        assert_eq!(reports[0].kind, "output");
+        assert_eq!(reports[0].report_size_bits, 8);
+        assert_eq!(reports[0].report_count, 64);
+        assert_eq!(reports[0].bit_length, 512);
+        assert_eq!(reports[0].byte_length, 64);
+        assert_eq!(reports[1].kind, "feature");
+        assert_eq!(reports[1].byte_length, 64);
+        assert_eq!(reports[2].kind, "input");
+        assert_eq!(reports[2].byte_length, 2);
+    }
+
+    #[test]
+    fn detects_keyboard_rgb_fixture_metadata_as_plan_capability() {
+        let root = std::env::temp_dir().join(format!(
+            "legion-probe-keyboard-rgb-metadata-{}",
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        let device = root.join("sys/class/hidraw/hidraw9/device");
+        fs::create_dir_all(&device).unwrap();
+        fs::write(
+            device.join("uevent"),
+            "DRIVER=hid-generic\nHID_ID=0003:0000048D:0000C985\nHID_NAME=ITE Tech. Inc. ITE Device(8295)\nMODALIAS=hid:b0003g0001v0000048Dp0000C985\n",
+        )
+        .unwrap();
+        let capability = KeyboardRgbCapability {
+            backend: "hidraw".to_owned(),
+            device_id: "hidraw9".to_owned(),
+            path: root.join("sys/class/hidraw/hidraw9").display().to_string(),
+            zones: vec![
+                legion_common::KeyboardRgbZone {
+                    id: "left".to_owned(),
+                    label: "Left".to_owned(),
+                },
+                legion_common::KeyboardRgbZone {
+                    id: "right".to_owned(),
+                    label: "Right".to_owned(),
+                },
+            ],
+            effects: vec!["static".to_owned(), "breath".to_owned()],
+            current_effect: Some("static".to_owned()),
+            current_colors: BTreeMap::from([
+                ("left".to_owned(), "#111111".to_owned()),
+                ("right".to_owned(), "#222222".to_owned()),
+            ]),
+            current_brightness: Some(40),
+            min_brightness: 0,
+            max_brightness: 100,
+            current_speed: Some(10),
+            min_speed: 0,
+            max_speed: 100,
+        };
+        fs::write(
+            device.join("ratvantage-keyboard-rgb.json"),
+            serde_json::to_string(&capability).unwrap(),
+        )
+        .unwrap();
+
+        let registry = probe(&ProbeOptions {
+            sysfs_root: root.clone(),
+        });
+
+        let detected = registry.keyboard_rgb.as_ref().unwrap();
+        assert_eq!(detected.device_id, "hidraw9");
+        assert_eq!(detected.effects, ["static", "breath"]);
+        assert_eq!(detected.current_brightness, Some(40));
+        assert_eq!(detected.zones.len(), 2);
+
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn detects_keyboard_rgb_openrgb_fixture_metadata() {
+        let root = std::env::temp_dir().join(format!(
+            "legion-probe-keyboard-rgb-openrgb-{}",
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        fs::create_dir_all(&root).unwrap();
+        let status = KeyboardRgbOpenRgbStatus {
+            installed: true,
+            path: Some("/usr/bin/openrgb".to_owned()),
+            devices: vec![KeyboardRgbOpenRgbDevice {
+                index: 0,
+                name: "Lenovo 5 2023".to_owned(),
+                device_type: Some("Laptop".to_owned()),
+                description: Some("Lenovo 4-Zone device".to_owned()),
+                modes: vec!["Direct".to_owned(), "Breathing".to_owned()],
+                current_mode: Some("Direct".to_owned()),
+                zones: vec!["Keyboard".to_owned()],
+                leds: vec![
+                    "Left side".to_owned(),
+                    "Left center".to_owned(),
+                    "Right center".to_owned(),
+                    "Right side".to_owned(),
+                ],
+            }],
+            i2c_dev_loaded: true,
+            user_in_i2c_group: false,
+            has_i2c_rw_access: true,
+            has_hidraw_rw_access: true,
+            backend_ready: false,
+            write_support_claimed: false,
+            sdk_helper_installed: false,
+            sdk_helper_path: None,
+            sdk_server_running: false,
+            sdk_snapshot_supported: false,
+            sdk_active_mode: None,
+            sdk_color_zones: vec![],
+            sdk_colors: BTreeMap::new(),
+        };
+        fs::write(
+            root.join("ratvantage-keyboard-rgb-openrgb.json"),
+            serde_json::to_string(&status).unwrap(),
+        )
+        .unwrap();
+
+        let registry = probe(&ProbeOptions {
+            sysfs_root: root.clone(),
+        });
+
+        let detected = registry.keyboard_rgb_openrgb.as_ref().unwrap();
+        assert!(detected.installed);
+        assert_eq!(detected.devices[0].name, "Lenovo 5 2023");
+        assert_eq!(detected.devices[0].leds.len(), 4);
+        assert!(registry.keyboard_rgb.is_none());
+
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
     fn detects_amd_gpu_power_dpm_without_hardcoded_card_number() {
         let root = std::env::temp_dir().join(format!(
             "legion-probe-amdgpu-dpm-{}",
@@ -934,6 +1823,13 @@ mod tests {
             .firmware_attributes
             .iter()
             .any(|attribute| attribute.name == "CustomMode"));
+        let spl = registry
+            .firmware_attributes
+            .iter()
+            .find(|attribute| attribute.name == "ppt_pl1_spl")
+            .expect("ppt_pl1_spl fixture metadata must be detected");
+        assert_eq!(spl.attribute_type.as_deref(), Some("integer"));
+        assert_eq!(spl.default_value.as_deref(), Some("70"));
     }
 
     fn fixture_root() -> PathBuf {

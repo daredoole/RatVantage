@@ -2,10 +2,11 @@ use anyhow::Result;
 use clap::Parser;
 use legion_control_daemon::{
     session_connection, spawn_amd_gpu_power_profile_sync_observer, spawn_automation_observer,
-    spawn_fan_preset_resume_observer, system_connection, LegionControl, PkcheckAuthorizer,
-    SysfsBatteryChargeTypeWriter, SysfsCpuEppWriter, SysfsCpuGovernorWriter,
-    SysfsIdeapadToggleWriter, SysfsLedStateWriter, SysfsPlatformProfileWriter, WriteAccessPolicy,
-    DBUS_INTERFACE, DBUS_PATH, DEFAULT_STATE_PATH, GATED_WRITE_METHODS, READ_ONLY_METHODS,
+    spawn_fan_preset_resume_observer, system_connection, CommandOpenRgbKeyboardRgbSdkWriter,
+    LegionControl, PkcheckAuthorizer, SysfsBatteryChargeTypeWriter, SysfsCpuEppWriter,
+    SysfsCpuGovernorWriter, SysfsIdeapadToggleWriter, SysfsLedStateWriter,
+    SysfsPlatformProfileWriter, WriteAccessPolicy, DBUS_INTERFACE, DBUS_PATH, DEFAULT_STATE_PATH,
+    GATED_WRITE_METHODS, READ_ONLY_METHODS,
 };
 use legion_probe::{probe, ProbeOptions};
 
@@ -31,6 +32,12 @@ struct Args {
 
     #[arg(long)]
     enable_led_state_write: bool,
+
+    #[arg(long)]
+    enable_keyboard_rgb_write: bool,
+
+    #[arg(long)]
+    openrgb_sdk_helper: Option<std::path::PathBuf>,
 
     #[arg(long)]
     enable_ideapad_toggle_write: bool,
@@ -69,6 +76,9 @@ struct Args {
     enable_curve_optimizer_write: bool,
 
     #[arg(long)]
+    enable_openrgb_access_setup: bool,
+
+    #[arg(long)]
     enable_hardware_profile_apply: bool,
 
     /// Mirror Fedora power-profiles-daemon state to amdgpu power_dpm_force_performance_level.
@@ -89,6 +99,7 @@ fn main() -> Result<()> {
         platform_profile_enabled: args.enable_platform_profile_write,
         battery_charge_type_enabled: args.enable_battery_charge_type_write,
         led_state_enabled: args.enable_led_state_write,
+        keyboard_rgb_enabled: args.enable_keyboard_rgb_write,
         ideapad_toggle_enabled: args.enable_ideapad_toggle_write,
         camera_power_enabled: args.enable_camera_power_write,
         usb_charging_enabled: args.enable_usb_charging_write,
@@ -101,9 +112,10 @@ fn main() -> Result<()> {
         conservation_mode_enabled: args.enable_conservation_mode_write,
         amd_gpu_dpm_enabled: args.enable_amd_gpu_dpm_write,
         curve_optimizer_enabled: args.enable_curve_optimizer_write,
+        openrgb_access_setup_enabled: args.enable_openrgb_access_setup,
         hardware_profile_apply_enabled: args.enable_hardware_profile_apply,
     };
-    let service = LegionControl::new_with_runtime(
+    let mut service = LegionControl::new_with_runtime(
         options.clone(),
         args.state_path.clone(),
         write_policy.clone(),
@@ -115,6 +127,11 @@ fn main() -> Result<()> {
         std::sync::Arc::new(SysfsCpuGovernorWriter),
         std::sync::Arc::new(SysfsCpuEppWriter),
     );
+    if let Some(helper_path) = args.openrgb_sdk_helper.clone() {
+        service = service.with_openrgb_keyboard_rgb_sdk_writer(std::sync::Arc::new(
+            CommandOpenRgbKeyboardRgbSdkWriter::new(helper_path),
+        ));
+    }
 
     if args.dry_run {
         let registry = probe(&options);
@@ -123,6 +140,13 @@ fn main() -> Result<()> {
         println!("path={DBUS_PATH}");
         println!("read_only_methods={READ_ONLY_METHODS}");
         println!("gated_write_methods={GATED_WRITE_METHODS}");
+        println!(
+            "openrgb_sdk_helper={}",
+            args.openrgb_sdk_helper
+                .as_ref()
+                .map(|path| path.display().to_string())
+                .unwrap_or_else(|| "none".to_owned())
+        );
         println!("enabled_write_methods={}", {
             let mut methods = Vec::new();
             if args.enable_platform_profile_write {
@@ -133,6 +157,9 @@ fn main() -> Result<()> {
             }
             if args.enable_led_state_write {
                 methods.push("SetLedState");
+            }
+            if args.enable_keyboard_rgb_write {
+                methods.push("SetKeyboardRgb");
             }
             if args.enable_ideapad_toggle_write {
                 methods.push("SetIdeapadToggle");
@@ -168,6 +195,9 @@ fn main() -> Result<()> {
             if args.enable_curve_optimizer_write {
                 methods.push("SetCurveOptimizerAllCore");
             }
+            if args.enable_openrgb_access_setup {
+                methods.push("SetupOpenRgbAccess");
+            }
             if args.enable_hardware_profile_apply {
                 methods.push("ApplyHardwareProfile");
             }
@@ -192,7 +222,11 @@ fn main() -> Result<()> {
         println!("serving development session bus");
         connection
     } else {
-        spawn_fan_preset_resume_observer(args.state_path.clone(), options.clone());
+        spawn_fan_preset_resume_observer(
+            args.state_path.clone(),
+            options.clone(),
+            write_policy.clone(),
+        );
         if args.enable_amd_gpu_power_profile_sync {
             spawn_amd_gpu_power_profile_sync_observer(options.clone());
         }

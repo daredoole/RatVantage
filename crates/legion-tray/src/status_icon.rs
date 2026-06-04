@@ -2,13 +2,14 @@ use legion_common::{
     CapabilityRegistry, CapabilityStatus, FanCurveSnapshot, GpuModePending,
     HardwareProfileApplyRun, HwmonSensor,
 };
-use legion_control_ui::UiStatus;
+use legion_control_ui::{GpuSwitchingDiagnostics, UiStatus};
 
 struct TooltipTelemetry<'a> {
     platform_profile: Option<&'a str>,
     desktop_power_profile: Option<&'a str>,
     fan_rpm: Option<&'a str>,
     gpu_pending_reboot: Option<&'a str>,
+    gpu_switching: Option<&'a str>,
     fan_curve_snapshot: Option<&'a str>,
     hardware_profile_apply: Option<&'a str>,
 }
@@ -25,6 +26,7 @@ pub struct TraySummary {
     pub desktop_power_profile: Option<String>,
     pub fan_rpm: Option<String>,
     pub gpu_pending_reboot: Option<String>,
+    pub gpu_switching: Option<String>,
     pub fan_curve_snapshot: Option<String>,
     pub hardware_profile_apply: Option<String>,
 }
@@ -55,6 +57,7 @@ impl TraySummary {
                     desktop_power_profile: None,
                     fan_rpm: None,
                     gpu_pending_reboot: None,
+                    gpu_switching: None,
                     fan_curve_snapshot: None,
                     hardware_profile_apply: None,
                 },
@@ -67,6 +70,7 @@ impl TraySummary {
             desktop_power_profile: None,
             fan_rpm: None,
             gpu_pending_reboot: None,
+            gpu_switching: None,
             fan_curve_snapshot: None,
             hardware_profile_apply: None,
         }
@@ -76,6 +80,7 @@ impl TraySummary {
         status: &UiStatus,
         report: &CapabilityRegistry,
         gpu_pending: Option<&GpuModePending>,
+        gpu_switching: Option<&GpuSwitchingDiagnostics>,
         fan_snapshot: Option<&FanCurveSnapshot>,
         hardware_profile_apply: Option<&HardwareProfileApplyRun>,
     ) -> Self {
@@ -91,6 +96,7 @@ impl TraySummary {
         summary.fan_rpm = fan_rpm_label(&report.telemetry.sensors);
         summary.gpu_pending_reboot = gpu_pending
             .map(|pending| legion_common::format_gpu_mode_pending_summary(Some(pending)));
+        summary.gpu_switching = gpu_switching.and_then(gpu_switching_summary);
         summary.fan_curve_snapshot = fan_snapshot
             .map(|snapshot| legion_common::format_fan_curve_snapshot_summary(Some(snapshot)));
         summary.hardware_profile_apply = hardware_profile_apply
@@ -105,6 +111,7 @@ impl TraySummary {
                 desktop_power_profile: summary.desktop_power_profile.as_deref(),
                 fan_rpm: summary.fan_rpm.as_deref(),
                 gpu_pending_reboot: summary.gpu_pending_reboot.as_deref(),
+                gpu_switching: summary.gpu_switching.as_deref(),
                 fan_curve_snapshot: summary.fan_curve_snapshot.as_deref(),
                 hardware_profile_apply: summary.hardware_profile_apply.as_deref(),
             },
@@ -136,6 +143,9 @@ impl TraySummary {
         }
         if let Some(gpu_pending_reboot) = &self.gpu_pending_reboot {
             lines.push(format!("gpu_pending_reboot={gpu_pending_reboot}"));
+        }
+        if let Some(gpu_switching) = &self.gpu_switching {
+            lines.push(format!("gpu_switching={gpu_switching}"));
         }
         if let Some(fan_curve_snapshot) = &self.fan_curve_snapshot {
             lines.push(format!("last_known_good_fan_curve={fan_curve_snapshot}"));
@@ -169,6 +179,9 @@ fn capability_tooltip(
     if let Some(gpu_pending_reboot) = telemetry_state.gpu_pending_reboot {
         telemetry.push(format!("GPU: {gpu_pending_reboot}"));
     }
+    if let Some(gpu_switching) = telemetry_state.gpu_switching {
+        telemetry.push(format!("GPU switching: {gpu_switching}"));
+    }
     if let Some(fan_curve_snapshot) = telemetry_state.fan_curve_snapshot {
         telemetry.push(format!("Saved curve: {fan_curve_snapshot}"));
     }
@@ -190,6 +203,42 @@ fn capability_tooltip(
             "{product_name} {product_version}: {telemetry}{available_count} available capabilities, {missing_count} missing"
         )
     }
+}
+
+fn gpu_switching_summary(gpu_switching: &GpuSwitchingDiagnostics) -> Option<String> {
+    if gpu_switching.status == "unavailable" {
+        return None;
+    }
+
+    let runtime_state = if gpu_switching.runtime_plan_available {
+        "runtime plan available"
+    } else {
+        "runtime plan blocked"
+    };
+    Some(format!(
+        "{}; switch type {}; {runtime_state}",
+        humanize_status(&gpu_switching.status),
+        gpu_switching.switch_type
+    ))
+}
+
+fn humanize_status(value: &str) -> String {
+    value
+        .split(['-', '_'])
+        .filter(|segment| !segment.is_empty())
+        .map(|segment| {
+            let mut chars = segment.chars();
+            match chars.next() {
+                Some(first) => {
+                    let mut label = first.to_ascii_uppercase().to_string();
+                    label.push_str(chars.as_str());
+                    label
+                }
+                None => String::new(),
+            }
+        })
+        .collect::<Vec<_>>()
+        .join(" ")
 }
 
 fn fan_rpm_label(sensors: &[HwmonSensor]) -> Option<String> {
@@ -215,7 +264,7 @@ mod tests {
         HwmonSensor, PlatformProfileCapability, PowerProfilesCapability, RiskLevel,
         WriteDryRunPlan, WriteExecutionResult,
     };
-    use legion_control_ui::UiStatus;
+    use legion_control_ui::{GpuSwitchingDiagnostics, UiStatus};
 
     use super::*;
 
@@ -333,7 +382,7 @@ mod tests {
             ..Default::default()
         };
 
-        let summary = TraySummary::from_status_and_report(&status, &report, None, None, None);
+        let summary = TraySummary::from_status_and_report(&status, &report, None, None, None, None);
 
         assert_eq!(
             summary.tooltip,
@@ -396,6 +445,7 @@ mod tests {
             &status,
             &report,
             Some(&gpu_pending),
+            None,
             Some(&fan_snapshot),
             None,
         );
@@ -412,6 +462,53 @@ mod tests {
         assert!(summary
             .render_lines()
             .contains(&"last_known_good_fan_curve=1 point on legion_hwmon".to_owned()));
+    }
+
+    #[test]
+    fn tray_summary_tooltip_includes_gpu_switching_classification() {
+        let status = UiStatus::from_parts(
+            HardwareSummary {
+                sysfs_root: "/tmp/fixture".to_owned(),
+                vendor: Some("LENOVO".to_owned()),
+                product_name: Some("82WM".to_owned()),
+                product_version: Some("Legion Pro 5 16ARX8".to_owned()),
+                product_sku: None,
+            },
+            vec![capability("gpu", "GPU mode")],
+        )
+        .unwrap();
+        let gpu_switching = GpuSwitchingDiagnostics {
+            status: "runtime_mux_research_blocked".to_owned(),
+            provider: Some("fixture-mux".to_owned()),
+            current_mode: Some("hybrid".to_owned()),
+            switch_type: "runtime-mux".to_owned(),
+            execution_model: "runtime_mux".to_owned(),
+            runtime_plan_available: false,
+            blockers: vec!["no automatic display recovery evidence has been captured".to_owned()],
+            evidence: vec!["provider=fixture-mux".to_owned()],
+            next_action:
+                "capture read-only mux state and recovery evidence before adding a switch plan"
+                    .to_owned(),
+        };
+
+        let summary = TraySummary::from_status_and_report(
+            &status,
+            &CapabilityRegistry::default(),
+            None,
+            Some(&gpu_switching),
+            None,
+            None,
+        );
+
+        let expected =
+            "Runtime Mux Research Blocked; switch type runtime-mux; runtime plan blocked";
+        assert_eq!(summary.gpu_switching.as_deref(), Some(expected));
+        assert!(summary
+            .tooltip
+            .contains(&format!("GPU switching: {expected}")));
+        assert!(summary
+            .render_lines()
+            .contains(&format!("gpu_switching={expected}")));
     }
 
     #[test]
@@ -459,6 +556,7 @@ mod tests {
         let summary = TraySummary::from_status_and_report(
             &status,
             &CapabilityRegistry::default(),
+            None,
             None,
             None,
             Some(&run),

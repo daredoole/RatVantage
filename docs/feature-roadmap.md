@@ -7,7 +7,7 @@ Current pre-alpha code provides the safe read-only base:
 - Runtime probe for hardware summary, capabilities, telemetry, and raw probe report.
 - Root-capable daemon shape with read-only D-Bus APIs plus gated reversible execution for `SetPlatformProfile`, `SetBatteryChargeType`, `SetLedState`, and restricted `SetIdeapadToggle`.
 - UI status client and optional GTK4/libadwaita shell with Status, Profiles, Battery, Fans, Appearance, and Diagnostics tabs; the Profiles, Battery, and Appearance tabs now include gated quick-apply controls with inline execution feedback.
-- Tray/status helper with a state-driven menu derived from detected profile choices, battery charge choices, Legion-relevant indicator state, packaged preset labels, pending runtime state, reversible quick actions for platform profile, battery charge type, ylogo LED, and `fn_lock`, dashboard-routed guidance rows for warning-gated `camera_power` and `usb_charging`, plus visible last-write status rows for blocked, failed, or rolled-back actions.
+- Tray/status helper with a state-driven menu derived from detected profile choices, battery charge choices, Legion-relevant indicator state, packaged preset labels, pending runtime state, reversible quick actions for platform profile, battery charge type, ylogo LED, `fn_lock`, and guarded keyboard RGB presets when the OpenRGB SDK/native backend is ready, dashboard-routed guidance rows for warning-gated `camera_power` and `usb_charging`, plus visible last-write status rows for blocked, failed, or rolled-back actions.
 - StatusNotifier tray backend with dashboard, refresh, short-interval auto-refresh/resume reloads, native desktop notifications for external platform-profile changes, write action execution, stale-state write-action suppression, recovery notices, and `--menu-check` diagnostics for the runtime-derived menu.
 - StatusNotifier dashboard launch forwards custom D-Bus addresses for private/session-bus workflows.
 - Tray tooltip reports platform profile, fan RPM, and available/missing capabilities.
@@ -48,9 +48,26 @@ Current pre-alpha code provides the safe read-only base:
 - Read-only GTK diagnostics tab for the same hardware/debug bundle, including Copy JSON.
 - Packaged read-only fan preset TOML assets with CI schema validation and runtime dry-run planning.
 - Fixture tests, private-bus integration tests, clippy/fmt/test local CI, and GitHub CI.
+- Daemon-owned `ac_profile_router` automation rules now route AC-online/offline
+  states to stored hardware profiles through the same preview/apply/cooldown
+  policy path as other automation rules, and GTK Quick Templates can seed the
+  starter profiles/rule; GTK also has a Quiet on Battery starter that saves a low-power profile, AC-unplugged trigger, and `low-power -> quiet-office` fan preset mapping, plus an Integrated GPU on Battery starter that saves a reboot-gated `gpu_mode=integrated` profile and dashboard profile rows that show compact action summaries; saved AC router rules expose profile pickers, cooldown,
+  preview, test-run, save, and delete controls.
+- The opt-in automation observer now also handles mapped GPU reboot-completion
+  triggers: when pending GPU mode matches the post-reboot EnvyControl probe, it
+  clears pending state and applies `gpu_mode_reboot_completed` through existing
+  hardware-profile gates; GTK Quick Templates can seed
+  `gpu_reboot_completed_balanced` mapped to that trigger.
+- GPU mode capability metadata now includes a read-only switch-type
+  classification; EnvyControl is explicitly marked `reboot-required`, older
+  diagnostics default to `unknown`, overview/tray status, tray tooltip, and
+  tray menu surface the classification, and runtime/session switch types remain validation-blocked
+  research-only paths until a dedicated backend is paired with display recovery
+  evidence.
 
 ## Next immediate work
 
+- Use [vantage-toolkit-parity-test-first-plan.md](vantage-toolkit-parity-test-first-plan.md) for high-value Lenovo Vantage / Legion Toolkit parity work. Fn+Q/platform-profile handling is already covered. Keyboard RGB now has schema/validator/planning coverage, read-only HID/OpenRGB/SDK evidence capture, explicit OpenRGB access setup, GTK staged controls, guarded tray RGB presets, user-installed evidence helpers, SDK mode/color write evidence, test-only daemon OpenRGB SDK fallback rollback coverage, fake external-helper process-boundary coverage, a real connect-only SDK helper installed as `ratvantage-openrgb-keyboard-rgb-sdk-helper`, a user-session SDK server helper installed as `ratvantage-openrgb-sdk-server`, dev daemon args for `--enable-keyboard-rgb-write` / `--openrgb-sdk-helper <path>`, live helper snapshot proof against the user-session SDK server, RPM helper packaging for the OpenRGB/readiness/evidence/compatibility scripts, evidence-backed OpenRGB SDK `backend_ready` reporting in probe/common/daemon capability refresh, read-only reset diagnostics for RGB SDK current-mode/color recovery, compatibility bundle high-value recovery/drift/GPU/automation summaries, hardware-profile drift detection for OpenRGB SDK mode/colors, read-only fan curve drift detection against saved last-known-good snapshots, tray status/tooltip/menu GPU switching classification, GPU reboot-completion trigger handling, and GPU switching recovery guidance in reset diagnostics. Live OpenRGB CLI execution remains negative, while SDK mode/color write/restore works through `RGBCONTROLLER_UPDATEMODE` plus `RGBCONTROLLER_UPDATELEDS`; the running system daemon now dogfoods `SetKeyboardRgb` through the OpenRGB SDK fallback with policy, read-back, and rollback gates. Custom thermal prerequisite planning, firmware PPT reset/preset previews, profile-change automation triggers, and reset diagnostics are in progress. Remaining parity targets are safer GPU switching research and RatVantage-only automation/evidence features.
 - Keep tray autostart disabled; GNOME AppIndicator extension path is still untested (KDE-primary contributors can defer GNOME smoke; use the KDE StatusNotifier report workflow until a GNOME session is available).
 - Collect more captured fixtures through the compatibility bundle workflow when additional supported Legion machines are available.
 - If no new hardware reports are available, use the live write-validation harness to capture execute-mode evidence on supported Legion hardware one control at a time; tray/UI refresh behavior is now aligned on the shared reload path, KDE-specific smoke/reporting is in place, and GNOME validation remains blocked.
@@ -84,6 +101,7 @@ Goal: safe, useful daily controls using only confirmed interfaces and conservati
 - GPU mode from EnvyControl if installed. [implemented in `--overview` as read-only query]
 - Basic battery capacity/status/health where exposed. [implemented in `--overview` for `BAT0` telemetry]
 - LED brightness and firmware toggle values where exposed. [implemented in `--overview` as read-only data]
+- Keyboard RGB HID candidates, report IDs, and report shapes where exposed. [implemented in `--overview` as read-only evidence, not write support]
 
 ### Profiles
 
@@ -268,4 +286,7 @@ These should remain out of scope until a stable ABI, clear bounds, read-back ver
 - Native keyboard RGB EC/HID payload writer.
 - Runtime MUX/G-Sync toggles through raw WMI.
 - `max-power` profile if not listed in `platform_profile_choices`.
+- Custom thermal/PPT/fan execution when `custom` is absent from
+  `platform_profile_choices`; dry-run plans must report this as a stop
+  condition.
 - Any feature that cannot be hidden cleanly when missing.

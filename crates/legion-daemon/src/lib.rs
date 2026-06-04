@@ -15,24 +15,31 @@ use legion_common::{
     plan_conservation_mode_write as plan_conservation_mode, plan_cpu_boost_write as plan_cpu_boost,
     plan_cpu_epp_write as plan_cpu_epp, plan_cpu_governor_write as plan_cpu_governor,
     plan_curve_optimizer_all_core_write as plan_curve_optimizer_all_core,
-    plan_fan_preset_write as plan_fan_preset,
-    plan_firmware_attribute_write as plan_firmware_attribute, plan_gpu_mode_write as plan_gpu_mode,
-    plan_ideapad_toggle_write as plan_ideapad_toggle, plan_led_state_write as plan_led_state,
-    plan_platform_profile_write as plan_platform_profile,
-    plan_restore_auto_fan_write as plan_restore_auto_fan, validate_automation_rule,
-    validate_automation_rule_id, validate_curve_optimizer_all_core_offset,
-    validate_fan_preset_platform_profile_entry, validate_gpu_mode_choice,
-    validate_hardware_profile_id, validate_hardware_profile_trigger_id, AutomationRule,
-    AutomationRuleApplyRun, AutomationRuleEvaluation, AutomationRuleKind, CapabilityRegistry,
-    CurveOptimizerReadbackStatus, CurveOptimizerWriteState, DaemonState, FanCurveSnapshot,
-    FanPreset, GpuModePending, HardwareProfile, HardwareProfileActions,
-    HardwareProfileApplyActionResult, HardwareProfileApplyPreview, HardwareProfileApplyRun,
-    IdeapadToggleCapability, LedCapability, RyzenAdjBackendStatus, RyzenBackendStatus,
-    RyzenSmuBackendStatus, RyzenSmuSetupAssistant, ValidationError, WriteDryRunPlan,
-    WriteExecutionResult,
+    plan_fan_preset_write_with_platform_profile as plan_fan_preset,
+    plan_firmware_attribute_reset_write_with_platform_profile as plan_firmware_attribute_reset,
+    plan_firmware_attribute_write_with_platform_profile as plan_firmware_attribute,
+    plan_firmware_ppt_preset_write_with_platform_profile as plan_firmware_ppt_preset,
+    plan_gpu_mode_write as plan_gpu_mode,
+    plan_hardware_profile_keyboard_rgb_write as plan_hardware_profile_keyboard_rgb,
+    plan_ideapad_toggle_write as plan_ideapad_toggle, plan_keyboard_rgb_write as plan_keyboard_rgb,
+    plan_led_state_write as plan_led_state, plan_openrgb_keyboard_rgb_bridge,
+    plan_openrgb_keyboard_rgb_sdk_write as plan_openrgb_keyboard_rgb_sdk,
+    plan_platform_profile_write as plan_platform_profile, plan_prepare_custom_thermal_mode,
+    plan_restore_auto_fan_write_with_platform_profile as plan_restore_auto_fan,
+    validate_automation_rule, validate_automation_rule_id,
+    validate_curve_optimizer_all_core_offset, validate_fan_preset_platform_profile_entry,
+    validate_gpu_mode_choice, validate_hardware_profile_id, validate_hardware_profile_trigger_id,
+    AutomationRule, AutomationRuleApplyRun, AutomationRuleEvaluation, AutomationRuleKind,
+    CapabilityRegistry, CurveOptimizerReadbackStatus, CurveOptimizerWriteState,
+    CustomThermalPlanPreview, DaemonState, FanCurveSnapshot, FanPreset, GpuModePending,
+    HardwareProfile, HardwareProfileActions, HardwareProfileApplyActionResult,
+    HardwareProfileApplyPreview, HardwareProfileApplyRun, IdeapadToggleCapability,
+    KeyboardRgbCapability, KeyboardRgbWriteRequest, LedCapability, PlatformProfileChangeEvent,
+    RyzenAdjBackendStatus, RyzenBackendStatus, RyzenSmuBackendStatus, RyzenSmuSetupAssistant,
+    ValidationError, WriteDryRunPlan, WriteExecutionResult, WritePlanStep,
 };
 use legion_probe::{probe, ProbeOptions};
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use zbus::{
     blocking::{Connection, ConnectionBuilder, MessageIterator},
     fdo, interface,
@@ -42,11 +49,12 @@ use zbus::{
 
 pub const DBUS_INTERFACE: &str = "org.ratvantage.LegionControl1";
 pub const DBUS_PATH: &str = "/org/ratvantage/LegionControl1";
-pub const READ_ONLY_METHODS: &str = "CaptureLastKnownGoodFanCurve,ClearAutomationRules,ClearFanPresetProfileMap,ClearGpuModePending,ClearHardwareProfileTriggers,ClearHardwareProfiles,GetAutomationRulePreview,GetAutomationRules,GetCapabilities,GetFanPresetProfileMap,GetFanPresetReapplyAfterResume,GetGpuModePending,GetHardwareProfileApplyPreview,GetHardwareProfileTriggerApplyPreview,GetHardwareProfileTriggers,GetHardwareProfiles,GetHardwareSummary,GetLastAutomationRuleApply,GetLastCurveOptimizerAllCore,GetLastHardwareProfileApply,GetLastKnownGoodFanCurve,GetLiveFanCurveReadings,GetRawProbeReport,GetRyzenBackendStatus,GetTelemetry,PlanAmdGpuDpmForceLevelWrite,PlanBatteryChargeTypeWrite,PlanConservationModeWrite,PlanCpuBoostWrite,PlanCpuEppWrite,PlanCpuGovernorWrite,PlanCurveOptimizerAllCoreWrite,PlanFanPresetWrite,PlanFirmwareAttributeWrite,PlanGpuModeWrite,PlanIdeapadToggleWrite,PlanLedStateWrite,PlanPlatformProfileWrite,PlanRestoreAutoFanWrite,RefreshCapabilities,RemoveAutomationRule,RemoveFanPresetProfileMapEntry,RemoveHardwareProfile,RemoveHardwareProfileTrigger,SetAutomationRule,SetFanPresetProfileMapEntry,SetFanPresetReapplyAfterResume,SetGpuModePending,SetHardwareProfile,SetHardwareProfileTrigger";
+pub const READ_ONLY_METHODS: &str = "CaptureLastKnownGoodFanCurve,ClearAutomationRules,ClearFanPresetProfileMap,ClearGpuModePending,ClearHardwareProfileTriggers,ClearHardwareProfiles,GetAutomationRulePreview,GetAutomationRules,GetCapabilities,GetFanPresetProfileMap,GetFanPresetReapplyAfterResume,GetGpuModePending,GetHardwareProfileApplyPreview,GetHardwareProfileTriggerApplyPreview,GetHardwareProfileTriggers,GetHardwareProfiles,GetHardwareSummary,GetLastAutomationRuleApply,GetLastCurveOptimizerAllCore,GetLastHardwareProfileApply,GetLastKnownGoodFanCurve,GetLiveFanCurveReadings,GetRawProbeReport,GetRecentPlatformProfileChanges,GetRyzenBackendStatus,GetTelemetry,PlanAmdGpuDpmForceLevelWrite,PlanBatteryChargeTypeWrite,PlanConservationModeWrite,PlanCpuBoostWrite,PlanCpuEppWrite,PlanCpuGovernorWrite,PlanCurveOptimizerAllCoreWrite,PlanCustomThermalFanPresetWrite,PlanCustomThermalFirmwareAttributeWrite,PlanCustomThermalFirmwarePptPresetWrite,PlanCustomThermalRestoreAutoFanWrite,PlanFanPresetWrite,PlanFirmwareAttributeResetWrite,PlanFirmwareAttributeWrite,PlanGpuModeWrite,PlanIdeapadToggleWrite,PlanKeyboardRgbWrite,PlanLedStateWrite,PlanOpenRgbAccessSetup,PlanOpenRgbKeyboardRgbBridge,PlanOpenRgbKeyboardRgbSdkWrite,PlanPlatformProfileWrite,PlanPrepareCustomThermalMode,PlanRestoreAutoFanWrite,RefreshCapabilities,RemoveAutomationRule,RemoveFanPresetProfileMapEntry,RemoveHardwareProfile,RemoveHardwareProfileTrigger,SetAutomationRule,SetFanPresetProfileMapEntry,SetFanPresetReapplyAfterResume,SetGpuModePending,SetHardwareProfile,SetHardwareProfileTrigger";
 pub const GATED_WRITE_METHODS: &str =
-    "SetPlatformProfile,SetBatteryChargeType,SetLedState,SetIdeapadToggle,SetGpuMode,SetCpuGovernor,SetCpuEpp,SetFirmwareAttribute,SetCpuBoost,SetConservationMode,SetAmdGpuDpmForceLevel,SetCurveOptimizerAllCore,ApplyHardwareProfile,ApplyHardwareProfileTrigger,ApplyAutomationRule";
+    "SetPlatformProfile,SetBatteryChargeType,SetLedState,SetKeyboardRgb,SetIdeapadToggle,SetGpuMode,SetCpuGovernor,SetCpuEpp,SetFirmwareAttribute,SetCpuBoost,SetConservationMode,SetAmdGpuDpmForceLevel,SetCurveOptimizerAllCore,SetupOpenRgbAccess,ApplyHardwareProfile,ApplyHardwareProfileTrigger,ApplyAutomationRule";
 pub const DEFAULT_STATE_PATH: &str = "/var/lib/legion-control/state.toml";
 const AMD_GPU_POWER_PROFILE_SYNC_INTERVAL: std::time::Duration = std::time::Duration::from_secs(5);
+const RECENT_PLATFORM_PROFILE_CHANGE_LIMIT: usize = 20;
 
 const PACKAGED_FAN_PRESETS: &[&str] = &[
     include_str!("../../../data/presets/quiet-office.toml"),
@@ -58,6 +66,7 @@ const PACKAGED_FAN_PRESETS: &[&str] = &[
 const PLATFORM_PROFILE_WRITE_METHOD: &str = "SetPlatformProfile";
 const BATTERY_CHARGE_TYPE_WRITE_METHOD: &str = "SetBatteryChargeType";
 const LED_STATE_WRITE_METHOD: &str = "SetLedState";
+const KEYBOARD_RGB_WRITE_METHOD: &str = "SetKeyboardRgb";
 const IDEAPAD_TOGGLE_WRITE_METHOD: &str = "SetIdeapadToggle";
 const GPU_MODE_WRITE_METHOD: &str = "SetGpuMode";
 const CPU_GOVERNOR_WRITE_METHOD: &str = "SetCpuGovernor";
@@ -67,10 +76,12 @@ const CPU_BOOST_WRITE_METHOD: &str = "SetCpuBoost";
 const CONSERVATION_MODE_WRITE_METHOD: &str = "SetConservationMode";
 const AMD_GPU_DPM_FORCE_LEVEL_WRITE_METHOD: &str = "SetAmdGpuDpmForceLevel";
 const CURVE_OPTIMIZER_ALL_CORE_WRITE_METHOD: &str = "SetCurveOptimizerAllCore";
+const OPENRGB_ACCESS_SETUP_METHOD: &str = "SetupOpenRgbAccess";
 const HARDWARE_PROFILE_APPLY_METHOD: &str = "ApplyHardwareProfile";
 const HARDWARE_PROFILE_TRIGGER_APPLY_METHOD: &str = "ApplyHardwareProfileTrigger";
 const PKCHECK_MISSING: &str = "pkcheck is required for polkit authorization";
 const AUTOMATION_OBSERVER_SENDER: &str = "ratvantage.automation-observer";
+const RESUME_OBSERVER_SENDER: &str = "ratvantage.resume-observer";
 const AUTOMATION_OBSERVER_INTERVAL: std::time::Duration = std::time::Duration::from_secs(60);
 const AUTOMATION_OBSERVER_COOLDOWN_SECS: u64 = 300;
 
@@ -79,6 +90,7 @@ pub struct WriteAccessPolicy {
     pub platform_profile_enabled: bool,
     pub battery_charge_type_enabled: bool,
     pub led_state_enabled: bool,
+    pub keyboard_rgb_enabled: bool,
     pub ideapad_toggle_enabled: bool,
     pub camera_power_enabled: bool,
     pub usb_charging_enabled: bool,
@@ -91,6 +103,7 @@ pub struct WriteAccessPolicy {
     pub conservation_mode_enabled: bool,
     pub amd_gpu_dpm_enabled: bool,
     pub curve_optimizer_enabled: bool,
+    pub openrgb_access_setup_enabled: bool,
     pub hardware_profile_apply_enabled: bool,
 }
 
@@ -105,6 +118,9 @@ impl WriteAccessPolicy {
         }
         if self.led_state_enabled {
             methods.push(LED_STATE_WRITE_METHOD);
+        }
+        if self.keyboard_rgb_enabled {
+            methods.push(KEYBOARD_RGB_WRITE_METHOD);
         }
         if self.ideapad_toggle_enabled
             || self.camera_power_enabled
@@ -136,6 +152,9 @@ impl WriteAccessPolicy {
         }
         if self.curve_optimizer_enabled {
             methods.push(CURVE_OPTIMIZER_ALL_CORE_WRITE_METHOD);
+        }
+        if self.openrgb_access_setup_enabled {
+            methods.push(OPENRGB_ACCESS_SETUP_METHOD);
         }
         if self.hardware_profile_apply_enabled {
             methods.push(HARDWARE_PROFILE_APPLY_METHOD);
@@ -211,6 +230,47 @@ pub trait LedStateWriter: Send + Sync {
     fn write_led_state(&self, path: &str, enabled: bool) -> std::result::Result<(), String>;
 }
 
+pub trait KeyboardRgbWriter: Send + Sync {
+    fn write_keyboard_rgb(
+        &self,
+        path: &str,
+        request: &KeyboardRgbWriteRequest,
+    ) -> std::result::Result<(), String>;
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct OpenRgbKeyboardRgbSdkSnapshot {
+    pub active_mode: String,
+    pub colors: BTreeMap<String, String>,
+}
+
+pub trait OpenRgbKeyboardRgbSdkWriter: Send + Sync {
+    fn is_configured(&self) -> bool {
+        true
+    }
+
+    fn read_keyboard_rgb_snapshot(
+        &self,
+        path: &str,
+    ) -> std::result::Result<OpenRgbKeyboardRgbSdkSnapshot, String>;
+
+    fn write_keyboard_rgb(
+        &self,
+        path: &str,
+        request: &KeyboardRgbWriteRequest,
+    ) -> std::result::Result<(), String>;
+
+    fn restore_keyboard_rgb_snapshot(
+        &self,
+        path: &str,
+        snapshot: &OpenRgbKeyboardRgbSdkSnapshot,
+    ) -> std::result::Result<(), String>;
+}
+
+pub trait OpenRgbAccessSetupWriter: Send + Sync {
+    fn setup_openrgb_access(&self, target_user: &str) -> std::result::Result<String, String>;
+}
+
 pub trait IdeapadToggleWriter: Send + Sync {
     fn write_ideapad_toggle(&self, path: &str, enabled: bool) -> std::result::Result<(), String>;
 }
@@ -268,6 +328,141 @@ pub struct SysfsLedStateWriter;
 impl LedStateWriter for SysfsLedStateWriter {
     fn write_led_state(&self, path: &str, enabled: bool) -> std::result::Result<(), String> {
         fs::write(path, if enabled { "1" } else { "0" }).map_err(|error| error.to_string())
+    }
+}
+
+#[derive(Debug, Default)]
+pub struct UnsupportedKeyboardRgbWriter;
+
+impl KeyboardRgbWriter for UnsupportedKeyboardRgbWriter {
+    fn write_keyboard_rgb(
+        &self,
+        _path: &str,
+        _request: &KeyboardRgbWriteRequest,
+    ) -> std::result::Result<(), String> {
+        Err("keyboard RGB execution backend is not configured".to_owned())
+    }
+}
+
+#[derive(Debug, Default)]
+pub struct UnsupportedOpenRgbKeyboardRgbSdkWriter;
+
+impl OpenRgbKeyboardRgbSdkWriter for UnsupportedOpenRgbKeyboardRgbSdkWriter {
+    fn is_configured(&self) -> bool {
+        false
+    }
+
+    fn read_keyboard_rgb_snapshot(
+        &self,
+        _path: &str,
+    ) -> std::result::Result<OpenRgbKeyboardRgbSdkSnapshot, String> {
+        Err("OpenRGB SDK keyboard RGB execution backend is not configured".to_owned())
+    }
+
+    fn write_keyboard_rgb(
+        &self,
+        _path: &str,
+        _request: &KeyboardRgbWriteRequest,
+    ) -> std::result::Result<(), String> {
+        Err("OpenRGB SDK keyboard RGB execution backend is not configured".to_owned())
+    }
+
+    fn restore_keyboard_rgb_snapshot(
+        &self,
+        _path: &str,
+        _snapshot: &OpenRgbKeyboardRgbSdkSnapshot,
+    ) -> std::result::Result<(), String> {
+        Err("OpenRGB SDK keyboard RGB execution backend is not configured".to_owned())
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct CommandOpenRgbKeyboardRgbSdkWriter {
+    helper_path: PathBuf,
+}
+
+impl CommandOpenRgbKeyboardRgbSdkWriter {
+    pub fn new(helper_path: impl Into<PathBuf>) -> Self {
+        Self {
+            helper_path: helper_path.into(),
+        }
+    }
+
+    fn run_helper(&self, args: &[String]) -> std::result::Result<String, String> {
+        let output = Command::new(&self.helper_path)
+            .args(args)
+            .output()
+            .map_err(|error| format!("failed to run OpenRGB SDK helper: {error}"))?;
+        let stdout = String::from_utf8_lossy(&output.stdout).trim().to_owned();
+        if output.status.success() {
+            return Ok(stdout);
+        }
+        let stderr = String::from_utf8_lossy(&output.stderr).trim().to_owned();
+        Err(if stderr.is_empty() {
+            format!("OpenRGB SDK helper exited with {}", output.status)
+        } else {
+            format!("OpenRGB SDK helper exited with {}: {stderr}", output.status)
+        })
+    }
+}
+
+impl OpenRgbKeyboardRgbSdkWriter for CommandOpenRgbKeyboardRgbSdkWriter {
+    fn read_keyboard_rgb_snapshot(
+        &self,
+        path: &str,
+    ) -> std::result::Result<OpenRgbKeyboardRgbSdkSnapshot, String> {
+        let stdout = self.run_helper(&["snapshot".to_owned(), path.to_owned()])?;
+        serde_json::from_str(&stdout)
+            .map_err(|error| format!("OpenRGB SDK helper returned invalid snapshot JSON: {error}"))
+    }
+
+    fn write_keyboard_rgb(
+        &self,
+        path: &str,
+        request: &KeyboardRgbWriteRequest,
+    ) -> std::result::Result<(), String> {
+        let request_json = serde_json::to_string(request).map_err(|error| error.to_string())?;
+        self.run_helper(&["write".to_owned(), path.to_owned(), request_json])
+            .map(|_| ())
+    }
+
+    fn restore_keyboard_rgb_snapshot(
+        &self,
+        path: &str,
+        snapshot: &OpenRgbKeyboardRgbSdkSnapshot,
+    ) -> std::result::Result<(), String> {
+        let snapshot_json = serde_json::to_string(snapshot).map_err(|error| error.to_string())?;
+        self.run_helper(&["restore".to_owned(), path.to_owned(), snapshot_json])
+            .map(|_| ())
+    }
+}
+
+#[derive(Debug, Default)]
+pub struct SystemOpenRgbAccessSetupWriter;
+
+impl OpenRgbAccessSetupWriter for SystemOpenRgbAccessSetupWriter {
+    fn setup_openrgb_access(&self, target_user: &str) -> std::result::Result<String, String> {
+        ensure_openrgb_target_user(target_user)?;
+        if !system_group_exists("i2c")? {
+            run_setup_command("groupadd", &["--system", "i2c"])?;
+        }
+        if !user_in_group(target_user, "i2c")? {
+            run_setup_command("usermod", &["-aG", "i2c", target_user])?;
+        }
+        run_setup_command("modprobe", &["i2c-dev"])?;
+        install_root_file(
+            "/etc/modules-load.d/ratvantage-openrgb-i2c.conf",
+            "i2c-dev\n",
+        )?;
+        install_root_file(
+            "/etc/udev/rules.d/60-ratvantage-openrgb-i2c.rules",
+            "KERNEL==\"i2c-[0-9]*\", GROUP=\"i2c\", MODE=\"0660\"\n",
+        )?;
+        run_setup_command("udevadm", &["control", "--reload-rules"])?;
+        run_setup_command("udevadm", &["trigger", "--subsystem-match=i2c-dev"])?;
+        Ok(format!(
+            "OpenRGB access setup installed for {target_user}; log out and back in before relying on new group membership"
+        ))
     }
 }
 
@@ -526,6 +721,9 @@ pub struct LegionControl {
     platform_profile_writer: Arc<dyn PlatformProfileWriter>,
     battery_charge_type_writer: Arc<dyn BatteryChargeTypeWriter>,
     led_state_writer: Arc<dyn LedStateWriter>,
+    keyboard_rgb_writer: Arc<dyn KeyboardRgbWriter>,
+    openrgb_keyboard_rgb_sdk_writer: Arc<dyn OpenRgbKeyboardRgbSdkWriter>,
+    openrgb_access_setup_writer: Arc<dyn OpenRgbAccessSetupWriter>,
     ideapad_toggle_writer: Arc<dyn IdeapadToggleWriter>,
     gpu_mode_writer: Arc<dyn GpuModeWriter>,
     cpu_governor_writer: Arc<dyn CpuGovernorWriter>,
@@ -589,6 +787,9 @@ impl LegionControl {
             platform_profile_writer,
             battery_charge_type_writer,
             led_state_writer,
+            keyboard_rgb_writer: Arc::new(UnsupportedKeyboardRgbWriter),
+            openrgb_keyboard_rgb_sdk_writer: Arc::new(UnsupportedOpenRgbKeyboardRgbSdkWriter),
+            openrgb_access_setup_writer: Arc::new(SystemOpenRgbAccessSetupWriter),
             ideapad_toggle_writer,
             gpu_mode_writer: Arc::new(CommandGpuModeWriter),
             cpu_governor_writer,
@@ -601,6 +802,30 @@ impl LegionControl {
 
     pub fn with_gpu_mode_writer(mut self, writer: Arc<dyn GpuModeWriter>) -> Self {
         self.gpu_mode_writer = writer;
+        self
+    }
+
+    pub fn with_keyboard_rgb_writer(mut self, writer: Arc<dyn KeyboardRgbWriter>) -> Self {
+        self.keyboard_rgb_writer = writer;
+        self
+    }
+
+    pub fn with_openrgb_keyboard_rgb_sdk_writer(
+        mut self,
+        writer: Arc<dyn OpenRgbKeyboardRgbSdkWriter>,
+    ) -> Self {
+        self.openrgb_keyboard_rgb_sdk_writer = writer;
+        if let Ok(mut registry) = self.registry.lock() {
+            self.annotate_openrgb_keyboard_rgb_sdk_backend(&mut registry);
+        }
+        self
+    }
+
+    pub fn with_openrgb_access_setup_writer(
+        mut self,
+        writer: Arc<dyn OpenRgbAccessSetupWriter>,
+    ) -> Self {
+        self.openrgb_access_setup_writer = writer;
         self
     }
 
@@ -628,6 +853,12 @@ impl LegionControl {
             .map_err(PlanningError::Validation)
     }
 
+    pub fn plan_prepare_custom_thermal_mode(&self) -> Result<WriteDryRunPlan, PlanningError> {
+        let registry = self.planning_snapshot()?;
+        plan_prepare_custom_thermal_mode(registry.platform_profile.as_ref())
+            .map_err(PlanningError::Validation)
+    }
+
     pub fn plan_battery_charge_type_write(
         &self,
         requested: &str,
@@ -644,6 +875,73 @@ impl LegionControl {
     ) -> Result<WriteDryRunPlan, PlanningError> {
         let registry = self.planning_snapshot()?;
         plan_led_state(&registry.leds, led_id, enabled).map_err(PlanningError::Validation)
+    }
+
+    pub fn plan_keyboard_rgb_write(
+        &self,
+        request: &KeyboardRgbWriteRequest,
+    ) -> Result<WriteDryRunPlan, PlanningError> {
+        let registry = self.planning_snapshot()?;
+        plan_keyboard_rgb(registry.keyboard_rgb.as_ref(), request)
+            .map_err(PlanningError::Validation)
+    }
+
+    pub fn plan_openrgb_keyboard_rgb_bridge(
+        &self,
+        request: &KeyboardRgbWriteRequest,
+    ) -> Result<WriteDryRunPlan, PlanningError> {
+        let registry = self.planning_snapshot()?;
+        plan_openrgb_keyboard_rgb_bridge(registry.keyboard_rgb_openrgb.as_ref(), request)
+            .map_err(PlanningError::Validation)
+    }
+
+    pub fn plan_openrgb_keyboard_rgb_sdk_write(
+        &self,
+        request: &KeyboardRgbWriteRequest,
+    ) -> Result<WriteDryRunPlan, PlanningError> {
+        let registry = self.planning_snapshot()?;
+        plan_openrgb_keyboard_rgb_sdk(registry.keyboard_rgb_openrgb.as_ref(), request)
+            .map_err(PlanningError::Validation)
+    }
+
+    pub fn plan_openrgb_access_setup(
+        &self,
+        target_user: &str,
+    ) -> Result<WriteDryRunPlan, PlanningError> {
+        validate_openrgb_target_user(target_user).map_err(PlanningError::Validation)?;
+        let previous_value = match user_in_group(target_user, "i2c") {
+            Ok(true) => "user_already_in_i2c".to_owned(),
+            Ok(false) => "user_not_in_i2c".to_owned(),
+            Err(error) => format!("unknown: {error}"),
+        };
+        Ok(WriteDryRunPlan {
+            method: OPENRGB_ACCESS_SETUP_METHOD.to_owned(),
+            capability_id: "keyboard_rgb_openrgb:access_setup".to_owned(),
+            polkit_action: "org.ratvantage.LegionControl1.setup-openrgb-access".to_owned(),
+            path: "/etc/modules-load.d/ratvantage-openrgb-i2c.conf;/etc/udev/rules.d/60-ratvantage-openrgb-i2c.rules".to_owned(),
+            previous_value,
+            requested_value: format!(
+                "user={target_user};group=i2c;module=i2c-dev;udev=i2c group write access"
+            ),
+            readback_required: false,
+            rollback_value: "remove i2c group membership and installed udev/module-load files manually if this setup must be reverted".to_owned(),
+            rollback_instructions: vec![
+                "remove the user from i2c only if no other OpenRGB/I2C workflow needs it".to_owned(),
+                "remove /etc/modules-load.d/ratvantage-openrgb-i2c.conf if i2c-dev should not auto-load".to_owned(),
+                "remove /etc/udev/rules.d/60-ratvantage-openrgb-i2c.rules and reload udev if the group rule should be reverted".to_owned(),
+            ],
+            reboot_required: false,
+            safety_notes: vec![
+                "this setup does not write keyboard RGB colors or HID payloads".to_owned(),
+                "new group membership usually requires log out and log back in".to_owned(),
+                "OpenRGB bridge execution remains blocked until live read-back/restore evidence passes".to_owned(),
+            ],
+            steps: vec![
+                WritePlanStep::AuthorizeCaller,
+                WritePlanStep::StorePreviousValue,
+                WritePlanStep::WriteRequestedValue,
+            ],
+        })
     }
 
     pub fn plan_ideapad_toggle_write(
@@ -669,13 +967,58 @@ impl LegionControl {
     pub fn plan_fan_preset_write(&self, requested: &str) -> Result<WriteDryRunPlan, PlanningError> {
         let registry = self.planning_snapshot()?;
         let presets = packaged_fan_presets()?;
-        plan_fan_preset(&registry.fan_curves, &presets, requested)
-            .map_err(PlanningError::Validation)
+        plan_fan_preset(
+            &registry.fan_curves,
+            &presets,
+            registry.platform_profile.as_ref(),
+            requested,
+        )
+        .map_err(PlanningError::Validation)
     }
 
     pub fn plan_restore_auto_fan_write(&self) -> Result<WriteDryRunPlan, PlanningError> {
         let registry = self.planning_snapshot()?;
-        plan_restore_auto_fan(&registry.fan_curves).map_err(PlanningError::Validation)
+        plan_restore_auto_fan(&registry.fan_curves, registry.platform_profile.as_ref())
+            .map_err(PlanningError::Validation)
+    }
+
+    pub fn plan_custom_thermal_fan_preset_write(
+        &self,
+        requested: &str,
+    ) -> Result<CustomThermalPlanPreview, PlanningError> {
+        let registry = self.planning_snapshot()?;
+        let presets = packaged_fan_presets()?;
+        let prepare = plan_prepare_custom_thermal_mode(registry.platform_profile.as_ref())
+            .map_err(PlanningError::Validation)?;
+        let staged_profile = staged_custom_platform_profile(&registry)?;
+        let dependent = plan_fan_preset(
+            &registry.fan_curves,
+            &presets,
+            Some(&staged_profile),
+            requested,
+        )
+        .map_err(PlanningError::Validation)?;
+        Ok(custom_thermal_preview(
+            "custom_thermal_fan_preset",
+            format!("fan_preset:{requested}"),
+            vec![prepare, dependent],
+        ))
+    }
+
+    pub fn plan_custom_thermal_restore_auto_fan(
+        &self,
+    ) -> Result<CustomThermalPlanPreview, PlanningError> {
+        let registry = self.planning_snapshot()?;
+        let prepare = plan_prepare_custom_thermal_mode(registry.platform_profile.as_ref())
+            .map_err(PlanningError::Validation)?;
+        let staged_profile = staged_custom_platform_profile(&registry)?;
+        let dependent = plan_restore_auto_fan(&registry.fan_curves, Some(&staged_profile))
+            .map_err(PlanningError::Validation)?;
+        Ok(custom_thermal_preview(
+            "custom_thermal_restore_auto_fan",
+            "restore_auto_fan".to_owned(),
+            vec![prepare, dependent],
+        ))
     }
 
     pub fn plan_cpu_governor_write(
@@ -828,6 +1171,19 @@ impl LegionControl {
             }
         }
         if completed {
+            if let Some(value) = &profile.actions.gpu_mode {
+                run_action!("gpu_mode", self.set_gpu_mode(value, sender));
+            }
+        }
+        if completed {
+            if let Some(request) = &profile.actions.keyboard_rgb {
+                run_action!(
+                    "keyboard_rgb",
+                    self.apply_hardware_profile_keyboard_rgb(request, sender)
+                );
+            }
+        }
+        if completed {
             if let Some(value) = &profile.actions.cpu_governor {
                 run_action!("cpu_governor", self.set_cpu_governor(value, sender));
             }
@@ -917,8 +1273,73 @@ impl LegionControl {
         requested: &str,
     ) -> Result<WriteDryRunPlan, PlanningError> {
         let registry = self.planning_snapshot()?;
-        plan_firmware_attribute(&registry.firmware_attributes, attribute_id, requested)
-            .map_err(PlanningError::Validation)
+        plan_firmware_attribute(
+            &registry.firmware_attributes,
+            registry.platform_profile.as_ref(),
+            attribute_id,
+            requested,
+        )
+        .map_err(PlanningError::Validation)
+    }
+
+    pub fn plan_firmware_attribute_reset_write(
+        &self,
+        attribute_id: &str,
+    ) -> Result<WriteDryRunPlan, PlanningError> {
+        let registry = self.planning_snapshot()?;
+        plan_firmware_attribute_reset(
+            &registry.firmware_attributes,
+            registry.platform_profile.as_ref(),
+            attribute_id,
+        )
+        .map_err(PlanningError::Validation)
+    }
+
+    pub fn plan_custom_thermal_firmware_attribute_write(
+        &self,
+        attribute_id: &str,
+        requested: &str,
+    ) -> Result<CustomThermalPlanPreview, PlanningError> {
+        let registry = self.planning_snapshot()?;
+        let prepare = plan_prepare_custom_thermal_mode(registry.platform_profile.as_ref())
+            .map_err(PlanningError::Validation)?;
+        let staged_profile = staged_custom_platform_profile(&registry)?;
+        let dependent = plan_firmware_attribute(
+            &registry.firmware_attributes,
+            Some(&staged_profile),
+            attribute_id,
+            requested,
+        )
+        .map_err(PlanningError::Validation)?;
+        Ok(custom_thermal_preview(
+            "custom_thermal_firmware_attribute",
+            format!("firmware_attribute:{attribute_id}"),
+            vec![prepare, dependent],
+        ))
+    }
+
+    pub fn plan_custom_thermal_firmware_ppt_preset_write(
+        &self,
+        preset_id: &str,
+    ) -> Result<CustomThermalPlanPreview, PlanningError> {
+        let registry = self.planning_snapshot()?;
+        let prepare = plan_prepare_custom_thermal_mode(registry.platform_profile.as_ref())
+            .map_err(PlanningError::Validation)?;
+        let staged_profile = staged_custom_platform_profile(&registry)?;
+        let mut plans = vec![prepare];
+        plans.extend(
+            plan_firmware_ppt_preset(
+                &registry.firmware_attributes,
+                Some(&staged_profile),
+                preset_id,
+            )
+            .map_err(PlanningError::Validation)?,
+        );
+        Ok(custom_thermal_preview(
+            "custom_thermal_firmware_ppt_preset",
+            format!("firmware_ppt_preset:{preset_id}"),
+            plans,
+        ))
     }
 
     fn preview_hardware_profile(
@@ -962,6 +1383,21 @@ impl LegionControl {
                     .map_err(PlanningError::Validation)?,
             );
         }
+        if let Some(value) = &actions.gpu_mode {
+            plans.push(
+                plan_gpu_mode(registry.gpu.as_ref(), value).map_err(PlanningError::Validation)?,
+            );
+        }
+        if let Some(request) = &actions.keyboard_rgb {
+            plans.push(
+                plan_hardware_profile_keyboard_rgb(
+                    registry.keyboard_rgb.as_ref(),
+                    registry.keyboard_rgb_openrgb.as_ref(),
+                    request,
+                )
+                .map_err(PlanningError::Validation)?,
+            );
+        }
         if let Some(value) = &actions.cpu_governor {
             plans.push(
                 plan_cpu_governor(registry.cpu_power.as_ref(), value)
@@ -997,8 +1433,13 @@ impl LegionControl {
         }
         for (attribute_id, value) in &actions.firmware_attributes {
             plans.push(
-                plan_firmware_attribute(&registry.firmware_attributes, attribute_id, value)
-                    .map_err(PlanningError::Validation)?,
+                plan_firmware_attribute(
+                    &registry.firmware_attributes,
+                    registry.platform_profile.as_ref(),
+                    attribute_id,
+                    value,
+                )
+                .map_err(PlanningError::Validation)?,
             );
         }
         Ok(plans)
@@ -1628,6 +2069,222 @@ impl LegionControl {
         }
     }
 
+    pub fn set_keyboard_rgb(
+        &self,
+        request: &KeyboardRgbWriteRequest,
+        sender: &str,
+    ) -> fdo::Result<WriteExecutionResult> {
+        let registry = self.planning_snapshot().map_err(planning_to_fdo)?;
+        if registry.keyboard_rgb.is_none() {
+            return self.set_openrgb_keyboard_rgb_sdk(request, sender);
+        }
+        let capability = registry.keyboard_rgb.as_ref();
+        let plan = plan_keyboard_rgb(capability, request).map_err(validation_to_fdo)?;
+        if !self.write_policy.keyboard_rgb_enabled {
+            return Ok(WriteExecutionResult::blocked_by_policy(
+                plan,
+                "keyboard RGB writes are disabled by daemon policy",
+            ));
+        }
+        let previous_request = keyboard_rgb_current_request(capability.ok_or_else(|| {
+            fdo::Error::Failed("keyboard RGB capability disappeared before write".to_owned())
+        })?)?;
+        let plan = enabled_write_plan(plan);
+        if let Err(reason) = self.authorizer.authorize(&plan.polkit_action, sender) {
+            return Ok(WriteExecutionResult::blocked_by_authorization(plan, reason));
+        }
+
+        let path = plan.path.clone();
+        if let Err(error) = self.keyboard_rgb_writer.write_keyboard_rgb(&path, request) {
+            return Ok(WriteExecutionResult::failed(
+                plan,
+                format!("failed to write keyboard RGB state: {error}"),
+                None,
+            ));
+        }
+
+        let readback = self.refresh_keyboard_rgb_state()?;
+        let requested_value = plan.requested_value.clone();
+        if readback == requested_value {
+            return Ok(WriteExecutionResult::applied(
+                plan,
+                "keyboard RGB write applied and read back successfully",
+                Some(readback),
+            ));
+        }
+
+        match self
+            .keyboard_rgb_writer
+            .write_keyboard_rgb(&path, &previous_request)
+        {
+            Ok(()) => {
+                let rollback_readback = self.refresh_keyboard_rgb_state()?;
+                Ok(WriteExecutionResult::failed(
+                    plan,
+                    format!(
+                        "keyboard RGB read-back mismatch after write; restored previous value `{}`",
+                        keyboard_rgb_request_summary(&previous_request)
+                    ),
+                    Some(rollback_readback),
+                ))
+            }
+            Err(rollback_error) => Ok(WriteExecutionResult::failed(
+                plan,
+                format!(
+                    "keyboard RGB read-back mismatch after write and rollback failed: expected `{}` got `{readback}`; rollback error: {rollback_error}",
+                    requested_value
+                ),
+                Some(readback),
+            )),
+        }
+    }
+
+    fn apply_hardware_profile_keyboard_rgb(
+        &self,
+        request: &KeyboardRgbWriteRequest,
+        sender: &str,
+    ) -> fdo::Result<WriteExecutionResult> {
+        let registry = self.planning_snapshot().map_err(planning_to_fdo)?;
+        if registry.keyboard_rgb.is_some() {
+            return self.set_keyboard_rgb(request, sender);
+        }
+
+        self.set_openrgb_keyboard_rgb_sdk(request, sender)
+    }
+
+    fn set_openrgb_keyboard_rgb_sdk(
+        &self,
+        request: &KeyboardRgbWriteRequest,
+        sender: &str,
+    ) -> fdo::Result<WriteExecutionResult> {
+        let registry = self.planning_snapshot().map_err(planning_to_fdo)?;
+        let plan = plan_openrgb_keyboard_rgb_sdk(registry.keyboard_rgb_openrgb.as_ref(), request)
+            .map_err(validation_to_fdo)?;
+        if !self.write_policy.keyboard_rgb_enabled {
+            return Ok(WriteExecutionResult::blocked_by_policy(
+                plan,
+                "OpenRGB SDK keyboard RGB writes are disabled by daemon policy",
+            ));
+        }
+        let plan = enabled_write_plan(plan);
+        if let Err(reason) = self.authorizer.authorize(&plan.polkit_action, sender) {
+            return Ok(WriteExecutionResult::blocked_by_authorization(plan, reason));
+        }
+
+        let path = plan.path.clone();
+        let previous_snapshot = match self
+            .openrgb_keyboard_rgb_sdk_writer
+            .read_keyboard_rgb_snapshot(&path)
+        {
+            Ok(snapshot) => snapshot,
+            Err(error) => {
+                return Ok(WriteExecutionResult::failed(
+                    plan,
+                    format!("failed to read OpenRGB SDK keyboard RGB before-snapshot: {error}"),
+                    None,
+                ));
+            }
+        };
+
+        if let Err(error) = self
+            .openrgb_keyboard_rgb_sdk_writer
+            .write_keyboard_rgb(&path, request)
+        {
+            return Ok(WriteExecutionResult::failed(
+                plan,
+                format!("failed to write OpenRGB SDK keyboard RGB state: {error}"),
+                Some(openrgb_sdk_snapshot_summary(&previous_snapshot)),
+            ));
+        }
+
+        let readback = match self
+            .openrgb_keyboard_rgb_sdk_writer
+            .read_keyboard_rgb_snapshot(&path)
+        {
+            Ok(snapshot) => snapshot,
+            Err(error) => {
+                return Ok(WriteExecutionResult::failed(
+                    plan,
+                    format!("failed to read OpenRGB SDK keyboard RGB after write: {error}"),
+                    Some(openrgb_sdk_snapshot_summary(&previous_snapshot)),
+                ));
+            }
+        };
+        if openrgb_sdk_snapshot_matches_request(&readback, request) {
+            return Ok(WriteExecutionResult::applied(
+                plan,
+                "OpenRGB SDK keyboard RGB write applied and read back successfully",
+                Some(openrgb_sdk_snapshot_summary(&readback)),
+            ));
+        }
+
+        match self
+            .openrgb_keyboard_rgb_sdk_writer
+            .restore_keyboard_rgb_snapshot(&path, &previous_snapshot)
+        {
+            Ok(()) => {
+                let rollback_readback = self
+                    .openrgb_keyboard_rgb_sdk_writer
+                    .read_keyboard_rgb_snapshot(&path)
+                    .map(|snapshot| openrgb_sdk_snapshot_summary(&snapshot))
+                    .unwrap_or_else(|error| format!("rollback read-back failed: {error}"));
+                Ok(WriteExecutionResult::failed(
+                    plan,
+                    format!(
+                        "OpenRGB SDK keyboard RGB read-back mismatch after write; restored previous snapshot `{}`",
+                        openrgb_sdk_snapshot_summary(&previous_snapshot)
+                    ),
+                    Some(rollback_readback),
+                ))
+            }
+            Err(rollback_error) => Ok(WriteExecutionResult::failed(
+                plan,
+                format!(
+                    "OpenRGB SDK keyboard RGB read-back mismatch after write and rollback failed: expected `{}` got `{}`; rollback error: {rollback_error}",
+                    keyboard_rgb_request_summary(request),
+                    openrgb_sdk_snapshot_summary(&readback)
+                ),
+                Some(openrgb_sdk_snapshot_summary(&readback)),
+            )),
+        }
+    }
+
+    pub fn setup_openrgb_access(
+        &self,
+        target_user: &str,
+        sender: &str,
+    ) -> fdo::Result<WriteExecutionResult> {
+        let plan = self
+            .plan_openrgb_access_setup(target_user)
+            .map_err(planning_to_fdo)?;
+        if !self.write_policy.openrgb_access_setup_enabled {
+            return Ok(WriteExecutionResult::blocked_by_policy(
+                plan,
+                "OpenRGB access setup is disabled by daemon policy",
+            ));
+        }
+        let plan = enabled_write_plan(plan);
+        if let Err(reason) = self.authorizer.authorize(&plan.polkit_action, sender) {
+            return Ok(WriteExecutionResult::blocked_by_authorization(plan, reason));
+        }
+
+        match self
+            .openrgb_access_setup_writer
+            .setup_openrgb_access(target_user)
+        {
+            Ok(message) => Ok(WriteExecutionResult::applied(
+                plan,
+                message,
+                Some(format!("user={target_user};i2c_group_configured=true")),
+            )),
+            Err(error) => Ok(WriteExecutionResult::failed(
+                plan,
+                format!("OpenRGB access setup failed: {error}"),
+                None,
+            )),
+        }
+    }
+
     pub fn set_ideapad_toggle(
         &self,
         toggle_id: &str,
@@ -1736,6 +2393,13 @@ impl LegionControl {
             .map_err(|_| fdo::Error::Failed("daemon state lock poisoned".to_owned()))
     }
 
+    pub fn recent_platform_profile_changes(&self) -> fdo::Result<Vec<PlatformProfileChangeEvent>> {
+        self.state
+            .lock()
+            .map(|state| state.recent_platform_profile_changes.clone())
+            .map_err(|_| fdo::Error::Failed("daemon state lock poisoned".to_owned()))
+    }
+
     fn record_curve_optimizer_all_core(
         &self,
         write_state: CurveOptimizerWriteState,
@@ -1762,6 +2426,69 @@ impl LegionControl {
         save_state(&self.state_path, &state)
             .map_err(|error| fdo::Error::Failed(format!("failed to save daemon state: {error}")))?;
         Ok(run)
+    }
+
+    fn observe_platform_profile_change(&self) -> fdo::Result<Option<(String, String)>> {
+        let registry = self.refresh()?;
+        let current = registry
+            .platform_profile
+            .and_then(|profile| profile.current)
+            .ok_or_else(|| {
+                fdo::Error::Failed(
+                    "platform_profile current value unavailable for observer".to_owned(),
+                )
+            })?;
+        let mut state = self
+            .state
+            .lock()
+            .map_err(|_| fdo::Error::Failed("daemon state lock poisoned".to_owned()))?;
+        let previous = state.last_observed_platform_profile.clone();
+        state.last_observed_platform_profile = Some(current.clone());
+        let change = previous.as_ref().and_then(|previous| {
+            if previous == &current {
+                None
+            } else {
+                Some((previous.clone(), current.clone()))
+            }
+        });
+        if let Some((previous, current)) = &change {
+            state
+                .recent_platform_profile_changes
+                .push(PlatformProfileChangeEvent {
+                    timestamp_unix_secs: unix_timestamp_secs(),
+                    previous_profile: previous.clone(),
+                    current_profile: current.clone(),
+                    source: "platform_profile_observer".to_owned(),
+                });
+            let overflow = state
+                .recent_platform_profile_changes
+                .len()
+                .saturating_sub(RECENT_PLATFORM_PROFILE_CHANGE_LIMIT);
+            if overflow > 0 {
+                state.recent_platform_profile_changes.drain(0..overflow);
+            }
+        }
+        save_state(&self.state_path, &state)
+            .map_err(|error| fdo::Error::Failed(format!("failed to save daemon state: {error}")))?;
+        Ok(change)
+    }
+
+    fn record_current_platform_profile_observed(&self) -> fdo::Result<()> {
+        let registry = self.refresh()?;
+        let current = registry
+            .platform_profile
+            .and_then(|profile| profile.current);
+        if let Some(current) = current {
+            let mut state = self
+                .state
+                .lock()
+                .map_err(|_| fdo::Error::Failed("daemon state lock poisoned".to_owned()))?;
+            state.last_observed_platform_profile = Some(current);
+            save_state(&self.state_path, &state).map_err(|error| {
+                fdo::Error::Failed(format!("failed to save daemon state: {error}"))
+            })?;
+        }
+        Ok(())
     }
 
     pub fn set_gpu_mode(&self, requested: &str, sender: &str) -> fdo::Result<WriteExecutionResult> {
@@ -2019,6 +2746,26 @@ impl LegionControl {
                     }
                 }
             }
+            AutomationRuleKind::AcProfileRouter {
+                ac_profile_id,
+                battery_profile_id,
+                ..
+            } => {
+                for profile_id in [ac_profile_id, battery_profile_id] {
+                    if !state.hardware_profiles.contains_key(profile_id) {
+                        return Err(fdo::Error::InvalidArgs(format!(
+                            "hardware profile `{profile_id}` is not stored"
+                        )));
+                    }
+                }
+            }
+            AutomationRuleKind::BatteryProfileThreshold { profile_id, .. } => {
+                if !state.hardware_profiles.contains_key(profile_id) {
+                    return Err(fdo::Error::InvalidArgs(format!(
+                        "hardware profile `{profile_id}` is not stored"
+                    )));
+                }
+            }
         }
         state.automation_rules.insert(rule_id.to_owned(), rule);
         save_state(&self.state_path, &state)
@@ -2220,6 +2967,81 @@ impl LegionControl {
                 evaluation.selected_profile_id = Some(selected.clone());
                 evaluation.profile_preview = Some(self.hardware_profile_apply_preview(selected)?);
             }
+            AutomationRuleKind::AcProfileRouter {
+                ac_profile_id,
+                battery_profile_id,
+                ..
+            } => {
+                let Some(ac_online) = ac_online else {
+                    evaluation.reason = "AC adapter telemetry is unavailable".to_owned();
+                    return Ok(evaluation);
+                };
+                let selected = if ac_online {
+                    ac_profile_id
+                } else {
+                    battery_profile_id
+                };
+                evaluation.matched = true;
+                evaluation.reason = if ac_online {
+                    "AC adapter is online; selecting AC profile".to_owned()
+                } else {
+                    "AC adapter is offline; selecting battery profile".to_owned()
+                };
+                evaluation.selected_profile_id = Some(selected.clone());
+                evaluation.profile_preview = Some(self.hardware_profile_apply_preview(selected)?);
+            }
+            AutomationRuleKind::BatteryProfileThreshold {
+                threshold_percent,
+                profile_id,
+                when_below_or_equal,
+                require_ac,
+                ..
+            } => {
+                if let Some(required_ac) = require_ac {
+                    if ac_online != Some(*required_ac) {
+                        evaluation.reason = if *required_ac {
+                            "AC adapter is not online".to_owned()
+                        } else {
+                            "AC adapter is online".to_owned()
+                        };
+                        return Ok(evaluation);
+                    }
+                }
+                let Some(capacity) = battery_capacity_percent else {
+                    evaluation.reason = "battery capacity telemetry is unavailable".to_owned();
+                    return Ok(evaluation);
+                };
+                let threshold = i64::from(*threshold_percent);
+                let matched = if *when_below_or_equal {
+                    capacity <= threshold
+                } else {
+                    capacity >= threshold
+                };
+                if !matched {
+                    evaluation.reason = if *when_below_or_equal {
+                        format!(
+                            "battery {capacity}% is above threshold {threshold_percent}%; skipping profile"
+                        )
+                    } else {
+                        format!(
+                            "battery {capacity}% is below threshold {threshold_percent}%; skipping profile"
+                        )
+                    };
+                    return Ok(evaluation);
+                }
+                evaluation.matched = true;
+                evaluation.reason = if *when_below_or_equal {
+                    format!(
+                        "battery {capacity}% is at or below threshold {threshold_percent}%; selecting profile"
+                    )
+                } else {
+                    format!(
+                        "battery {capacity}% is at or above threshold {threshold_percent}%; selecting profile"
+                    )
+                };
+                evaluation.selected_profile_id = Some(profile_id.clone());
+                evaluation.profile_preview = Some(self.hardware_profile_apply_preview(profile_id)?);
+            }
         }
 
         Ok(evaluation)
@@ -2335,7 +3157,8 @@ impl LegionControl {
     }
 
     fn refresh(&self) -> fdo::Result<CapabilityRegistry> {
-        let registry = probe(&self.options);
+        let mut registry = probe(&self.options);
+        self.annotate_openrgb_keyboard_rgb_sdk_backend(&mut registry);
         let mut cached = self
             .registry
             .lock()
@@ -2349,6 +3172,47 @@ impl LegionControl {
             .lock()
             .map(|registry| registry.clone())
             .map_err(|_| PlanningError::RegistryUnavailable)
+    }
+
+    fn annotate_openrgb_keyboard_rgb_sdk_backend(&self, registry: &mut CapabilityRegistry) {
+        let Some(openrgb) = registry.keyboard_rgb_openrgb.as_mut() else {
+            return;
+        };
+        if self.openrgb_keyboard_rgb_sdk_writer.is_configured() {
+            openrgb.sdk_helper_installed = true;
+        }
+        if !self.write_policy.keyboard_rgb_enabled
+            || !self.openrgb_keyboard_rgb_sdk_writer.is_configured()
+            || !openrgb.installed
+            || openrgb.devices.is_empty()
+        {
+            return;
+        }
+
+        let path = openrgb
+            .path
+            .as_deref()
+            .map(|path| format!("openrgb-sdk:{path}"))
+            .unwrap_or_else(|| "openrgb-sdk:openrgb".to_owned());
+        let Ok(snapshot) = self
+            .openrgb_keyboard_rgb_sdk_writer
+            .read_keyboard_rgb_snapshot(&path)
+        else {
+            openrgb.sdk_server_running = false;
+            openrgb.sdk_snapshot_supported = false;
+            openrgb.backend_ready = false;
+            openrgb.write_support_claimed = false;
+            return;
+        };
+
+        openrgb.sdk_server_running = true;
+        openrgb.sdk_snapshot_supported = true;
+        openrgb.sdk_active_mode =
+            (!snapshot.active_mode.is_empty()).then_some(snapshot.active_mode);
+        openrgb.sdk_color_zones = snapshot.colors.keys().cloned().collect();
+        openrgb.sdk_colors = snapshot.colors;
+        openrgb.backend_ready = true;
+        openrgb.write_support_claimed = true;
     }
 
     fn refresh_platform_profile(&self) -> fdo::Result<String> {
@@ -2439,6 +3303,15 @@ impl LegionControl {
                     "LED current value missing after write/read-back for {led_id}"
                 ))
             })
+    }
+
+    fn refresh_keyboard_rgb_state(&self) -> fdo::Result<String> {
+        let refreshed = self.refresh()?;
+        let capability = refreshed.keyboard_rgb.as_ref().ok_or_else(|| {
+            fdo::Error::Failed("keyboard RGB capability missing after write/read-back".to_owned())
+        })?;
+        let request = keyboard_rgb_current_request(capability)?;
+        Ok(keyboard_rgb_request_summary(&request))
     }
 
     fn refresh_ideapad_toggle_state(
@@ -2540,6 +3413,10 @@ impl LegionControl {
         to_json(&self.last_hardware_profile_apply()?)
     }
 
+    fn GetRecentPlatformProfileChanges(&self) -> fdo::Result<String> {
+        to_json(&self.recent_platform_profile_changes()?)
+    }
+
     fn GetLastCurveOptimizerAllCore(&self) -> fdo::Result<String> {
         to_json(&self.last_curve_optimizer_all_core()?)
     }
@@ -2588,12 +3465,48 @@ impl LegionControl {
         to_plan_json(self.plan_platform_profile_write(requested))
     }
 
+    fn PlanPrepareCustomThermalMode(&self) -> fdo::Result<String> {
+        to_plan_json(self.plan_prepare_custom_thermal_mode())
+    }
+
     fn PlanBatteryChargeTypeWrite(&self, requested: &str) -> fdo::Result<String> {
         to_plan_json(self.plan_battery_charge_type_write(requested))
     }
 
     fn PlanLedStateWrite(&self, led_id: &str, enabled: bool) -> fdo::Result<String> {
         to_plan_json(self.plan_led_state_write(led_id, enabled))
+    }
+
+    fn PlanKeyboardRgbWrite(&self, request_json: &str) -> fdo::Result<String> {
+        let request: KeyboardRgbWriteRequest =
+            serde_json::from_str(request_json).map_err(|error| {
+                fdo::Error::InvalidArgs(format!("invalid keyboard RGB request JSON: {error}"))
+            })?;
+        to_plan_json(self.plan_keyboard_rgb_write(&request))
+    }
+
+    fn PlanOpenRgbKeyboardRgbBridge(&self, request_json: &str) -> fdo::Result<String> {
+        let request: KeyboardRgbWriteRequest =
+            serde_json::from_str(request_json).map_err(|error| {
+                fdo::Error::InvalidArgs(format!(
+                    "invalid OpenRGB keyboard RGB request JSON: {error}"
+                ))
+            })?;
+        to_plan_json(self.plan_openrgb_keyboard_rgb_bridge(&request))
+    }
+
+    fn PlanOpenRgbKeyboardRgbSdkWrite(&self, request_json: &str) -> fdo::Result<String> {
+        let request: KeyboardRgbWriteRequest =
+            serde_json::from_str(request_json).map_err(|error| {
+                fdo::Error::InvalidArgs(format!(
+                    "invalid OpenRGB SDK keyboard RGB request JSON: {error}"
+                ))
+            })?;
+        to_plan_json(self.plan_openrgb_keyboard_rgb_sdk_write(&request))
+    }
+
+    fn PlanOpenRgbAccessSetup(&self, target_user: &str) -> fdo::Result<String> {
+        to_plan_json(self.plan_openrgb_access_setup(target_user))
     }
 
     fn PlanIdeapadToggleWrite(&self, toggle_id: &str, enabled: bool) -> fdo::Result<String> {
@@ -2608,8 +3521,16 @@ impl LegionControl {
         to_plan_json(self.plan_fan_preset_write(requested))
     }
 
+    fn PlanCustomThermalFanPresetWrite(&self, requested: &str) -> fdo::Result<String> {
+        to_custom_thermal_preview_json(self.plan_custom_thermal_fan_preset_write(requested))
+    }
+
     fn PlanRestoreAutoFanWrite(&self) -> fdo::Result<String> {
         to_plan_json(self.plan_restore_auto_fan_write())
+    }
+
+    fn PlanCustomThermalRestoreAutoFanWrite(&self) -> fdo::Result<String> {
+        to_custom_thermal_preview_json(self.plan_custom_thermal_restore_auto_fan())
     }
 
     fn PlanCpuGovernorWrite(&self, requested: &str) -> fdo::Result<String> {
@@ -2642,6 +3563,26 @@ impl LegionControl {
         requested: &str,
     ) -> fdo::Result<String> {
         to_plan_json(self.plan_firmware_attribute_write(attribute_id, requested))
+    }
+
+    fn PlanFirmwareAttributeResetWrite(&self, attribute_id: &str) -> fdo::Result<String> {
+        to_plan_json(self.plan_firmware_attribute_reset_write(attribute_id))
+    }
+
+    fn PlanCustomThermalFirmwareAttributeWrite(
+        &self,
+        attribute_id: &str,
+        requested: &str,
+    ) -> fdo::Result<String> {
+        to_custom_thermal_preview_json(
+            self.plan_custom_thermal_firmware_attribute_write(attribute_id, requested),
+        )
+    }
+
+    fn PlanCustomThermalFirmwarePptPresetWrite(&self, preset_id: &str) -> fdo::Result<String> {
+        to_custom_thermal_preview_json(
+            self.plan_custom_thermal_firmware_ppt_preset_write(preset_id),
+        )
     }
 
     fn SetCpuGovernor(
@@ -2745,6 +3686,28 @@ impl LegionControl {
         to_json(&self.set_led_state(led_id, enabled, &sender)?)
     }
 
+    fn SetKeyboardRgb(
+        &self,
+        request_json: &str,
+        #[zbus(header)] header: Header<'_>,
+    ) -> fdo::Result<String> {
+        let sender = sender_from_header(&header)?;
+        let request: KeyboardRgbWriteRequest =
+            serde_json::from_str(request_json).map_err(|error| {
+                fdo::Error::InvalidArgs(format!("invalid keyboard RGB request JSON: {error}"))
+            })?;
+        to_json(&self.set_keyboard_rgb(&request, &sender)?)
+    }
+
+    fn SetupOpenRgbAccess(
+        &self,
+        target_user: &str,
+        #[zbus(header)] header: Header<'_>,
+    ) -> fdo::Result<String> {
+        let sender = sender_from_header(&header)?;
+        to_json(&self.setup_openrgb_access(target_user, &sender)?)
+    }
+
     fn SetIdeapadToggle(
         &self,
         toggle_id: &str,
@@ -2845,14 +3808,18 @@ pub fn session_connection(service: LegionControl) -> Result<Connection> {
         .build()?)
 }
 
-/// Subscribes to systemd-logind `PrepareForSleep` on the system bus and, after resume, optionally
-/// refreshes the probe cache and prints a **dry-run** fan preset plan when resume re-apply is enabled
-/// and a per-profile mapping exists. Does not perform fan sysfs writes.
-pub fn spawn_fan_preset_resume_observer(state_path: PathBuf, options: ProbeOptions) {
+/// Subscribes to systemd-logind `PrepareForSleep` on the system bus and, after resume:
+/// - refreshes the probe cache and prints a **dry-run** fan preset plan when fan re-apply is enabled
+/// - applies a mapped `resume` hardware-profile trigger through normal daemon write gates
+pub fn spawn_fan_preset_resume_observer(
+    state_path: PathBuf,
+    options: ProbeOptions,
+    write_policy: WriteAccessPolicy,
+) {
     let _ = std::thread::Builder::new()
         .name("ratvantage-fan-resume".to_owned())
         .spawn(move || {
-            if let Err(error) = run_fan_preset_resume_observer(state_path, options) {
+            if let Err(error) = run_fan_preset_resume_observer(state_path, options, write_policy) {
                 eprintln!("legion-control-daemon: fan resume observer exit: {error}");
             }
         });
@@ -2914,6 +3881,42 @@ pub fn spawn_automation_observer(
                     eprintln!("legion-control-daemon: automation observer failed: {error}");
                 }
             }
+            match handle_platform_profile_change_observer_tick(
+                &state_path,
+                &options,
+                write_policy.clone(),
+            ) {
+                Ok(Some(run)) => {
+                    eprintln!(
+                        "legion-control-daemon: platform profile changed trigger applied: profile={} completed={}",
+                        run.profile_id, run.completed
+                    );
+                }
+                Ok(None) => {}
+                Err(error) => {
+                    eprintln!(
+                        "legion-control-daemon: platform profile change observer failed: {error}"
+                    );
+                }
+            }
+            match handle_gpu_mode_reboot_completion_observer_tick(
+                &state_path,
+                &options,
+                write_policy.clone(),
+            ) {
+                Ok(Some(run)) => {
+                    eprintln!(
+                        "legion-control-daemon: GPU reboot completion trigger applied: profile={} completed={}",
+                        run.profile_id, run.completed
+                    );
+                }
+                Ok(None) => {}
+                Err(error) => {
+                    eprintln!(
+                        "legion-control-daemon: GPU reboot completion observer failed: {error}"
+                    );
+                }
+            }
             std::thread::sleep(AUTOMATION_OBSERVER_INTERVAL);
         });
 }
@@ -2946,6 +3949,8 @@ pub fn handle_automation_observer_tick(
     for (rule_id, rule) in &rules {
         let rule_cooldown_secs = match &rule.kind {
             AutomationRuleKind::FastChargeUntilThreshold { cooldown_secs, .. } => *cooldown_secs,
+            AutomationRuleKind::AcProfileRouter { cooldown_secs, .. } => *cooldown_secs,
+            AutomationRuleKind::BatteryProfileThreshold { cooldown_secs, .. } => *cooldown_secs,
         };
         let run = ctl
             .apply_automation_rule_with_cooldown(
@@ -2957,6 +3962,98 @@ pub fn handle_automation_observer_tick(
         runs.push(run);
     }
     Ok(runs)
+}
+
+pub fn handle_platform_profile_change_observer_tick(
+    state_path: &Path,
+    options: &ProbeOptions,
+    write_policy: WriteAccessPolicy,
+) -> Result<Option<HardwareProfileApplyRun>, String> {
+    let ctl = LegionControl::new_with_runtime(
+        options.clone(),
+        state_path.to_path_buf(),
+        write_policy,
+        Arc::new(InternalAuthorizer),
+        Arc::new(SysfsPlatformProfileWriter),
+        Arc::new(SysfsBatteryChargeTypeWriter),
+        Arc::new(SysfsLedStateWriter),
+        Arc::new(SysfsIdeapadToggleWriter),
+        Arc::new(SysfsCpuGovernorWriter),
+        Arc::new(SysfsCpuEppWriter),
+    );
+    let Some((previous, current)) = ctl
+        .observe_platform_profile_change()
+        .map_err(|e| format!("platform profile observation failed: {e}"))?
+    else {
+        return Ok(None);
+    };
+    let triggers = ctl
+        .hardware_profile_triggers()
+        .map_err(|e| format!("hardware profile triggers unavailable: {e}"))?;
+    if !triggers.contains_key("platform_profile_changed") {
+        return Ok(None);
+    }
+
+    let run = ctl
+        .apply_hardware_profile_trigger("platform_profile_changed", AUTOMATION_OBSERVER_SENDER)
+        .map_err(|e| {
+            format!(
+                "platform profile changed trigger failed after `{previous}` -> `{current}`: {e}"
+            )
+        })?;
+    ctl.record_current_platform_profile_observed()
+        .map_err(|e| format!("failed to record post-trigger platform profile: {e}"))?;
+    Ok(Some(run))
+}
+
+pub fn handle_gpu_mode_reboot_completion_observer_tick(
+    state_path: &Path,
+    options: &ProbeOptions,
+    write_policy: WriteAccessPolicy,
+) -> Result<Option<HardwareProfileApplyRun>, String> {
+    if !write_policy.hardware_profile_apply_enabled {
+        return Err(
+            "GPU mode reboot completion trigger requires hardware profile apply policy".to_owned(),
+        );
+    }
+    let ctl = LegionControl::new_with_runtime(
+        options.clone(),
+        state_path.to_path_buf(),
+        write_policy,
+        Arc::new(InternalAuthorizer),
+        Arc::new(SysfsPlatformProfileWriter),
+        Arc::new(SysfsBatteryChargeTypeWriter),
+        Arc::new(SysfsLedStateWriter),
+        Arc::new(SysfsIdeapadToggleWriter),
+        Arc::new(SysfsCpuGovernorWriter),
+        Arc::new(SysfsCpuEppWriter),
+    );
+    let Some(pending) = ctl
+        .gpu_mode_pending()
+        .map_err(|e| format!("GPU mode pending state unavailable: {e}"))?
+    else {
+        return Ok(None);
+    };
+    let registry = ctl
+        .refresh()
+        .map_err(|e| format!("GPU mode reboot completion probe failed: {e}"))?;
+    let current_mode = registry.gpu.as_ref().and_then(|gpu| gpu.mode.as_deref());
+    if current_mode != Some(pending.requested_mode.as_str()) {
+        return Ok(None);
+    }
+
+    ctl.clear_gpu_mode_pending()
+        .map_err(|e| format!("failed to clear completed GPU pending state: {e}"))?;
+    let triggers = ctl
+        .hardware_profile_triggers()
+        .map_err(|e| format!("hardware profile triggers unavailable: {e}"))?;
+    if !triggers.contains_key("gpu_mode_reboot_completed") {
+        return Ok(None);
+    }
+
+    ctl.apply_hardware_profile_trigger("gpu_mode_reboot_completed", AUTOMATION_OBSERVER_SENDER)
+        .map(Some)
+        .map_err(|e| format!("GPU mode reboot completed trigger failed: {e}"))
 }
 
 pub fn handle_amd_gpu_power_profile_sync_tick(
@@ -3035,6 +4132,7 @@ pub fn apply_amd_gpu_force_level_for_fedora_power_profile(
 fn run_fan_preset_resume_observer(
     state_path: PathBuf,
     options: ProbeOptions,
+    write_policy: WriteAccessPolicy,
 ) -> Result<(), String> {
     let conn = Connection::system().map_err(|e| e.to_string())?;
     let rule = MatchRule::builder()
@@ -3059,11 +4157,29 @@ fn run_fan_preset_resume_observer(
         if start {
             continue;
         }
-        if let Err(error) = handle_login1_resume_fan_tick(&state_path, &options) {
-            eprintln!("legion-control-daemon: resume fan policy tick: {error}");
+        match handle_login1_resume_tick(&state_path, &options, write_policy.clone()) {
+            Ok(Some(run)) => {
+                eprintln!(
+                    "legion-control-daemon: resume hardware profile trigger applied: profile={} completed={}",
+                    run.profile_id, run.completed
+                );
+            }
+            Ok(None) => {}
+            Err(error) => {
+                eprintln!("legion-control-daemon: resume policy tick: {error}");
+            }
         }
     }
     Ok(())
+}
+
+pub fn handle_login1_resume_tick(
+    state_path: &Path,
+    options: &ProbeOptions,
+    write_policy: WriteAccessPolicy,
+) -> Result<Option<HardwareProfileApplyRun>, String> {
+    handle_login1_resume_fan_tick(state_path, options)?;
+    handle_login1_resume_hardware_profile_trigger_tick(state_path, options, write_policy)
 }
 
 fn handle_login1_resume_fan_tick(state_path: &Path, options: &ProbeOptions) -> Result<(), String> {
@@ -3110,6 +4226,34 @@ fn handle_login1_resume_fan_tick(state_path: &Path, options: &ProbeOptions) -> R
     Ok(())
 }
 
+fn handle_login1_resume_hardware_profile_trigger_tick(
+    state_path: &Path,
+    options: &ProbeOptions,
+    write_policy: WriteAccessPolicy,
+) -> Result<Option<HardwareProfileApplyRun>, String> {
+    let ctl = LegionControl::new_with_runtime(
+        options.clone(),
+        state_path.to_path_buf(),
+        write_policy,
+        Arc::new(InternalAuthorizer),
+        Arc::new(SysfsPlatformProfileWriter),
+        Arc::new(SysfsBatteryChargeTypeWriter),
+        Arc::new(SysfsLedStateWriter),
+        Arc::new(SysfsIdeapadToggleWriter),
+        Arc::new(SysfsCpuGovernorWriter),
+        Arc::new(SysfsCpuEppWriter),
+    );
+    let triggers = ctl
+        .hardware_profile_triggers()
+        .map_err(|e| format!("resume hardware profile trigger unavailable: {e}"))?;
+    if !triggers.contains_key("resume") {
+        return Ok(None);
+    }
+    ctl.apply_hardware_profile_trigger("resume", RESUME_OBSERVER_SENDER)
+        .map(Some)
+        .map_err(|e| format!("resume hardware profile trigger failed: {e}"))
+}
+
 fn to_json<T: Serialize>(value: &T) -> fdo::Result<String> {
     serde_json::to_string(value).map_err(|error| fdo::Error::Failed(error.to_string()))
 }
@@ -3118,6 +4262,56 @@ fn to_plan_json(result: Result<WriteDryRunPlan, PlanningError>) -> fdo::Result<S
     match result {
         Ok(plan) => to_json(&plan),
         Err(error) => Err(planning_to_fdo(error)),
+    }
+}
+
+fn to_custom_thermal_preview_json(
+    result: Result<CustomThermalPlanPreview, PlanningError>,
+) -> fdo::Result<String> {
+    match result {
+        Ok(preview) => to_json(&preview),
+        Err(error) => Err(planning_to_fdo(error)),
+    }
+}
+
+fn staged_custom_platform_profile(
+    registry: &CapabilityRegistry,
+) -> Result<legion_common::PlatformProfileCapability, PlanningError> {
+    let mut profile = registry.platform_profile.clone().ok_or_else(|| {
+        PlanningError::Validation(ValidationError::MissingCapability {
+            capability_id: "platform_profile".to_owned(),
+        })
+    })?;
+    profile.current = Some("custom".to_owned());
+    Ok(profile)
+}
+
+fn custom_thermal_preview(
+    sequence_id: &str,
+    target: String,
+    plans: Vec<WriteDryRunPlan>,
+) -> CustomThermalPlanPreview {
+    let rollback_order = plans
+        .iter()
+        .rev()
+        .map(|plan| {
+            format!(
+                "{} rollback: {}",
+                plan.method,
+                plan.rollback_instructions.join("; ")
+            )
+        })
+        .collect();
+    CustomThermalPlanPreview {
+        sequence_id: sequence_id.to_owned(),
+        target,
+        plans,
+        rollback_order,
+        safety_notes: vec![
+            "preview only; execute no hardware writes until each step has live evidence".to_owned(),
+            "run plans in listed order and roll back in rollback_order if a later step fails"
+                .to_owned(),
+        ],
     }
 }
 
@@ -3159,6 +4353,75 @@ fn refreshed_ideapad_toggle<'a>(
     toggles.iter().find(|toggle| toggle.name == toggle_id)
 }
 
+fn keyboard_rgb_current_request(
+    capability: &KeyboardRgbCapability,
+) -> fdo::Result<KeyboardRgbWriteRequest> {
+    Ok(KeyboardRgbWriteRequest {
+        effect: capability.current_effect.clone().ok_or_else(|| {
+            fdo::Error::Failed("keyboard RGB current effect missing for read-back".to_owned())
+        })?,
+        colors: capability.current_colors.clone(),
+        brightness: capability.current_brightness.ok_or_else(|| {
+            fdo::Error::Failed("keyboard RGB current brightness missing for read-back".to_owned())
+        })?,
+        speed: capability.current_speed,
+    })
+}
+
+fn keyboard_rgb_request_summary(request: &KeyboardRgbWriteRequest) -> String {
+    format!(
+        "effect={};brightness={};speed={};colors={}",
+        request.effect,
+        request.brightness,
+        request
+            .speed
+            .map(|value| value.to_string())
+            .unwrap_or_else(|| "none".to_owned()),
+        request
+            .colors
+            .iter()
+            .map(|(zone, color)| format!("{zone}:{color}"))
+            .collect::<Vec<_>>()
+            .join(",")
+    )
+}
+
+fn openrgb_sdk_snapshot_matches_request(
+    snapshot: &OpenRgbKeyboardRgbSdkSnapshot,
+    request: &KeyboardRgbWriteRequest,
+) -> bool {
+    snapshot.active_mode.eq_ignore_ascii_case(&request.effect)
+        && request.colors.iter().all(|(zone, requested)| {
+            snapshot
+                .colors
+                .get(zone)
+                .map(|readback| normalize_rgb_hex(readback) == normalize_rgb_hex(requested))
+                .unwrap_or(false)
+        })
+}
+
+fn openrgb_sdk_snapshot_summary(snapshot: &OpenRgbKeyboardRgbSdkSnapshot) -> String {
+    format!(
+        "active_mode={};colors={}",
+        snapshot.active_mode,
+        snapshot
+            .colors
+            .iter()
+            .map(|(zone, color)| format!("{zone}:{}", normalize_rgb_hex(color)))
+            .collect::<Vec<_>>()
+            .join(",")
+    )
+}
+
+fn normalize_rgb_hex(color: &str) -> String {
+    let trimmed = color.trim();
+    if trimmed.starts_with('#') {
+        trimmed.to_ascii_uppercase()
+    } else {
+        format!("#{}", trimmed.to_ascii_uppercase())
+    }
+}
+
 fn validation_to_fdo(error: ValidationError) -> fdo::Error {
     fdo::Error::InvalidArgs(serde_json::to_string(&error).unwrap_or_else(|_| format!("{error:?}")))
 }
@@ -3168,6 +4431,99 @@ fn sender_from_header(header: &Header<'_>) -> fdo::Result<String> {
         .sender()
         .map(ToString::to_string)
         .ok_or_else(|| fdo::Error::Failed("D-Bus caller sender is missing".to_owned()))
+}
+
+fn validate_openrgb_target_user(target_user: &str) -> Result<(), ValidationError> {
+    if target_user.trim().is_empty() {
+        return Err(ValidationError::EmptyValue {
+            field: "target_user".to_owned(),
+        });
+    }
+    if target_user == "root" {
+        return Err(ValidationError::BlockedChoice {
+            capability_id: "keyboard_rgb_openrgb:access_setup:user".to_owned(),
+            requested: target_user.to_owned(),
+            reason: "OpenRGB access setup must target a non-root desktop user".to_owned(),
+        });
+    }
+    if target_user
+        .chars()
+        .any(|ch| !(ch.is_ascii_alphanumeric() || matches!(ch, '_' | '-' | '.')))
+    {
+        return Err(ValidationError::BlockedChoice {
+            capability_id: "keyboard_rgb_openrgb:access_setup:user".to_owned(),
+            requested: target_user.to_owned(),
+            reason: "target user contains unsupported characters".to_owned(),
+        });
+    }
+    Ok(())
+}
+
+fn ensure_openrgb_target_user(target_user: &str) -> std::result::Result<(), String> {
+    validate_openrgb_target_user(target_user).map_err(|error| format!("{error:?}"))?;
+    let output = Command::new("id")
+        .arg(target_user)
+        .output()
+        .map_err(|error| format!("failed to inspect target user: {error}"))?;
+    if output.status.success() {
+        Ok(())
+    } else {
+        Err(format!("target user does not exist: {target_user}"))
+    }
+}
+
+fn system_group_exists(group: &str) -> std::result::Result<bool, String> {
+    let output = Command::new("getent")
+        .args(["group", group])
+        .output()
+        .map_err(|error| format!("failed to inspect group {group}: {error}"))?;
+    Ok(output.status.success())
+}
+
+fn user_in_group(target_user: &str, group: &str) -> std::result::Result<bool, String> {
+    let output = Command::new("id")
+        .args(["-nG", target_user])
+        .output()
+        .map_err(|error| format!("failed to inspect groups for {target_user}: {error}"))?;
+    if !output.status.success() {
+        return Err(format!("failed to inspect groups for {target_user}"));
+    }
+    let groups = String::from_utf8_lossy(&output.stdout);
+    Ok(groups
+        .split_whitespace()
+        .any(|candidate| candidate == group))
+}
+
+fn run_setup_command(command: &str, args: &[&str]) -> std::result::Result<(), String> {
+    let output = Command::new(command)
+        .args(args)
+        .output()
+        .map_err(|error| format!("failed to run {command}: {error}"))?;
+    if output.status.success() {
+        return Ok(());
+    }
+    let stderr = String::from_utf8_lossy(&output.stderr).trim().to_owned();
+    let stdout = String::from_utf8_lossy(&output.stdout).trim().to_owned();
+    let detail = if !stderr.is_empty() {
+        stderr
+    } else if !stdout.is_empty() {
+        stdout
+    } else {
+        format!("{command} exited with status {}", output.status)
+    };
+    Err(detail)
+}
+
+fn install_root_file(path: &str, content: &str) -> std::result::Result<(), String> {
+    let path = Path::new(path);
+    if let Some(parent) = path.parent() {
+        fs::create_dir_all(parent)
+            .map_err(|error| format!("failed to create {}: {error}", parent.display()))?;
+    }
+    fs::write(path, content)
+        .map_err(|error| format!("failed to write {}: {error}", path.display()))?;
+    fs::set_permissions(path, fs::Permissions::from_mode(0o644))
+        .map_err(|error| format!("failed to chmod {}: {error}", path.display()))
 }
 
 fn pkcheck_args(action: &str, sender: &str) -> Vec<String> {
@@ -3276,6 +4632,7 @@ mod tests {
                 platform_profile_enabled: true,
                 battery_charge_type_enabled: true,
                 led_state_enabled: true,
+                keyboard_rgb_enabled: true,
                 ideapad_toggle_enabled: true,
                 camera_power_enabled: true,
                 usb_charging_enabled: true,
@@ -3288,6 +4645,7 @@ mod tests {
                 conservation_mode_enabled: true,
                 amd_gpu_dpm_enabled: true,
                 curve_optimizer_enabled: true,
+                openrgb_access_setup_enabled: true,
                 hardware_profile_apply_enabled: true,
             }
             .enabled_methods(),
@@ -3295,6 +4653,7 @@ mod tests {
                 "SetPlatformProfile",
                 "SetBatteryChargeType",
                 "SetLedState",
+                "SetKeyboardRgb",
                 "SetIdeapadToggle",
                 "SetCpuGovernor",
                 "SetCpuEpp",
@@ -3303,6 +4662,7 @@ mod tests {
                 "SetConservationMode",
                 "SetAmdGpuDpmForceLevel",
                 "SetCurveOptimizerAllCore",
+                "SetupOpenRgbAccess",
                 "ApplyHardwareProfile",
                 "ApplyHardwareProfileTrigger"
             ]

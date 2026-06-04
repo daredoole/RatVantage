@@ -35,9 +35,21 @@ system D-Bus. Hardware write methods are intentionally not packaged yet.
 %package ui
 Summary:        GTK dashboard for Legion Control
 Requires:       %{name}-daemon%{?_isa} = %{version}-%{release}
+Requires:       %{name}-helpers = %{version}-%{release}
 
 %description ui
 The Legion Control UI is a GTK4/libadwaita dashboard for the read-only daemon.
+
+%package helpers
+Summary:        RatVantage support and evidence helper scripts
+Requires:       bash
+Requires:       python3
+
+%description helpers
+Support helpers for read-only compatibility bundles, keyboard RGB evidence,
+OpenRGB readiness checks, and the user-session OpenRGB SDK server/client path.
+The access setup fallback must still be run explicitly with administrator
+authorization; no setuid helper is packaged.
 
 %package tray
 Summary:        Read-only tray/status helper for Legion Control
@@ -67,6 +79,31 @@ install -Dpm0755 target/release/legion-control-tray \
     %{buildroot}%{_bindir}/legion-control-tray
 install -Dpm0755 target/release/legion-control-daemon \
     %{buildroot}%{_libexecdir}/legion-control/legion-control-daemon
+
+install -Dpm0755 scripts/check-keyboard-rgb-openrgb.sh \
+    %{buildroot}%{_bindir}/ratvantage-check-keyboard-rgb-openrgb
+install -Dpm0755 scripts/capture-keyboard-rgb-evidence.sh \
+    %{buildroot}%{_bindir}/ratvantage-capture-keyboard-rgb-evidence
+install -Dpm0755 scripts/compare-keyboard-rgb-evidence.sh \
+    %{buildroot}%{_bindir}/ratvantage-compare-keyboard-rgb-evidence
+install -Dpm0755 scripts/setup-keyboard-rgb-openrgb-access.sh \
+    %{buildroot}%{_bindir}/ratvantage-setup-keyboard-rgb-openrgb-access
+install -Dpm0755 scripts/capture-keyboard-rgb-openrgb-bridge-evidence.sh \
+    %{buildroot}%{_bindir}/ratvantage-capture-keyboard-rgb-openrgb-bridge-evidence
+install -Dpm0755 scripts/review-keyboard-rgb-openrgb-bridge-evidence.sh \
+    %{buildroot}%{_bindir}/ratvantage-review-keyboard-rgb-openrgb-bridge-evidence
+install -Dpm0755 scripts/status-keyboard-rgb-openrgb-bridge-evidence.sh \
+    %{buildroot}%{_bindir}/ratvantage-keyboard-rgb-openrgb-bridge-status
+install -Dpm0755 scripts/capture-keyboard-rgb-openrgb-sdk-evidence.sh \
+    %{buildroot}%{_bindir}/ratvantage-capture-keyboard-rgb-openrgb-sdk-evidence
+install -Dpm0755 scripts/capture-keyboard-rgb-openrgb-sdk-write-evidence.sh \
+    %{buildroot}%{_bindir}/ratvantage-capture-keyboard-rgb-openrgb-sdk-write-evidence
+install -Dpm0755 scripts/openrgb-keyboard-rgb-sdk-helper.sh \
+    %{buildroot}%{_bindir}/ratvantage-openrgb-keyboard-rgb-sdk-helper
+install -Dpm0755 scripts/openrgb-sdk-server-session.sh \
+    %{buildroot}%{_bindir}/ratvantage-openrgb-sdk-server
+install -Dpm0755 scripts/capture-compatibility-bundle.sh \
+    %{buildroot}%{_bindir}/ratvantage-capture-compatibility-bundle
 
 install -Dpm0644 data/systemd/legion-control-daemon.service \
     %{buildroot}%{_unitdir}/legion-control-daemon.service
@@ -113,6 +150,20 @@ appstreamcli validate --no-net %{buildroot}%{_datadir}/metainfo/org.ratvantage.L
 %{_datadir}/dbus-1/system-services/org.ratvantage.LegionControl1.service
 %{_datadir}/dbus-1/system.d/org.ratvantage.LegionControl1.conf
 %{_datadir}/polkit-1/actions/org.ratvantage.LegionControl1.policy
+
+%files helpers
+%{_bindir}/ratvantage-check-keyboard-rgb-openrgb
+%{_bindir}/ratvantage-capture-keyboard-rgb-evidence
+%{_bindir}/ratvantage-compare-keyboard-rgb-evidence
+%{_bindir}/ratvantage-setup-keyboard-rgb-openrgb-access
+%{_bindir}/ratvantage-capture-keyboard-rgb-openrgb-bridge-evidence
+%{_bindir}/ratvantage-review-keyboard-rgb-openrgb-bridge-evidence
+%{_bindir}/ratvantage-keyboard-rgb-openrgb-bridge-status
+%{_bindir}/ratvantage-capture-keyboard-rgb-openrgb-sdk-evidence
+%{_bindir}/ratvantage-capture-keyboard-rgb-openrgb-sdk-write-evidence
+%{_bindir}/ratvantage-openrgb-keyboard-rgb-sdk-helper
+%{_bindir}/ratvantage-openrgb-sdk-server
+%{_bindir}/ratvantage-capture-compatibility-bundle
 
 %files ui
 %{_bindir}/legion-control-ui

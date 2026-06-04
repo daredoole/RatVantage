@@ -3,11 +3,11 @@ use crate::{
 };
 use adw::prelude::*;
 use anyhow::Result;
-use legion_common::PlatformProfileCapability;
 use legion_common::{
     CpuPowerCapability, FirmwareAttributeCapability, RyzenBackendStatus,
     SUPPORTED_FIRMWARE_SCALAR_ATTRIBUTES,
 };
+use legion_common::{HardwareProfileActions, PlatformProfileCapability};
 
 use super::shared::{
     append_error, build_write_controls, info_row, make_client, request_dashboard_refresh,
@@ -789,15 +789,19 @@ fn build_hardware_profile_apply_controls(bundle: &DiagnosticsBundle) -> adw::Pre
             let action_count = profile.actions.firmware_attributes.len()
                 + profile.actions.platform_profile.is_some() as usize
                 + profile.actions.battery_charge_type.is_some() as usize
+                + profile.actions.gpu_mode.is_some() as usize
                 + profile.actions.cpu_governor.is_some() as usize
                 + profile.actions.cpu_epp.is_some() as usize
                 + profile.actions.cpu_boost.is_some() as usize
                 + profile.actions.conservation_mode.is_some() as usize
                 + profile.actions.amd_gpu_dpm_force_level.is_some() as usize
                 + profile.actions.curve_optimizer_all_core.is_some() as usize;
+            let action_summary = hardware_profile_action_summary(&profile.actions);
             let row = adw::ActionRow::builder()
                 .title(profile.label.as_str())
-                .subtitle(format!("{profile_id} · {action_count} action(s)"))
+                .subtitle(format!(
+                    "{profile_id} · {action_count} action(s) · {action_summary}"
+                ))
                 .build();
             let apply = gtk4::Button::with_label("Apply");
             apply.add_css_class("suggested-action");
@@ -942,6 +946,58 @@ fn build_hardware_profile_apply_controls(bundle: &DiagnosticsBundle) -> adw::Pre
     }
 
     group
+}
+
+fn hardware_profile_action_summary(actions: &HardwareProfileActions) -> String {
+    let mut parts = Vec::new();
+    if let Some(value) = &actions.platform_profile {
+        parts.push(format!("platform={value}"));
+    }
+    if let Some(value) = &actions.battery_charge_type {
+        parts.push(format!("charge={value}"));
+    }
+    if let Some(value) = &actions.gpu_mode {
+        parts.push(format!("gpu={value}"));
+    }
+    if let Some(request) = &actions.keyboard_rgb {
+        parts.push(format!(
+            "rgb={} {}",
+            request.effect,
+            request
+                .colors
+                .values()
+                .next()
+                .map(String::as_str)
+                .unwrap_or("no-color")
+        ));
+    }
+    if let Some(value) = &actions.cpu_governor {
+        parts.push(format!("governor={value}"));
+    }
+    if let Some(value) = &actions.cpu_epp {
+        parts.push(format!("EPP={value}"));
+    }
+    if let Some(value) = &actions.cpu_boost {
+        parts.push(format!("boost={value}"));
+    }
+    if let Some(value) = &actions.conservation_mode {
+        parts.push(format!("conservation={value}"));
+    }
+    if let Some(value) = &actions.amd_gpu_dpm_force_level {
+        parts.push(format!("AMD DPM={value}"));
+    }
+    if let Some(value) = &actions.curve_optimizer_all_core {
+        parts.push(format!("CO={value}"));
+    }
+    for (attribute_id, value) in &actions.firmware_attributes {
+        parts.push(format!("{attribute_id}={value}"));
+    }
+
+    if parts.is_empty() {
+        "no actions".to_owned()
+    } else {
+        parts.join(", ")
+    }
 }
 
 fn build_firmware_attribute_controls(
