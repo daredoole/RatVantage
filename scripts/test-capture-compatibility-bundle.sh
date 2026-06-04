@@ -25,6 +25,10 @@ case "${1:-}" in
     echo '{"summary":{"capability_count":1},"hardware_profile_drift":{"status":"drifted","profile_id":"rgb_breathing_blue","checked_count":1,"drifted_count":1,"items":[{"action_id":"keyboard_rgb","method":"SetOpenRgbKeyboardRgbSdk","requested_value":"Breathing #333333","readback_value":"Breathing #333333","current_value":"Direct #000000","status":"drifted","detail":"current value differs"}]},"fan_curve_drift":{"status":"drifted","curve_id":"quiet-office","checked_count":1,"drifted_count":1,"detail":"Live fan curve differs","items":[{"path":"hwmon0/pwm1_auto_point1_pwm","saved_value":"80","live_value":"100","status":"drifted"}]},"gpu_switching":{"status":"runtime_mux_research_blocked","provider":"fixture-mux","current_mode":"hybrid","switch_type":"runtime-mux","execution_model":"runtime_mux","runtime_plan_available":false,"blockers":["no dedicated runtime mux backend exists yet","no automatic display recovery evidence has been captured"],"evidence":["provider=fixture-mux","current_mode=hybrid"],"next_action":"capture read-only mux state and recovery evidence before adding a switch plan"}}'
     ;;
   --automation-diagnostics)
+    if [[ "${RATVANTAGE_TEST_EMPTY_AUTOMATION:-0}" == "1" ]]; then
+      echo '{"hardware_profiles":{},"hardware_profile_triggers":{},"automation_rules":{},"last_automation_rule_apply":{},"recent_platform_profile_changes":[],"recent_desktop_power_profile_changes":[]}'
+      exit 0
+    fi
     echo '{"hardware_profiles":{"quiet_battery":{"label":"Quiet battery"},"periodic_repair":{"label":"Periodic repair"}},"hardware_profile_triggers":{"ac_unplugged":"quiet_battery","desktop_power_profile_changed":"quiet_battery"},"automation_rules":{"quiet_below_30":{"profile_id":"quiet_battery","enabled":true,"kind":"battery_profile_threshold","threshold_percent":30,"cooldown_secs":600},"periodic_idle_correction":{"profile_id":"periodic_repair","enabled":true,"kind":"periodic_idle","cooldown_secs":1800}},"last_automation_rule_apply":{"quiet_below_30":{"rule_id":"quiet_below_30","selected_profile_id":"quiet_battery","completed":true,"message":"profile applied","timestamp_unix_secs":42}},"recent_platform_profile_changes":[{"previous_profile":"balanced","current_profile":"performance","source":"firmware","timestamp_unix_secs":41}],"recent_desktop_power_profile_changes":[{"previous_profile":"balanced","current_profile":"power-saver","source":"desktop_power_profile_observer","timestamp_unix_secs":43}],"last_hardware_profile_apply":{"profile_id":"quiet_battery","profile_label":"Quiet battery","completed":true,"message":"all actions applied","timestamp_unix_secs":40}}'
     ;;
   --reset-diagnostics)
@@ -207,5 +211,21 @@ grep -q "automation_rules" "$out/compatibility-bundle-pr-body.md"
 grep -q "recent_profile_changes" "$out/compatibility-bundle-pr-body.md"
 grep -q "recent_desktop_power_changes" "$out/compatibility-bundle-pr-body.md"
 grep -q "Read-only capture only" "$out/compatibility-bundle-pr-body.md"
+
+empty_out="$tmp/empty-bundle"
+RATVANTAGE_TEST_EMPTY_AUTOMATION=1 "$script" \
+  --output "$empty_out" \
+  --sysfs-root "$tmp/sysfs" \
+  --ui-bin "$ui" \
+  --probe-bin "$probe" \
+  --openrgb-checker "$checker" \
+  --bridge-status-bin "$bridge_status" \
+  --sdk-evidence-bin "$sdk_evidence" >/tmp/ratvantage-empty-compatibility-bundle-test.txt
+
+grep -q '"automation_rule_count": 0' "$empty_out/compatibility-bundle.json"
+grep -q '"automation_rule_kinds": {}' "$empty_out/compatibility-bundle.json"
+grep -q 'automation_rule_kinds: `none`' "$empty_out/compatibility-bundle.md"
+grep -q 'automation_first_rule: `none` -> `none`' "$empty_out/compatibility-bundle.md"
+grep -q 'automation_rule_kinds: `none`' "$empty_out/compatibility-bundle-pr-body.md"
 
 echo "capture-compatibility-bundle tests passed"

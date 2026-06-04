@@ -388,8 +388,7 @@ def high_value_automation_summary():
             if isinstance(rule, dict):
                 kind = rule.get("kind") or rule.get("trigger_kind") or "unknown"
                 kinds[kind] = kinds.get(kind, 0) + 1
-        if kinds:
-            summary["automation_rule_kinds"] = dict(sorted(kinds.items()))
+        summary["automation_rule_kinds"] = dict(sorted(kinds.items()))
     first_rule = first_map_item_summary(
         automation_rules,
         (
