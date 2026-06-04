@@ -656,6 +656,101 @@ def alternate_choice(current, choices, preferred=()):
             return choice
     return ""
 
+
+def compact_json(value):
+    return json.dumps(value, separators=(",", ":"), sort_keys=True)
+
+
+def alternate_validation_color(current_colors):
+    colors = {str(value).lower() for value in (current_colors or {}).values()}
+    return "#224466" if colors == {"#333333"} else "#333333"
+
+
+def keyboard_rgb_request(effect, colors, brightness=40, speed=30):
+    request = {
+        "effect": effect,
+        "colors": colors,
+        "brightness": brightness,
+    }
+    if speed is not None:
+        request["speed"] = speed
+    return request
+
+
+def keyboard_rgb_mode_choice(modes, current):
+    return alternate_choice(
+        current or "",
+        modes,
+        ("Breathing", "Rainbow Wave", "Spectrum Cycle", "Direct", "Static"),
+    )
+
+
+native_keyboard_rgb = raw.get("keyboard_rgb") or {}
+openrgb_keyboard = raw.get("keyboard_rgb_openrgb") or {}
+keyboard_rgb_control = None
+
+if openrgb_keyboard.get("backend_ready") and openrgb_keyboard.get("sdk_snapshot_supported"):
+    device = (openrgb_keyboard.get("devices") or [{}])[0] or {}
+    current_effect = openrgb_keyboard.get("sdk_active_mode") or device.get("current_mode")
+    requested_effect = keyboard_rgb_mode_choice(device.get("modes") or [], current_effect)
+    current_colors = openrgb_keyboard.get("sdk_colors") or {}
+    zones = (
+        openrgb_keyboard.get("sdk_color_zones")
+        or list(current_colors.keys())
+        or ["left_side", "left_center", "right_center", "right_side"]
+    )
+    requested_color = alternate_validation_color(current_colors)
+    requested_colors = {str(zone): requested_color for zone in zones}
+    available = bool(current_effect and requested_effect and current_colors)
+    keyboard_rgb_control = {
+        "id": "keyboard_rgb",
+        "label": "Keyboard RGB",
+        "kind": "keyboard_rgb_openrgb_sdk",
+        "available": available,
+        "current": current_effect or "unknown",
+        "requested": requested_effect or "unknown",
+        "set_spec": compact_json(keyboard_rgb_request(requested_effect, requested_colors)) if available else "",
+        "revert_spec": compact_json(keyboard_rgb_request(current_effect, current_colors, brightness=100, speed=None)) if available else "",
+        "reason": "" if available else "OpenRGB SDK backend is ready, but mode or color snapshot data is incomplete.",
+        "manual_check": "Confirm the keyboard RGB mode/colors change through the daemon, then return to the captured OpenRGB SDK mode/colors.",
+    }
+elif native_keyboard_rgb:
+    current_effect = native_keyboard_rgb.get("current_effect")
+    requested_effect = keyboard_rgb_mode_choice(native_keyboard_rgb.get("effects") or [], current_effect)
+    current_colors = native_keyboard_rgb.get("current_colors") or {}
+    zones = [zone.get("id") for zone in native_keyboard_rgb.get("zones") or [] if zone.get("id")]
+    if not current_colors and zones:
+        current_colors = {str(zone): "#000000" for zone in zones}
+    requested_color = alternate_validation_color(current_colors)
+    requested_colors = {str(zone): requested_color for zone in zones}
+    available = bool(current_effect and requested_effect and current_colors and zones)
+    keyboard_rgb_control = {
+        "id": "keyboard_rgb",
+        "label": "Keyboard RGB",
+        "kind": "keyboard_rgb_native",
+        "available": available,
+        "current": current_effect or "unknown",
+        "requested": requested_effect or "unknown",
+        "set_spec": compact_json(keyboard_rgb_request(requested_effect, requested_colors)) if available else "",
+        "revert_spec": compact_json(keyboard_rgb_request(current_effect, current_colors, brightness=native_keyboard_rgb.get("current_brightness") or 100, speed=native_keyboard_rgb.get("current_speed"))) if available else "",
+        "reason": "" if available else "Native keyboard RGB backend is missing mode, zone, color, or alternate effect data.",
+        "manual_check": "Confirm the keyboard RGB mode/colors change through the daemon, then return to the captured native mode/colors.",
+    }
+else:
+    keyboard_rgb_control = {
+        "id": "keyboard_rgb",
+        "label": "Keyboard RGB",
+        "kind": "keyboard_rgb_openrgb_sdk",
+        "available": False,
+        "current": "unknown",
+        "requested": "unknown",
+        "set_spec": "",
+        "revert_spec": "",
+        "reason": "No native keyboard RGB backend and no ready OpenRGB SDK fallback are reported.",
+        "manual_check": "Capture OpenRGB SDK readiness before attempting keyboard RGB live write validation.",
+    }
+controls.append(keyboard_rgb_control)
+
 governor_current = str(cpu.get("governor") or "")
 governor_choices = cpu.get("available_governors") or []
 governor_requested = alternate_choice(governor_current, governor_choices, ("powersave", "performance"))
@@ -929,6 +1024,12 @@ while IFS=$'\t' read -r control_id label kind available current requested manual
       amd_gpu_dpm_force_level)
         run_ui_capture "$plan_file" --plan-amd-gpu-dpm-force-level "$set_spec" || true
         ;;
+      keyboard_rgb_openrgb_sdk)
+        run_ui_capture "$plan_file" --plan-openrgb-keyboard-rgb-sdk "$set_spec" || true
+        ;;
+      keyboard_rgb_native)
+        run_ui_capture "$plan_file" --plan-keyboard-rgb "$set_spec" || true
+        ;;
       curve_optimizer_all_core)
         run_ui_capture "$plan_file" "--plan-curve-optimizer-all-core=$set_spec" || true
         ;;
@@ -954,11 +1055,11 @@ while IFS=$'\t' read -r control_id label kind available current requested manual
     if [[ -n "$execute_only" && "$control_id" != "$execute_only" ]]; then
       execute_this=0
     fi
-    if [[ -z "$execute_only" && ( "$kind" == "firmware_attribute" || "$kind" == "conservation_mode" || "$kind" == "cpu_governor" || "$kind" == "cpu_epp" || "$kind" == "cpu_boost" || "$kind" == "amd_gpu_dpm_force_level" || "$kind" == "gpu_mode" || "$kind" == "curve_optimizer_all_core" || "$kind" == "hardware_profile" || "$kind" == "hardware_profile_trigger" ) ]]; then
+    if [[ -z "$execute_only" && ( "$kind" == "firmware_attribute" || "$kind" == "conservation_mode" || "$kind" == "cpu_governor" || "$kind" == "cpu_epp" || "$kind" == "cpu_boost" || "$kind" == "amd_gpu_dpm_force_level" || "$kind" == "keyboard_rgb_openrgb_sdk" || "$kind" == "keyboard_rgb_native" || "$kind" == "gpu_mode" || "$kind" == "curve_optimizer_all_core" || "$kind" == "hardware_profile" || "$kind" == "hardware_profile_trigger" ) ]]; then
       execute_this=0
     fi
 
-    if (( execute_writes )) && (( execute_this )) && [[ "$plan_exit" == "0" ]] && [[ "$kind" == "platform_profile" || "$kind" == "battery_charge_type" || "$kind" == "led_state" || "$kind" == "ideapad_toggle" || "$kind" == "firmware_attribute" || "$kind" == "conservation_mode" || "$kind" == "cpu_governor" || "$kind" == "cpu_epp" || "$kind" == "cpu_boost" || "$kind" == "amd_gpu_dpm_force_level" || "$kind" == "gpu_mode" || "$kind" == "curve_optimizer_all_core" || "$kind" == "hardware_profile" || "$kind" == "hardware_profile_trigger" ]]; then
+    if (( execute_writes )) && (( execute_this )) && [[ "$plan_exit" == "0" ]] && [[ "$kind" == "platform_profile" || "$kind" == "battery_charge_type" || "$kind" == "led_state" || "$kind" == "ideapad_toggle" || "$kind" == "firmware_attribute" || "$kind" == "conservation_mode" || "$kind" == "cpu_governor" || "$kind" == "cpu_epp" || "$kind" == "cpu_boost" || "$kind" == "amd_gpu_dpm_force_level" || "$kind" == "keyboard_rgb_openrgb_sdk" || "$kind" == "keyboard_rgb_native" || "$kind" == "gpu_mode" || "$kind" == "curve_optimizer_all_core" || "$kind" == "hardware_profile" || "$kind" == "hardware_profile_trigger" ]]; then
       before_overview_file="$output/steps/${prefix}-${safe_id}-before-overview.txt"
       run_ui_capture "$before_overview_file" --overview || true
 
@@ -995,6 +1096,9 @@ while IFS=$'\t' read -r control_id label kind available current requested manual
           ;;
         amd_gpu_dpm_force_level)
           run_ui_capture "$set_file" --set-amd-gpu-dpm-force-level "$set_spec" || true
+          ;;
+        keyboard_rgb_openrgb_sdk|keyboard_rgb_native)
+          run_ui_capture "$set_file" --set-keyboard-rgb "$set_spec" || true
           ;;
         gpu_mode)
           run_ui_capture "$set_file" --set-gpu-mode "$set_spec" || true
@@ -1052,6 +1156,9 @@ while IFS=$'\t' read -r control_id label kind available current requested manual
             ;;
           amd_gpu_dpm_force_level)
             run_ui_capture "$revert_file" --set-amd-gpu-dpm-force-level "$revert_spec" || true
+            ;;
+          keyboard_rgb_openrgb_sdk|keyboard_rgb_native)
+            run_ui_capture "$revert_file" --set-keyboard-rgb "$revert_spec" || true
             ;;
           curve_optimizer_all_core)
             run_ui_capture "$revert_file" --reset-curve-optimizer-all-core || true

@@ -87,6 +87,7 @@ else:
         "cpu_boost": "SetCpuBoost",
         "fan_mode": "SetIdeapadToggle",
         "amd_gpu_dpm_force_level": "SetAmdGpuDpmForceLevel",
+        "keyboard_rgb": "SetOpenRgbKeyboardRgbSdk",
         "curve_optimizer_all_core": "SetCurveOptimizerAllCore",
         "gpu_mode": "SetGpuMode",
     }
@@ -97,6 +98,7 @@ else:
         "cpu_boost": "org.ratvantage.LegionControl1.set-cpu-boost",
         "fan_mode": "org.ratvantage.LegionControl1.set-ideapad-toggle",
         "amd_gpu_dpm_force_level": "org.ratvantage.LegionControl1.set-amd-gpu-dpm-force-level",
+        "keyboard_rgb": "org.ratvantage.LegionControl1.set-keyboard-rgb",
         "curve_optimizer_all_core": "org.ratvantage.LegionControl1.set-curve-optimizer",
         "gpu_mode": "org.ratvantage.LegionControl1.set-gpu-mode",
     }
@@ -128,6 +130,7 @@ else:
             "cpu_boost": True,
             "fan_mode": True,
             "amd_gpu_dpm_force_level": True,
+            "keyboard_rgb": True,
             "curve_optimizer_all_core": False,
             "gpu_mode": True,
         }
@@ -391,7 +394,7 @@ if "$verifier" --root "$wrong_plan_method" >/tmp/ratvantage-verify-wrong-plan-me
   echo "expected wrong plan method verifier run to fail" >&2
   exit 1
 fi
-if ! grep -q "plan method is 'Synthetic', expected 'SetCpuBoost'" /tmp/ratvantage-verify-wrong-plan-method.txt; then
+if ! grep -q "plan method is 'Synthetic', expected one of \\['SetCpuBoost'\\]" /tmp/ratvantage-verify-wrong-plan-method.txt; then
   echo "expected wrong plan method verifier output to explain the expected CPU boost method" >&2
   exit 1
 fi
@@ -412,7 +415,7 @@ if "$verifier" --root "$wrong_plan_polkit" >/tmp/ratvantage-verify-wrong-plan-po
   echo "expected wrong plan polkit verifier run to fail" >&2
   exit 1
 fi
-if ! grep -q "plan polkit_action is 'org.ratvantage.LegionControl1.synthetic', expected 'org.ratvantage.LegionControl1.set-cpu-boost'" /tmp/ratvantage-verify-wrong-plan-polkit.txt; then
+if ! grep -q "plan polkit_action is 'org.ratvantage.LegionControl1.synthetic', expected one of \\['org.ratvantage.LegionControl1.set-cpu-boost'\\]" /tmp/ratvantage-verify-wrong-plan-polkit.txt; then
   echo "expected wrong plan polkit verifier output to explain the expected CPU boost action" >&2
   exit 1
 fi
@@ -433,7 +436,7 @@ if "$verifier" --root "$wrong_plan_readback" >/tmp/ratvantage-verify-wrong-plan-
   echo "expected wrong plan readback verifier run to fail" >&2
   exit 1
 fi
-if ! grep -q "plan readback_required is True, expected False" /tmp/ratvantage-verify-wrong-plan-readback.txt; then
+if ! grep -q "plan readback_required is True, expected one of \\[False\\]" /tmp/ratvantage-verify-wrong-plan-readback.txt; then
   echo "expected wrong plan readback verifier output to explain Curve Optimizer write-only status" >&2
   exit 1
 fi

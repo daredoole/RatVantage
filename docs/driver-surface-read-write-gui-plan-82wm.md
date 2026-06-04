@@ -25,13 +25,16 @@ Live evidence captured so far:
 - EnvyControl GPU mode: accepted execute evidence in `target/validation/82wm-live-gpu_mode`; switching from `integrated` to `hybrid` completed and recorded reboot-required pending state.
 - Hardware profile apply: accepted execute evidence in `target/validation/82wm-live-hardware_profile` using the seeded `validation_cpu_driver` profile with CPU governor, EPP, and boost action results.
 - Hardware profile trigger apply: accepted execute evidence in `target/validation/82wm-live-hardware_profile_trigger` using the seeded `manual=validation_cpu_driver` trigger with CPU governor, EPP, and boost action results.
+- Keyboard RGB: daemon/OpenRGB SDK execution works locally, and the standard live
+  evidence matrix now requires a dedicated `target/validation/82wm-live-keyboard_rgb`
+  bundle before this plan is complete.
 - Firmware PPT limits: live execution reached the Lenovo WMI firmware attribute files, but all three writes returned `Device or resource busy (os error 16)`:
   - `target/validation/82wm-live-ppt_pl1_spl`
   - `target/validation/82wm-live-ppt_pl2_sppt`
   - `target/validation/82wm-live-ppt_pl3_fppt`
   Keep PPT controls as gated/experimental until the busy firmware state is understood or a retry/reboot-safe protocol is validated.
 - Fan mode: live execution in `target/validation/82wm-live-fan_mode` did not pass promotion; requesting `1` read back `0`, and the daemon restored the previous `0` value. Keep fan mode unpromoted until the driver exposes a writable behavior or a different validated control path exists.
-- Evidence gate: `scripts/verify-82wm-live-evidence.sh --root target/validation` reports `82WM live evidence complete for 13 controls.` with PPT and fan mode accepted only as negative evidence.
+- Evidence gate: `scripts/verify-82wm-live-evidence.sh --root target/validation` now requires the 14-control matrix, with PPT and fan mode accepted only as negative evidence and keyboard RGB requiring a passing apply/revert bundle.
 
 Still not promotable as full read/write support:
 
@@ -40,7 +43,7 @@ Still not promotable as full read/write support:
 - Execute evidence and stability soak for RyzenAdj Curve Optimizer values; current read-back status remains write-only until a `ryzen_smu` backend exists.
 - The broader automation/profile engine from Phase 7; current daemon persistence now includes saved hardware profiles, trigger-to-profile mappings, and last apply result, but automatic OS event observers remain gated on live write evidence.
 - Hardware profiles now have a daemon-owned store, dry-run apply preview, manual daemon apply, CLI/GTK apply controls, tray visibility for last apply result, and per-action result recording for supported controls.
-- Live validation tooling now plans the expanded control surface from fixture or live diagnostics and can execute individual advanced controls only when `--execute-only <control_id>` names that exact family. Current advanced control IDs include `cpu_governor`, `cpu_epp`, `cpu_boost`, `conservation_mode`, `firmware_attribute:ppt_pl1_spl`, `firmware_attribute:ppt_pl2_sppt`, `firmware_attribute:ppt_pl3_fppt`, `amd_gpu_dpm_force_level`, `gpu_mode`, `curve_optimizer_all_core`, `hardware_profile`, and `hardware_profile_trigger`. The harness can also seed a narrow daemon hardware profile and trigger mapping before capture so profile evidence is reproducible.
+- Live validation tooling now plans the expanded control surface from fixture or live diagnostics and can execute individual advanced controls only when `--execute-only <control_id>` names that exact family. Current advanced control IDs include `cpu_governor`, `cpu_epp`, `cpu_boost`, `conservation_mode`, `firmware_attribute:ppt_pl1_spl`, `firmware_attribute:ppt_pl2_sppt`, `firmware_attribute:ppt_pl3_fppt`, `amd_gpu_dpm_force_level`, `keyboard_rgb`, `gpu_mode`, `curve_optimizer_all_core`, `hardware_profile`, and `hardware_profile_trigger`. The harness can also seed a narrow daemon hardware profile and trigger mapping before capture so profile evidence is reproducible.
 - Local CI now asserts the fixture write-validation bundle contains clean dry-run plans for the advanced CPU/PPT/GPU controls and separately seeds `validation_cpu_driver` plus a trigger mapping to prove both `hardware_profile` and `hardware_profile_trigger` previews contain `SetCpuGovernor`, `SetCpuEpp`, and `SetCpuBoost`.
 - Bundle review now supports explicit gates such as `--require-mode execute` and `--require-control cpu_boost=pass`, so live evidence can be checked by command instead of manual inspection alone; `scripts/test-review-write-validation-bundle.sh` now regresses the pass, wrong-mode, wrong-status, and missing-control cases.
 - The full live verifier now treats PPT and fan mode as required negative execute evidence on this host: PPT rows must show Lenovo WMI `EBUSY`, and fan mode must show read-back unchanged with daemon restore, rather than pretending these controls are promotable writes.
@@ -51,7 +54,7 @@ Still not promotable as full read/write support:
 - GTK GPU DPM detail now labels SCLK/MCLK as read-only and explicitly says manual clock writes are not exposed; DPM force level remains the supported GPU power control.
 - GTK fan-mode controls now render the raw ideapad toggle as `Auto (0)` / `Full speed (1)`, keep it separate from fan curves, and have fixture coverage for the current 82WM `fan_mode=0` state.
 - `scripts/verify-82wm-live-evidence.sh` now checks the full advanced-control evidence set from `data/validation/82wm-live-evidence-requirements.tsv` across all captured bundles and fails until every required execute-mode result is present with live metadata (`sysfs_root=/`, `target_bus_mode=system` or `custom-address`), the matching `execute_only` value, plus apply/revert payloads where rollback is expected. For Curve Optimizer, it also requires the operator checklist to mention the CO control, reset, and stability evidence.
-- The live verifier now also validates the dry-run plan method, polkit action, and readback requirement for each evidence row (`SetFirmwareAttribute`, `SetCpuBoost`, `SetCurveOptimizerAllCore`, `SetGpuMode`, etc.) and requires seeded hardware-profile/profile-trigger previews to include `SetCpuGovernor`, `SetCpuEpp`, `SetCpuBoost`, plus their matching authorization and readback metadata.
+- The live verifier now also validates the dry-run plan method, polkit action, and readback requirement for each evidence row (`SetFirmwareAttribute`, `SetCpuBoost`, `SetOpenRgbKeyboardRgbSdk` / `SetKeyboardRgb`, `SetCurveOptimizerAllCore`, `SetGpuMode`, etc.) and requires seeded hardware-profile/profile-trigger previews to include `SetCpuGovernor`, `SetCpuEpp`, `SetCpuBoost`, plus their matching authorization and readback metadata.
 - For `fan_mode`, the live verifier now also requires `operator-checklist.md` with the observed Auto -> Full speed -> Auto sequence and thermal/fan behavior notes, because no portable fan RPM telemetry exists on this host.
 - For `gpu_mode`, the live verifier now requires `operator-checklist.md` with EnvyControl command success, reboot guidance, and recovery-path notes, because this is one-way evidence rather than an automatic apply/revert control.
 - Fan curves and fan RPM sensors remain blocked by the current kernel/driver surface on this host.
@@ -102,6 +105,7 @@ The default evidence matrix is `data/validation/82wm-live-evidence-requirements.
 - `cpu_boost`
 - `fan_mode`
 - `amd_gpu_dpm_force_level`
+- `keyboard_rgb`
 - `curve_optimizer_all_core`
 - `gpu_mode`
 - `hardware_profile`

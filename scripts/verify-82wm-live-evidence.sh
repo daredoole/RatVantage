@@ -148,6 +148,7 @@ def expected_plan_methods(control_id):
         "cpu_boost": ["SetCpuBoost"],
         "fan_mode": ["SetIdeapadToggle"],
         "amd_gpu_dpm_force_level": ["SetAmdGpuDpmForceLevel"],
+        "keyboard_rgb": ["SetKeyboardRgb", "SetOpenRgbKeyboardRgbSdk"],
         "curve_optimizer_all_core": ["SetCurveOptimizerAllCore"],
         "gpu_mode": ["SetGpuMode"],
         "hardware_profile": ["SetCpuGovernor", "SetCpuEpp", "SetCpuBoost"],
@@ -166,6 +167,7 @@ def expected_plan_polkit_actions(control_id):
         "amd_gpu_dpm_force_level": [
             "org.ratvantage.LegionControl1.set-amd-gpu-dpm-force-level"
         ],
+        "keyboard_rgb": ["org.ratvantage.LegionControl1.set-keyboard-rgb"],
         "curve_optimizer_all_core": [
             "org.ratvantage.LegionControl1.set-curve-optimizer"
         ],
@@ -192,6 +194,7 @@ def expected_plan_readback_required(control_id):
         "cpu_boost": [True],
         "fan_mode": [True],
         "amd_gpu_dpm_force_level": [True],
+        "keyboard_rgb": [True],
         "curve_optimizer_all_core": [False],
         "gpu_mode": [True],
         "hardware_profile": [True, True, True],
@@ -269,23 +272,23 @@ def evidence_checks(control_id, requirement, metadata, control, bundle_dir):
                     )
         elif expected_methods:
             actual_method = control["plan"].get("method")
-            if actual_method != expected_methods[0]:
+            if actual_method not in expected_methods:
                 problems.append(
-                    f"plan method is {actual_method!r}, expected {expected_methods[0]!r}"
+                    f"plan method is {actual_method!r}, expected one of {expected_methods!r}"
                 )
             expected_polkit_actions = expected_plan_polkit_actions(control_id)
             if expected_polkit_actions:
                 actual_polkit_action = control["plan"].get("polkit_action")
-                if actual_polkit_action != expected_polkit_actions[0]:
+                if actual_polkit_action not in expected_polkit_actions:
                     problems.append(
-                        f"plan polkit_action is {actual_polkit_action!r}, expected {expected_polkit_actions[0]!r}"
+                        f"plan polkit_action is {actual_polkit_action!r}, expected one of {expected_polkit_actions!r}"
                     )
             expected_readback_required = expected_plan_readback_required(control_id)
             if expected_readback_required:
                 actual_readback_required = control["plan"].get("readback_required")
-                if actual_readback_required != expected_readback_required[0]:
+                if actual_readback_required not in expected_readback_required:
                     problems.append(
-                        f"plan readback_required is {actual_readback_required!r}, expected {expected_readback_required[0]!r}"
+                        f"plan readback_required is {actual_readback_required!r}, expected one of {expected_readback_required!r}"
                     )
     if not control.get("set_file") or control.get("set_exit") != 0:
         problems.append("apply artifact is missing or apply command failed")

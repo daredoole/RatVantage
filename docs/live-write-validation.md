@@ -23,6 +23,7 @@ currently implemented reversible write surface:
 - `firmware_attribute:ppt_pl2_sppt`
 - `firmware_attribute:ppt_pl3_fppt`
 - `amd_gpu_dpm_force_level`
+- `keyboard_rgb`
 - `curve_optimizer_all_core`
 - `hardware_profile`
 - `hardware_profile_trigger`
@@ -234,6 +235,7 @@ Valid `control_id` values (must match exactly):
 | `firmware_attribute:ppt_pl2_sppt` | `--enable-firmware-attribute-write` |
 | `firmware_attribute:ppt_pl3_fppt` | `--enable-firmware-attribute-write` |
 | `amd_gpu_dpm_force_level` | `--enable-amd-gpu-dpm-write` |
+| `keyboard_rgb` | `--enable-keyboard-rgb-write` plus `--openrgb-sdk-helper <path>` when using the OpenRGB SDK backend |
 | `gpu_mode` | `--enable-gpu-mode-write` |
 | `curve_optimizer_all_core` | `--enable-curve-optimizer-write` |
 | `hardware_profile` | `--enable-hardware-profile-apply` plus every flag needed by the saved profile actions |
@@ -252,7 +254,7 @@ cargo run -p legion-control-daemon -- --enable-platform-profile-write --enable-b
 
 Add only the extra flag for the specific family under test. Advanced controls
 (`firmware_attribute:*`, `cpu_governor`, `cpu_epp`, `cpu_boost`, `conservation_mode`,
-`amd_gpu_dpm_force_level`, `gpu_mode`, `curve_optimizer_all_core`,
+`amd_gpu_dpm_force_level`, `keyboard_rgb`, `gpu_mode`, `curve_optimizer_all_core`,
 `hardware_profile`, and `hardware_profile_trigger`) are planned in every run
 when detectable, but the harness only executes them when `--execute-only`
 matches that exact `control_id`.
@@ -310,6 +312,9 @@ GNOME-specific capture is **not** required for your own evidence bundles.
   negative evidence and do not promote PPT sliders until the busy firmware state
   is understood.
 - `amd_gpu_dpm_force_level`: confirm DPM force-level read-back, then revert.
+- `keyboard_rgb`: confirm the mode/colors change and then revert to the captured
+  mode/colors. On OpenRGB-backed machines, start the SDK server first and run the
+  daemon with `--enable-keyboard-rgb-write --openrgb-sdk-helper <path>`.
 - `gpu_mode`: explicit execute-only capture only; prepare reboot/logout recovery
   before running because this path is not auto-reverted by the harness.
 - `curve_optimizer_all_core`: explicit execute-only capture only; verify RyzenAdj

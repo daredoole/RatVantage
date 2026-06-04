@@ -282,6 +282,29 @@ scripts/review-write-validation-bundle.sh \
 scripts/archive-validation-bundle.sh target/validation/82wm-live-amd_gpu_dpm_force_level
 ```
 
+## 12. `keyboard_rgb`
+
+For OpenRGB-backed machines, start the user-session SDK server before the daemon
+capture. The daemon still owns the privileged write and rollback path.
+
+```bash
+ratvantage-openrgb-sdk-server start
+sudo ./scripts/install-dev-systemd-ratvantage.sh ./target/release/legion-control-daemon -- --enable-keyboard-rgb-write --openrgb-sdk-helper /usr/local/bin/ratvantage-openrgb-keyboard-rgb-sdk-helper
+sudo systemctl daemon-reload
+sudo systemctl restart legion-control-daemon.service
+
+scripts/capture-write-validation-report.sh \
+  --output target/validation/82wm-live-keyboard_rgb \
+  --execute --execute-only keyboard_rgb --system-bus
+
+scripts/review-write-validation-bundle.sh \
+  --require-mode execute \
+  --require-control keyboard_rgb=pass \
+  --control keyboard_rgb \
+  target/validation/82wm-live-keyboard_rgb
+scripts/archive-validation-bundle.sh target/validation/82wm-live-keyboard_rgb
+```
+
 ## 12. `curve_optimizer_all_core`
 
 This is experimental and write-only on the current 82WM without a `ryzen_smu`

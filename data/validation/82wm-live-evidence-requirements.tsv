@@ -8,6 +8,7 @@ cpu_epp	pass	true	--enable-cpu-epp-write	cpu_epp	CPU EPP write and revert
 cpu_boost	pass	true	--enable-cpu-boost-write	cpu_boost	CPU boost write and revert
 fan_mode	executed	false	--enable-fan-mode-write	fan_mode	Fan mode negative execute evidence: requested full speed reads back unchanged on this host
 amd_gpu_dpm_force_level	pass	true	--enable-amd-gpu-dpm-write	amd_gpu_dpm_force_level	AMD GPU DPM force-level write and revert
+keyboard_rgb	pass	true	--enable-keyboard-rgb-write	keyboard_rgb	Keyboard RGB mode/color write and revert through native or OpenRGB SDK backend
 curve_optimizer_all_core	pass	true	--enable-curve-optimizer-write	curve_optimizer_all_core	RyzenAdj all-core Curve Optimizer apply and reset-to-zero
 gpu_mode	executed	false	--enable-gpu-mode-write	gpu_mode	EnvyControl GPU mode execution, one-way/recovery evidence
 hardware_profile	executed	false	--enable-hardware-profile-apply	hardware_profile	Manual hardware profile apply evidence
