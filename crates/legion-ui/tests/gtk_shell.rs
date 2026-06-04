@@ -283,6 +283,21 @@ fn dashboard_pages_render_quick_apply_and_gpu_controls() {
     );
     let spl_spin = find_spin_button(&spl_row.upcast()).expect("SPL row should have a SpinButton");
     assert_eq!(spl_spin.value_as_int(), 70);
+    assert!(profile_text
+        .iter()
+        .any(|text| text == "Conservative PPT preset"));
+    assert!(profile_text
+        .iter()
+        .any(|text| text == "Balanced custom PPT preset"));
+    assert!(profile_text
+        .iter()
+        .any(|text| text == "Performance custom PPT preset"));
+    assert!(profile_text.iter().any(|text| text == "Reset PPT defaults"));
+    assert!(profile_text.iter().any(|text| {
+        text.contains("preview custom-thermal preparation plus all PPT attribute plans")
+    }));
+    assert!(find_button_by_label(&profiles.clone().upcast(), "Copy plan").is_some());
+    assert!(find_button_by_label(&profiles.clone().upcast(), "Preview").is_some());
     assert!(profile_text.iter().any(|text| {
         text == "No write attempted yet. If a request is blocked, the daemon will report why here."
     }));

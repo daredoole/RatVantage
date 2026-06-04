@@ -4,7 +4,7 @@ use crate::{
 use adw::prelude::*;
 use anyhow::Result;
 use legion_common::{
-    CpuPowerCapability, FirmwareAttributeCapability, RyzenBackendStatus,
+    CpuPowerCapability, FirmwareAttributeCapability, RyzenBackendStatus, FIRMWARE_PPT_PRESET_IDS,
     SUPPORTED_FIRMWARE_SCALAR_ATTRIBUTES,
 };
 use legion_common::{HardwareProfileActions, PlatformProfileCapability};
@@ -1099,7 +1099,119 @@ fn build_firmware_attribute_controls(
         });
     }
 
+    let preset_feedback = write_feedback_row("Firmware PPT preset");
+    for preset_id in FIRMWARE_PPT_PRESET_IDS {
+        let row = adw::ActionRow::builder()
+            .title(ppt_preset_label(preset_id))
+            .subtitle(format!(
+                "{preset_id} · preview custom-thermal preparation plus all PPT attribute plans"
+            ))
+            .selectable(false)
+            .build();
+
+        let copy = gtk4::Button::with_label("Copy plan");
+        copy.add_css_class("flat");
+        copy.set_valign(gtk4::Align::Center);
+        let preview = gtk4::Button::with_label("Preview");
+        preview.add_css_class("pill");
+        preview.set_valign(gtk4::Align::Center);
+        row.add_suffix(&copy);
+        row.add_suffix(&preview);
+        group.add(&row);
+
+        let command =
+            format!("legion-control-ui --plan-custom-thermal-firmware-ppt-preset {preset_id}");
+        copy.connect_clicked(move |_| {
+            if let Some(display) = gtk4::gdk::Display::default() {
+                display.clipboard().set_text(&command);
+            }
+        });
+
+        let preset_id_for_click = (*preset_id).to_owned();
+        let preview_for_click = preview.clone();
+        let row_for_click = row.clone();
+        let feedback_for_click = preset_feedback.clone();
+        preview.connect_clicked(move |_| {
+            feedback_for_click.set_title("Previewing PPT preset");
+            feedback_for_click
+                .set_subtitle("Building read-only custom-thermal firmware PPT sequence preview...");
+            preview_for_click.set_sensitive(false);
+            row_for_click.set_sensitive(false);
+
+            let preset_id_for_call = preset_id_for_click.clone();
+            let feedback_for_recv = feedback_for_click.clone();
+            let preview_for_recv = preview_for_click.clone();
+            let row_for_recv = row_for_click.clone();
+            spawn_dbus_call(
+                move || {
+                    make_client().and_then(|client| {
+                        client.plan_custom_thermal_firmware_ppt_preset_write(&preset_id_for_call)
+                    })
+                },
+                move |result| {
+                    preview_for_recv.set_sensitive(true);
+                    row_for_recv.set_sensitive(true);
+                    match result {
+                        Ok(plan) => {
+                            let subtitle = firmware_ppt_preview_summary(&plan);
+                            feedback_for_recv.set_title("PPT preset preview");
+                            feedback_for_recv.set_subtitle(&subtitle);
+                            store_write_feedback_state(
+                                "Firmware PPT preset",
+                                "PPT preset preview",
+                                &subtitle,
+                            );
+                        }
+                        Err(error) => {
+                            let subtitle = format!("Failed: {error}");
+                            feedback_for_recv.set_title("Preview error");
+                            feedback_for_recv.set_subtitle(&subtitle);
+                            store_write_feedback_state(
+                                "Firmware PPT preset",
+                                "Preview error",
+                                &subtitle,
+                            );
+                        }
+                    }
+                },
+            );
+        });
+    }
+    group.add(&preset_feedback);
+
     group
+}
+
+fn ppt_preset_label(preset_id: &str) -> &'static str {
+    match preset_id {
+        "conservative" => "Conservative PPT preset",
+        "balanced-custom" => "Balanced custom PPT preset",
+        "performance-custom" => "Performance custom PPT preset",
+        "reset-defaults" => "Reset PPT defaults",
+        _ => "Firmware PPT preset",
+    }
+}
+
+fn firmware_ppt_preview_summary(plan: &legion_common::CustomThermalPlanPreview) -> String {
+    let methods = plan
+        .plans
+        .iter()
+        .map(|step| step.method.as_str())
+        .collect::<Vec<_>>()
+        .join(", ");
+    let first_note = plan
+        .safety_notes
+        .first()
+        .map(String::as_str)
+        .unwrap_or("no extra safety notes");
+    format!(
+        "{}: {} plan step(s): {}; rollback steps: {}; {}",
+        plan.target,
+        plan.plans.len(),
+        methods,
+        plan.rollback_order.len(),
+        first_note
+    )
 }
 
 fn parse_firmware_attribute_numbers(
