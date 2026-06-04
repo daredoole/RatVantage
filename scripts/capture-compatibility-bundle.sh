@@ -14,6 +14,7 @@ Captures read-only hardware support evidence:
   - legion-probe --json
   - OpenRGB keyboard RGB readiness, when the checker is available
   - OpenRGB bridge evidence status, when the status helper is available
+  - GPU mux/session-restart evidence, when the helper is available
 
 Options:
   --output <dir>          Required output directory.
@@ -23,9 +24,11 @@ Options:
   --openrgb-checker <p>   OpenRGB readiness checker. Default: repo script/PATH lookup.
   --bridge-status-bin <p> OpenRGB bridge status helper. Default: repo script/PATH lookup.
   --sdk-evidence-bin <p>  OpenRGB SDK evidence helper. Default: repo script/PATH lookup.
+  --gpu-mux-bin <path>    GPU mux evidence helper. Default: repo script/PATH lookup.
   --skip-openrgb          Do not capture OpenRGB readiness.
   --skip-bridge-status    Do not capture OpenRGB bridge evidence status.
   --skip-sdk-evidence     Do not capture OpenRGB SDK read-back evidence.
+  --skip-gpu-mux-evidence Do not capture GPU mux/session-restart evidence.
   -h, --help              Show this help.
 
 This script is read-only. It does not write sysfs, hidraw, i2c, WMI, or EC.
@@ -40,9 +43,11 @@ probe_bin="${LEGION_PROBE_BIN:-legion-probe}"
 openrgb_checker="${RATVANTAGE_OPENRGB_CHECKER:-}"
 bridge_status_bin="${RATVANTAGE_OPENRGB_BRIDGE_STATUS_BIN:-}"
 sdk_evidence_bin="${RATVANTAGE_OPENRGB_SDK_EVIDENCE_BIN:-}"
+gpu_mux_bin="${RATVANTAGE_GPU_MUX_EVIDENCE_BIN:-}"
 skip_openrgb=0
 skip_bridge_status=0
 skip_sdk_evidence=0
+skip_gpu_mux_evidence=0
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -74,6 +79,10 @@ while [[ $# -gt 0 ]]; do
       sdk_evidence_bin="${2:?missing value for --sdk-evidence-bin}"
       shift 2
       ;;
+    --gpu-mux-bin)
+      gpu_mux_bin="${2:?missing value for --gpu-mux-bin}"
+      shift 2
+      ;;
     --skip-openrgb)
       skip_openrgb=1
       shift
@@ -84,6 +93,10 @@ while [[ $# -gt 0 ]]; do
       ;;
     --skip-sdk-evidence)
       skip_sdk_evidence=1
+      shift
+      ;;
+    --skip-gpu-mux-evidence)
+      skip_gpu_mux_evidence=1
       shift
       ;;
     -h|--help)
@@ -141,6 +154,13 @@ if [[ -z "$sdk_evidence_bin" ]]; then
     sdk_evidence_bin="$(resolve_command ratvantage-capture-keyboard-rgb-openrgb-sdk-evidence)"
   fi
 fi
+if [[ -z "$gpu_mux_bin" ]]; then
+  if [[ -x "$repo_root/scripts/capture-gpu-mux-evidence.sh" ]]; then
+    gpu_mux_bin="$repo_root/scripts/capture-gpu-mux-evidence.sh"
+  else
+    gpu_mux_bin="$(resolve_command ratvantage-capture-gpu-mux-evidence)"
+  fi
+fi
 
 mkdir -p "$output/logs"
 
@@ -165,6 +185,7 @@ probe_status="skipped"
 openrgb_status="skipped"
 bridge_status="skipped"
 sdk_evidence_status="skipped"
+gpu_mux_status="skipped"
 
 if [[ -n "$ui_path" ]]; then
   overview_status="$(run_capture overview "$ui_path" --overview)"
@@ -211,10 +232,21 @@ if [[ "$skip_sdk_evidence" -eq 0 && -n "$sdk_evidence_bin" && -x "$sdk_evidence_
   fi
 fi
 
+if [[ "$skip_gpu_mux_evidence" -eq 0 && -n "$gpu_mux_bin" && -x "$gpu_mux_bin" ]]; then
+  if timeout 45 "$gpu_mux_bin" --phase mux-only --output "$output/gpu-mux" \
+    >"$output/logs/gpu-mux.stdout" \
+    2>"$output/logs/gpu-mux.stderr"; then
+    gpu_mux_status="gpu-mux=ok"
+  else
+    gpu_mux_status="gpu-mux=failed:$?"
+  fi
+fi
+
 python3 - "$output" "$sysfs_root" "$ui_path" "$probe_path" "$openrgb_checker" \
   "$bridge_status_bin" "$overview_status" "$diagnostics_status" "$probe_status" \
   "$openrgb_status" "$bridge_status" "$automation_diagnostics_status" \
-  "$reset_diagnostics_status" "$sdk_evidence_bin" "$sdk_evidence_status" <<'PY'
+  "$reset_diagnostics_status" "$sdk_evidence_bin" "$sdk_evidence_status" \
+  "$gpu_mux_bin" "$gpu_mux_status" <<'PY'
 import datetime as dt
 import json
 import pathlib
@@ -339,6 +371,54 @@ def high_value_gpu_switching_summary():
             summary[key] = value[:3]
     return summary
 
+def read_text(relative_path):
+    path = out / relative_path
+    if not path.exists():
+        return None
+    return path.read_text(errors="replace")
+
+def first_line(relative_path):
+    text = read_text(relative_path)
+    if text is None:
+        return None
+    for line in text.splitlines():
+        line = line.strip()
+        if line:
+            return line
+    return None
+
+def high_value_gpu_mux_summary():
+    manifest_text = read_text("gpu-mux/pre/manifest.txt")
+    if manifest_text is None:
+        return {"available": False, "reason": "GPU mux evidence was not captured"}
+    summary = {
+        "available": True,
+        "phase": "mux-only",
+        "current_mode": first_line("gpu-mux/pre/envycontrol-mode.txt") or "unknown",
+        "drm_provider_count": map_count((read_text("gpu-mux/pre/drm-providers.txt") or "").splitlines()),
+        "nvidia_pci_entry_count": map_count((read_text("gpu-mux/pre/nvidia-pci-enable.txt") or "").splitlines()),
+    }
+    manifest = {}
+    for line in manifest_text.splitlines():
+        if "=" in line:
+            key, value = line.split("=", 1)
+            manifest[key] = value
+    for key in ("timestamp", "kernel", "hostname"):
+        if key in manifest:
+            summary[key] = manifest[key]
+    indicators = read_text("gpu-mux/pre/mux-hardware-indicators.txt") or ""
+    d3cold_lines = [
+        line.strip()
+        for line in indicators.splitlines()
+        if "driver=" in line and "d3cold_allowed=" in line
+    ]
+    if d3cold_lines:
+        summary["first_d3cold_indicator"] = d3cold_lines[0]
+        summary["d3cold_indicator_count"] = len(d3cold_lines)
+    if "vgaswitcheroo" in indicators:
+        summary["vgaswitcheroo_checked"] = True
+    return summary
+
 def map_count(value):
     if isinstance(value, dict):
         return len(value)
@@ -447,6 +527,7 @@ report = {
         "openrgb_checker": sys.argv[5] or None,
         "openrgb_bridge_status": sys.argv[6] or None,
         "openrgb_sdk_evidence": sys.argv[14] or None,
+        "gpu_mux_evidence": sys.argv[16] or None,
     },
     "captures": {
         "overview": sys.argv[7],
@@ -457,6 +538,7 @@ report = {
         "automation_diagnostics": sys.argv[12],
         "reset_diagnostics": sys.argv[13],
         "openrgb_sdk_evidence": sys.argv[15],
+        "gpu_mux_evidence": sys.argv[17],
     },
     "safety": {
         "read_only": True,
@@ -467,6 +549,7 @@ report = {
     "high_value_recovery": reset_recovery_summary(),
     "high_value_drift": high_value_drift_summary(),
     "high_value_gpu_switching": high_value_gpu_switching_summary(),
+    "high_value_gpu_mux": high_value_gpu_mux_summary(),
     "high_value_automation": high_value_automation_summary(),
 }
 out.joinpath("compatibility-bundle.json").write_text(json.dumps(report, indent=2, sort_keys=True) + "\n")
@@ -490,6 +573,9 @@ def drift_status(key):
 gpu_switching = report["high_value_gpu_switching"]
 gpu_first_blocker = first_list_value(gpu_switching.get("blockers"))
 gpu_first_evidence = first_list_value(gpu_switching.get("evidence"))
+gpu_mux = report["high_value_gpu_mux"]
+gpu_mux_mode = gpu_mux.get("current_mode", "unavailable")
+gpu_mux_first_d3cold = gpu_mux.get("first_d3cold_indicator", "none")
 hardware_profile_drift = drift_status("hardware_profile_drift")
 fan_curve_drift = drift_status("fan_curve_drift")
 automation = report["high_value_automation"]
@@ -528,15 +614,19 @@ lines = [
     f"- probe: `{report['captures']['probe']}`",
     f"- openrgb_readiness: `{report['captures']['openrgb_readiness']}`",
     f"- openrgb_bridge_status: `{report['captures']['openrgb_bridge_status']}`",
+    f"- gpu_mux_evidence: `{report['captures']['gpu_mux_evidence']}`",
     f"- high_value_recovery: `{len(report['high_value_recovery'])}` entries",
     f"- high_value_drift: `{len(report['high_value_drift'])}` entries",
     f"- high_value_gpu_switching: `{report['high_value_gpu_switching'].get('status', 'unknown')}`",
+    f"- high_value_gpu_mux: `{gpu_mux.get('phase', 'unavailable')}`",
     f"- high_value_automation: `{report['high_value_automation'].get('automation_rule_count', 0)}` rules",
     "",
     "## High-Value Summary",
     f"- gpu_switching_next_action: `{gpu_switching.get('next_action', 'unknown')}`",
     f"- gpu_switching_first_blocker: `{gpu_first_blocker}`",
     f"- gpu_switching_first_evidence: `{gpu_first_evidence}`",
+    f"- gpu_mux_current_mode: `{gpu_mux_mode}`",
+    f"- gpu_mux_first_d3cold: `{gpu_mux_first_d3cold}`",
     f"- hardware_profile_drift: `{hardware_profile_drift}`",
     f"- fan_curve_drift: `{fan_curve_drift}`",
     f"- automation_rule_kinds: `{automation_rule_kinds_text}`",
@@ -551,6 +641,7 @@ lines = [
     "- `openrgb-readiness/openrgb-keyboard-rgb-readiness.json` when captured",
     "- `logs/openrgb-bridge-status.json` when captured",
     "- `openrgb-sdk/openrgb-keyboard-rgb-sdk-evidence.json` when captured",
+    "- `gpu-mux/pre/` when captured",
     "",
     "## Safety",
     "- Read-only capture only.",
@@ -569,6 +660,7 @@ pr_lines = [
     f"- automation_diagnostics: `{report['captures']['automation_diagnostics']}`",
     f"- reset_diagnostics: `{report['captures']['reset_diagnostics']}`",
     f"- probe: `{report['captures']['probe']}`",
+    f"- gpu_mux_evidence: `{report['captures']['gpu_mux_evidence']}`",
     "",
     "### High-Value Evidence",
     f"- recovery_entries: `{len(report['high_value_recovery'])}`",
@@ -576,6 +668,8 @@ pr_lines = [
     f"- gpu_switching: `{report['high_value_gpu_switching'].get('status', 'unknown')}`",
     f"- gpu_switching_next_action: `{gpu_switching.get('next_action', 'unknown')}`",
     f"- gpu_switching_first_blocker: `{gpu_first_blocker}`",
+    f"- gpu_mux_current_mode: `{gpu_mux_mode}`",
+    f"- gpu_mux_first_d3cold: `{gpu_mux_first_d3cold}`",
     f"- hardware_profile_drift: `{hardware_profile_drift}`",
     f"- fan_curve_drift: `{fan_curve_drift}`",
     f"- automation_rules: `{report['high_value_automation'].get('automation_rule_count', 0)}`",
@@ -596,6 +690,7 @@ pr_lines = [
     "- `logs/automation-diagnostics.stdout`",
     "- `logs/reset-diagnostics.stdout`",
     "- `logs/probe.stdout`",
+    "- `gpu-mux/pre/` when captured.",
     "- OpenRGB readiness/SDK evidence files when captured.",
 ]
 out.joinpath("compatibility-bundle-pr-body.md").write_text("\n".join(pr_lines) + "\n")

@@ -11,6 +11,7 @@ probe="$tmp/legion-probe"
 checker="$tmp/check-openrgb"
 bridge_status="$tmp/openrgb-bridge-status"
 sdk_evidence="$tmp/openrgb-sdk-evidence"
+gpu_mux="$tmp/gpu-mux-evidence"
 out="$tmp/bundle"
 
 cat >"$ui" <<'EOF'
@@ -103,6 +104,40 @@ echo "openrgb_sdk_evidence=$2/openrgb-keyboard-rgb-sdk-evidence.json"
 EOF
 chmod 0755 "$sdk_evidence"
 
+cat >"$gpu_mux" <<'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+if [[ "${1:-}" != "--phase" || "${2:-}" != "mux-only" || "${3:-}" != "--output" ]]; then
+  echo "unexpected gpu mux args: $*" >&2
+  exit 2
+fi
+bundle="$4/pre"
+mkdir -p "$bundle"
+cat >"$bundle/manifest.txt" <<'TXT'
+phase=mux-only
+timestamp=2026-06-04T15:00:00-04:00
+hostname=fixture
+kernel=6.9.0-test
+user=tester
+TXT
+echo "hybrid" >"$bundle/envycontrol-mode.txt"
+cat >"$bundle/drm-providers.txt" <<'TXT'
+card0=amdgpu
+card1=nvidia
+TXT
+cat >"$bundle/nvidia-pci-enable.txt" <<'TXT'
+0000:01:00.0 enable=1 runtime=active
+TXT
+cat >"$bundle/mux-hardware-indicators.txt" <<'TXT'
+=== d3cold_allowed on GPU PCI devices ===
+  0000:01:00.0  driver=nvidia  d3cold_allowed=1
+=== vgaswitcheroo ===
+(not available)
+TXT
+echo "gpu_mux_evidence=$4"
+EOF
+chmod 0755 "$gpu_mux"
+
 "$script" \
   --output "$out" \
   --sysfs-root "$tmp/sysfs" \
@@ -110,7 +145,8 @@ chmod 0755 "$sdk_evidence"
   --probe-bin "$probe" \
   --openrgb-checker "$checker" \
   --bridge-status-bin "$bridge_status" \
-  --sdk-evidence-bin "$sdk_evidence" >/tmp/ratvantage-compatibility-bundle-test.txt
+  --sdk-evidence-bin "$sdk_evidence" \
+  --gpu-mux-bin "$gpu_mux" >/tmp/ratvantage-compatibility-bundle-test.txt
 
 grep -q "compatibility_bundle=$out/compatibility-bundle.json" \
   /tmp/ratvantage-compatibility-bundle-test.txt
@@ -120,10 +156,16 @@ grep -q '"automation_diagnostics": "automation-diagnostics=ok"' "$out/compatibil
 grep -q '"reset_diagnostics": "reset-diagnostics=ok"' "$out/compatibility-bundle.json"
 grep -q '"openrgb_bridge_status": "openrgb-bridge-status=ok"' "$out/compatibility-bundle.json"
 grep -q '"openrgb_sdk_evidence": "openrgb-sdk=ok"' "$out/compatibility-bundle.json"
+grep -q '"gpu_mux_evidence": "gpu-mux=ok"' "$out/compatibility-bundle.json"
 grep -q '"high_value_recovery"' "$out/compatibility-bundle.json"
 grep -q '"high_value_drift"' "$out/compatibility-bundle.json"
 grep -q '"high_value_gpu_switching"' "$out/compatibility-bundle.json"
+grep -q '"high_value_gpu_mux"' "$out/compatibility-bundle.json"
 grep -q '"high_value_automation"' "$out/compatibility-bundle.json"
+grep -q '"current_mode": "hybrid"' "$out/compatibility-bundle.json"
+grep -q '"first_d3cold_indicator": "0000:01:00.0  driver=nvidia  d3cold_allowed=1"' "$out/compatibility-bundle.json"
+grep -q '"drm_provider_count": 2' "$out/compatibility-bundle.json"
+grep -q '"nvidia_pci_entry_count": 1' "$out/compatibility-bundle.json"
 grep -q '"automation_rule_count": 2' "$out/compatibility-bundle.json"
 grep -q '"hardware_profile_count": 2' "$out/compatibility-bundle.json"
 grep -q '"automation_rule_kinds"' "$out/compatibility-bundle.json"
@@ -180,17 +222,22 @@ grep -q "operator may run execute evidence capture" "$out/logs/openrgb-bridge-st
 grep -q "ready_for_execute_evidence" "$out/logs/openrgb-bridge-status.json"
 test -f "$out/openrgb-sdk/openrgb-keyboard-rgb-sdk-evidence.json"
 grep -q '"read_back_supported": true' "$out/openrgb-sdk/openrgb-keyboard-rgb-sdk-evidence.json"
+test -f "$out/gpu-mux/pre/mux-hardware-indicators.txt"
+grep -q "d3cold_allowed=1" "$out/gpu-mux/pre/mux-hardware-indicators.txt"
 grep -q "RatVantage Compatibility Bundle" "$out/compatibility-bundle.md"
 grep -q "automation_diagnostics" "$out/compatibility-bundle.md"
 grep -q "reset_diagnostics" "$out/compatibility-bundle.md"
 grep -q "high_value_recovery" "$out/compatibility-bundle.md"
 grep -q "high_value_drift" "$out/compatibility-bundle.md"
 grep -q "high_value_gpu_switching" "$out/compatibility-bundle.md"
+grep -q "high_value_gpu_mux" "$out/compatibility-bundle.md"
 grep -q "high_value_automation" "$out/compatibility-bundle.md"
 grep -q "gpu_switching_next_action" "$out/compatibility-bundle.md"
 grep -q "capture read-only mux state and recovery evidence" "$out/compatibility-bundle.md"
 grep -q "gpu_switching_first_blocker" "$out/compatibility-bundle.md"
 grep -q "no dedicated runtime mux backend exists yet" "$out/compatibility-bundle.md"
+grep -q 'gpu_mux_current_mode: `hybrid`' "$out/compatibility-bundle.md"
+grep -q 'gpu_mux_first_d3cold: `0000:01:00.0  driver=nvidia  d3cold_allowed=1`' "$out/compatibility-bundle.md"
 grep -q 'hardware_profile_drift: `drifted (1/1)`' "$out/compatibility-bundle.md"
 grep -q 'fan_curve_drift: `drifted (1/1)`' "$out/compatibility-bundle.md"
 grep -q 'automation_rule_kinds: `battery_profile_threshold:1, periodic_idle:1`' "$out/compatibility-bundle.md"
@@ -203,6 +250,8 @@ grep -q "drift_entries" "$out/compatibility-bundle-pr-body.md"
 grep -q "gpu_switching" "$out/compatibility-bundle-pr-body.md"
 grep -q "gpu_switching_next_action" "$out/compatibility-bundle-pr-body.md"
 grep -q "gpu_switching_first_blocker" "$out/compatibility-bundle-pr-body.md"
+grep -q "gpu_mux_current_mode" "$out/compatibility-bundle-pr-body.md"
+grep -q "d3cold_allowed=1" "$out/compatibility-bundle-pr-body.md"
 grep -q 'fan_curve_drift: `drifted (1/1)`' "$out/compatibility-bundle-pr-body.md"
 grep -q "automation_rule_kinds" "$out/compatibility-bundle-pr-body.md"
 grep -q "periodic_idle:1" "$out/compatibility-bundle-pr-body.md"
@@ -220,7 +269,8 @@ RATVANTAGE_TEST_EMPTY_AUTOMATION=1 "$script" \
   --probe-bin "$probe" \
   --openrgb-checker "$checker" \
   --bridge-status-bin "$bridge_status" \
-  --sdk-evidence-bin "$sdk_evidence" >/tmp/ratvantage-empty-compatibility-bundle-test.txt
+  --sdk-evidence-bin "$sdk_evidence" \
+  --gpu-mux-bin "$gpu_mux" >/tmp/ratvantage-empty-compatibility-bundle-test.txt
 
 grep -q '"automation_rule_count": 0' "$empty_out/compatibility-bundle.json"
 grep -q '"automation_rule_kinds": {}' "$empty_out/compatibility-bundle.json"
