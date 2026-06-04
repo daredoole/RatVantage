@@ -448,6 +448,28 @@ report = {
 }
 out.joinpath("compatibility-bundle.json").write_text(json.dumps(report, indent=2, sort_keys=True) + "\n")
 
+def first_list_value(value):
+    if isinstance(value, list) and value:
+        return value[0]
+    return "none"
+
+def drift_status(key):
+    item = report["high_value_drift"].get(key)
+    if isinstance(item, dict):
+        status = item.get("status", "unknown")
+        drifted = item.get("drifted_count")
+        checked = item.get("checked_count")
+        if drifted is not None and checked is not None:
+            return f"{status} ({drifted}/{checked})"
+        return status
+    return "unavailable"
+
+gpu_switching = report["high_value_gpu_switching"]
+gpu_first_blocker = first_list_value(gpu_switching.get("blockers"))
+gpu_first_evidence = first_list_value(gpu_switching.get("evidence"))
+hardware_profile_drift = drift_status("hardware_profile_drift")
+fan_curve_drift = drift_status("fan_curve_drift")
+
 lines = [
     "# RatVantage Compatibility Bundle",
     "",
@@ -464,6 +486,13 @@ lines = [
     f"- high_value_drift: `{len(report['high_value_drift'])}` entries",
     f"- high_value_gpu_switching: `{report['high_value_gpu_switching'].get('status', 'unknown')}`",
     f"- high_value_automation: `{report['high_value_automation'].get('automation_rule_count', 0)}` rules",
+    "",
+    "## High-Value Summary",
+    f"- gpu_switching_next_action: `{gpu_switching.get('next_action', 'unknown')}`",
+    f"- gpu_switching_first_blocker: `{gpu_first_blocker}`",
+    f"- gpu_switching_first_evidence: `{gpu_first_evidence}`",
+    f"- hardware_profile_drift: `{hardware_profile_drift}`",
+    f"- fan_curve_drift: `{fan_curve_drift}`",
     "",
     "## Files",
     "- `logs/overview.stdout`",
@@ -497,6 +526,10 @@ pr_lines = [
     f"- recovery_entries: `{len(report['high_value_recovery'])}`",
     f"- drift_entries: `{len(report['high_value_drift'])}`",
     f"- gpu_switching: `{report['high_value_gpu_switching'].get('status', 'unknown')}`",
+    f"- gpu_switching_next_action: `{gpu_switching.get('next_action', 'unknown')}`",
+    f"- gpu_switching_first_blocker: `{gpu_first_blocker}`",
+    f"- hardware_profile_drift: `{hardware_profile_drift}`",
+    f"- fan_curve_drift: `{fan_curve_drift}`",
     f"- automation_rules: `{report['high_value_automation'].get('automation_rule_count', 0)}`",
     f"- recent_profile_changes: `{report['high_value_automation'].get('recent_platform_profile_change_count', 0)}`",
     f"- recent_desktop_power_changes: `{report['high_value_automation'].get('recent_desktop_power_profile_change_count', 0)}`",
