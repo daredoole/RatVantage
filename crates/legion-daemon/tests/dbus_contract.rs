@@ -264,6 +264,7 @@ fn introspection_exposes_gated_reversible_write_methods_only() {
             "PlanFanPresetWrite",
             "PlanFirmwareAttributeResetWrite",
             "PlanFirmwareAttributeWrite",
+            "PlanGpuModeRuntimeWrite",
             "PlanGpuModeWrite",
             "PlanIdeapadToggleWrite",
             "PlanKeyboardRgbWrite",
@@ -438,6 +439,7 @@ fn daemon_builds_dry_run_plans_without_other_dbus_write_methods() {
     assert_eq!(fan_mode_plan.previous_value, "0");
     assert_eq!(fan_mode_plan.requested_value, "1");
     assert!(service.plan_gpu_mode_write("hybrid").is_err());
+    assert!(service.plan_gpu_mode_runtime_write("hybrid").is_err());
     assert!(service
         .plan_firmware_attribute_write("ppt_pl2_sppt", "999")
         .is_err());

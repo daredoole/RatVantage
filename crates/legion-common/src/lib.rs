@@ -25,6 +25,9 @@ pub struct CapabilityRegistry {
     /// AMD GPU runtime DPM force-level control exposed by amdgpu under `/sys/class/drm`.
     #[serde(default)]
     pub amd_gpu_power_dpm: Option<AmdGpuPowerDpmCapability>,
+    /// GPU PCI hotswap capability: runtime integrated<->hybrid switching without display restart.
+    #[serde(default)]
+    pub gpu_runtime: Option<GpuRuntimeCapability>,
     /// CPU frequency-scaling / amd-pstate parameters under `/sys/devices/system/cpu`.
     #[serde(default)]
     pub cpu_power: Option<CpuPowerCapability>,
@@ -903,6 +906,22 @@ pub struct GpuCapability {
     pub switch_notes: Vec<String>,
 }
 
+/// PCI hotswap GPU switching candidate: integrated<->hybrid without display restart.
+/// This is evidence-gated; detection alone does not promote runtime switching.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct GpuRuntimeCapability {
+    pub status: CapabilityStatus,
+    pub current_mode: String,
+    /// Candidate modes that may be reachable via PCI hotswap.
+    #[serde(default)]
+    pub candidate_runtime_modes: Vec<String>,
+    /// True only after dedicated live review evidence has promoted this path.
+    #[serde(default)]
+    pub promotion_ready: bool,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub evidence: Vec<String>,
+}
+
 #[derive(Debug, Clone, Copy, Default, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
 pub enum GpuSwitchType {
@@ -1383,6 +1402,35 @@ pub const WRITE_METHOD_CONTRACTS: &[WriteMethodContract] = &[
             "negative Curve Optimizer values can cause crashes, reboots, app instability, or silent performance loss",
             "write method remains disabled unless daemon Curve Optimizer policy is enabled",
             "read-back is unavailable on this machine until a ryzen_smu backend is detected",
+        ],
+    },
+    WriteMethodContract {
+        method: "SetGpuModeRuntime",
+        capability_id: "gpu_runtime",
+        polkit_action: "org.ratvantage.LegionControl1.set-gpu-mode-runtime",
+        request_type: r#"{"mode":"integrated|hybrid"}"#,
+        risk: RiskLevel::ExperimentalWrite,
+        enabled: false,
+        reboot_required: false,
+        preconditions: &[
+            "gpu_runtime capability is detected as a candidate",
+            "requested mode is in candidate_runtime_modes (integrated or hybrid only)",
+            "review-gpu-mux-evidence --require-session-restart-confirmed or a stricter runtime evidence gate has promoted this path",
+            "current mode differs from requested mode",
+        ],
+        validators: &[
+            "requested mode exactly matches integrated or hybrid",
+            "gpu_runtime.status is ProbeOnly",
+            "gpu_runtime.promotion_ready is true",
+            "promotion evidence must prove post-change read-back matches the requested mode",
+        ],
+        rollback: &[
+            "execution is not implemented; rollback is a promotion requirement, not a current claim",
+            "future promotion must prove previous-mode restore through live read-back evidence",
+        ],
+        safety_notes: &[
+            "nvidia mode is not a runtime-safe target; it requires display manager restart",
+            "execution is not implemented in the daemon; this is a plan-only evidence gate",
         ],
     },
 ];
@@ -2465,6 +2513,66 @@ pub fn plan_gpu_mode_write(
     for note in &capability.switch_notes {
         plan.safety_notes
             .push(format!("GPU switch evidence: {note}"));
+    }
+    Ok(plan)
+}
+
+pub fn validate_gpu_mode_runtime_choice(
+    capability: Option<&GpuRuntimeCapability>,
+    requested: &str,
+) -> Result<(), ValidationError> {
+    let cap = capability.ok_or_else(|| ValidationError::MissingCapability {
+        capability_id: "gpu_runtime".to_owned(),
+    })?;
+    if cap.status != CapabilityStatus::ProbeOnly {
+        return Err(ValidationError::MissingCapability {
+            capability_id: "gpu_runtime".to_owned(),
+        });
+    }
+    if cap.current_mode == requested {
+        return Err(ValidationError::BlockedChoice {
+            capability_id: "gpu_runtime".to_owned(),
+            requested: requested.to_owned(),
+            reason: format!("GPU is already in {requested} mode"),
+        });
+    }
+    if !cap.candidate_runtime_modes.contains(&requested.to_owned()) {
+        return Err(ValidationError::BlockedChoice {
+            capability_id: "gpu_runtime".to_owned(),
+            requested: requested.to_owned(),
+            reason: format!(
+                "candidate runtime modes are {:?}; nvidia requires display manager restart instead",
+                cap.candidate_runtime_modes
+            ),
+        });
+    }
+    if !cap.promotion_ready {
+        return Err(ValidationError::BlockedChoice {
+            capability_id: "gpu_runtime".to_owned(),
+            requested: requested.to_owned(),
+            reason:
+                "runtime GPU switching is not promoted; capture and review GPU mux evidence first"
+                    .to_owned(),
+        });
+    }
+    Ok(())
+}
+
+pub fn plan_gpu_mode_runtime_write(
+    capability: Option<&GpuRuntimeCapability>,
+    requested: &str,
+) -> Result<WriteDryRunPlan, ValidationError> {
+    validate_gpu_mode_runtime_choice(capability, requested)?;
+    let cap = capability.expect("validated GPU runtime capability must exist");
+    let mut plan = plan_write(
+        write_contract("SetGpuModeRuntime"),
+        "envycontrol+pci-hotswap-plan",
+        &cap.current_mode,
+        requested,
+    )?;
+    for evidence in &cap.evidence {
+        plan.safety_notes
+            .push(format!("GPU runtime evidence: {evidence}"));
     }
     Ok(plan)
 }
@@ -3965,7 +4073,8 @@ mod tests {
                 "SetCpuBoost",
                 "SetConservationMode",
                 "SetAmdGpuDpmForceLevel",
-                "SetCurveOptimizerAllCore"
+                "SetCurveOptimizerAllCore",
+                "SetGpuModeRuntime"
             ]
         );
         assert!(WRITE_METHOD_CONTRACTS
@@ -4696,6 +4805,77 @@ mod tests {
             format_gpu_switch_type(GpuSwitchType::RuntimeMux),
             "runtime-mux"
         );
+    }
+
+    #[test]
+    fn gpu_runtime_capability_defaults_to_unpromoted_candidate() {
+        let capability: GpuRuntimeCapability = serde_json::from_value(serde_json::json!({
+            "status": "probe_only",
+            "current_mode": "hybrid"
+        }))
+        .unwrap();
+
+        assert!(capability.candidate_runtime_modes.is_empty());
+        assert!(!capability.promotion_ready);
+        assert!(capability.evidence.is_empty());
+    }
+
+    #[test]
+    fn gpu_runtime_validator_blocks_until_promoted() {
+        let capability = GpuRuntimeCapability {
+            status: CapabilityStatus::ProbeOnly,
+            current_mode: "hybrid".to_owned(),
+            candidate_runtime_modes: vec!["integrated".to_owned()],
+            promotion_ready: false,
+            evidence: vec![
+                "strict mux/session evidence has not promoted runtime switching".to_owned(),
+            ],
+        };
+
+        assert!(matches!(
+            validate_gpu_mode_runtime_choice(None, "integrated"),
+            Err(ValidationError::MissingCapability { .. })
+        ));
+        assert!(matches!(
+            validate_gpu_mode_runtime_choice(Some(&capability), "hybrid"),
+            Err(ValidationError::BlockedChoice { .. })
+        ));
+        assert!(matches!(
+            validate_gpu_mode_runtime_choice(Some(&capability), "nvidia"),
+            Err(ValidationError::BlockedChoice { .. })
+        ));
+        assert!(matches!(
+            validate_gpu_mode_runtime_choice(Some(&capability), "integrated"),
+            Err(ValidationError::BlockedChoice { .. })
+        ));
+    }
+
+    #[test]
+    fn gpu_runtime_plan_requires_promotion_and_keeps_execution_disabled() {
+        let capability = GpuRuntimeCapability {
+            status: CapabilityStatus::ProbeOnly,
+            current_mode: "hybrid".to_owned(),
+            candidate_runtime_modes: vec!["integrated".to_owned()],
+            promotion_ready: true,
+            evidence: vec!["strict reviewer accepted live mux evidence".to_owned()],
+        };
+
+        let plan = plan_gpu_mode_runtime_write(Some(&capability), "integrated").unwrap();
+
+        assert_eq!(plan.method, "SetGpuModeRuntime");
+        assert_eq!(plan.capability_id, "gpu_runtime");
+        assert_eq!(plan.path, "envycontrol+pci-hotswap-plan");
+        assert_eq!(plan.previous_value, "hybrid");
+        assert_eq!(plan.requested_value, "integrated");
+        assert!(!plan.reboot_required);
+        assert!(plan
+            .safety_notes
+            .iter()
+            .any(|note| note.contains("execution is not implemented")));
+        assert!(plan
+            .safety_notes
+            .iter()
+            .any(|note| note.contains("strict reviewer accepted live mux evidence")));
     }
 
     #[test]

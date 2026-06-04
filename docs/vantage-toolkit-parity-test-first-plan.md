@@ -142,8 +142,8 @@ Test first:
 
 Implementation slices:
 - Keep current EnvyControl path as baseline.
-- Detect runtime-switch-capable paths read-only. [partially implemented: diagnostics and GTK now expose runtime/session classifications and blockers, but no kernel/driver runtime path has been promoted]
-- Add plan-only runtime switch if a kernel/driver path is found.
+- Detect runtime-switch-capable paths read-only. [partially implemented: diagnostics and GTK now expose runtime/session classifications and blockers; probe/common also expose a `gpu_runtime` candidate when `/sys/bus/pci/rescan` and EnvyControl integrated/hybrid state exist, but `promotion_ready=false` keeps it non-promoted]
+- Add plan-only runtime switch if a kernel/driver path is found. [partially implemented: daemon/D-Bus exposes read-only `PlanGpuModeRuntimeWrite`, but validation blocks until strict GPU mux/session evidence promotes the candidate; there is no executable `SetGpuModeRuntime` daemon path]
 - Promote only with live display recovery evidence.
 
 Stop conditions:

@@ -38,6 +38,7 @@ fn client_reads_daemon_contract_over_private_bus() {
             "fan_curves",
             "firmware_attributes",
             "gpu",
+            "gpu_runtime",
             "hwmon",
             "ideapad_toggles",
             "keyboard_rgb_candidates",
@@ -52,6 +53,7 @@ fn client_reads_daemon_contract_over_private_bus() {
             && (capability.status == CapabilityStatus::ProbeOnly
                 || capability.id == "amd_gpu_power_dpm"
                 || capability.id == "gpu"
+                || capability.id == "gpu_runtime"
                 || capability.id == "keyboard_rgb_candidates"
                 || capability.id == "power_profiles")
             && capability.details.is_null()
@@ -162,14 +164,14 @@ fn client_reads_daemon_contract_over_private_bus() {
     assert_eq!(json["fan_preset_reapply_after_resume"], false);
     assert_eq!(json["recent_daemon_logs"], serde_json::json!([]));
     assert_eq!(json["hardware"]["product_name"], "82WM");
-    assert_eq!(json["summary"]["capability_count"], 13);
+    assert_eq!(json["summary"]["capability_count"], 14);
     assert_eq!(json["summary"]["available_capability_count"], 11);
-    assert_eq!(json["summary"]["missing_capability_count"], 2);
+    assert_eq!(json["summary"]["missing_capability_count"], 3);
     assert_eq!(
         json["summary"]["capability_status_counts"]["probe_only"],
         11
     );
-    assert_eq!(json["summary"]["capability_status_counts"]["missing"], 2);
+    assert_eq!(json["summary"]["capability_status_counts"]["missing"], 3);
     assert_eq!(json["summary"]["sensor_count"], 2);
     assert_eq!(json["summary"]["fan_curve_count"], 1);
     assert_eq!(
@@ -406,7 +408,7 @@ fn status_model_normalizes_daemon_data_for_ui() {
         status.hardware.product_sku.as_deref(),
         Some("LENOVO_MT_82WM_BU_idea_FM_Legion Pro 5 16ARX8")
     );
-    assert_eq!(status.capability_count(), 13);
+    assert_eq!(status.capability_count(), 14);
     assert_eq!(
         status.capability_ids(),
         [
@@ -416,6 +418,7 @@ fn status_model_normalizes_daemon_data_for_ui() {
             "fan_curves",
             "firmware_attributes",
             "gpu",
+            "gpu_runtime",
             "hwmon",
             "ideapad_toggles",
             "keyboard_rgb_candidates",
@@ -431,6 +434,7 @@ fn status_model_normalizes_daemon_data_for_ui() {
             && (capability.status == CapabilityStatus::ProbeOnly
                 || capability.id == "amd_gpu_power_dpm"
                 || capability.id == "gpu"
+                || capability.id == "gpu_runtime"
                 || capability.id == "keyboard_rgb_candidates"
                 || capability.id == "power_profiles")
     }));
@@ -453,9 +457,9 @@ fn status_model_normalizes_daemon_data_for_ui() {
                 "vendor=LENOVO",
                 "product_name=82WM",
                 "product_version=Legion Pro 5 16ARX8",
-                "capability_count=13",
-                "capabilities=amd_gpu_power_dpm,battery_charge_type,cpu_power,fan_curves,firmware_attributes,gpu,hwmon,ideapad_toggles,keyboard_rgb_candidates,leds,platform_profile,power_profiles,thermal_zones",
-                "capability_statuses=amd_gpu_power_dpm:probe_only:read_only,battery_charge_type:probe_only:read_only,cpu_power:probe_only:read_only,fan_curves:probe_only:read_only,firmware_attributes:probe_only:read_only,gpu:missing:read_only,hwmon:probe_only:read_only,ideapad_toggles:probe_only:read_only,keyboard_rgb_candidates:probe_only:read_only,leds:probe_only:read_only,platform_profile:probe_only:read_only,power_profiles:missing:read_only,thermal_zones:probe_only:read_only",
+                "capability_count=14",
+                "capabilities=amd_gpu_power_dpm,battery_charge_type,cpu_power,fan_curves,firmware_attributes,gpu,gpu_runtime,hwmon,ideapad_toggles,keyboard_rgb_candidates,leds,platform_profile,power_profiles,thermal_zones",
+                "capability_statuses=amd_gpu_power_dpm:probe_only:read_only,battery_charge_type:probe_only:read_only,cpu_power:probe_only:read_only,fan_curves:probe_only:read_only,firmware_attributes:probe_only:read_only,gpu:missing:read_only,gpu_runtime:missing:read_only,hwmon:probe_only:read_only,ideapad_toggles:probe_only:read_only,keyboard_rgb_candidates:probe_only:read_only,leds:probe_only:read_only,platform_profile:probe_only:read_only,power_profiles:missing:read_only,thermal_zones:probe_only:read_only",
             ]
     );
 }
@@ -478,9 +482,9 @@ fn status_cli_prints_hardware_and_capability_summary() {
             "vendor=LENOVO\n",
             "product_name=82WM\n",
             "product_version=Legion Pro 5 16ARX8\n",
-            "capability_count=13\n",
-            "capabilities=amd_gpu_power_dpm,battery_charge_type,cpu_power,fan_curves,firmware_attributes,gpu,hwmon,ideapad_toggles,keyboard_rgb_candidates,leds,platform_profile,power_profiles,thermal_zones\n",
-            "capability_statuses=amd_gpu_power_dpm:probe_only:read_only,battery_charge_type:probe_only:read_only,cpu_power:probe_only:read_only,fan_curves:probe_only:read_only,firmware_attributes:probe_only:read_only,gpu:missing:read_only,hwmon:probe_only:read_only,ideapad_toggles:probe_only:read_only,keyboard_rgb_candidates:probe_only:read_only,leds:probe_only:read_only,platform_profile:probe_only:read_only,power_profiles:missing:read_only,thermal_zones:probe_only:read_only\n",
+            "capability_count=14\n",
+            "capabilities=amd_gpu_power_dpm,battery_charge_type,cpu_power,fan_curves,firmware_attributes,gpu,gpu_runtime,hwmon,ideapad_toggles,keyboard_rgb_candidates,leds,platform_profile,power_profiles,thermal_zones\n",
+            "capability_statuses=amd_gpu_power_dpm:probe_only:read_only,battery_charge_type:probe_only:read_only,cpu_power:probe_only:read_only,fan_curves:probe_only:read_only,firmware_attributes:probe_only:read_only,gpu:missing:read_only,gpu_runtime:missing:read_only,hwmon:probe_only:read_only,ideapad_toggles:probe_only:read_only,keyboard_rgb_candidates:probe_only:read_only,leds:probe_only:read_only,platform_profile:probe_only:read_only,power_profiles:missing:read_only,thermal_zones:probe_only:read_only\n",
         )
     );
 }

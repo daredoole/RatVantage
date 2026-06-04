@@ -19,7 +19,7 @@ use legion_common::{
     plan_firmware_attribute_reset_write_with_platform_profile as plan_firmware_attribute_reset,
     plan_firmware_attribute_write_with_platform_profile as plan_firmware_attribute,
     plan_firmware_ppt_preset_write_with_platform_profile as plan_firmware_ppt_preset,
-    plan_gpu_mode_write as plan_gpu_mode,
+    plan_gpu_mode_runtime_write as plan_gpu_mode_runtime, plan_gpu_mode_write as plan_gpu_mode,
     plan_hardware_profile_keyboard_rgb_write as plan_hardware_profile_keyboard_rgb,
     plan_ideapad_toggle_write as plan_ideapad_toggle, plan_keyboard_rgb_write as plan_keyboard_rgb,
     plan_led_state_write as plan_led_state, plan_openrgb_keyboard_rgb_bridge,
@@ -40,6 +40,7 @@ use legion_common::{
 };
 use legion_probe::{probe, ProbeOptions};
 use serde::{Deserialize, Serialize};
+
 use zbus::{
     blocking::{Connection, ConnectionBuilder, MessageIterator},
     fdo, interface,
@@ -49,7 +50,7 @@ use zbus::{
 
 pub const DBUS_INTERFACE: &str = "org.ratvantage.LegionControl1";
 pub const DBUS_PATH: &str = "/org/ratvantage/LegionControl1";
-pub const READ_ONLY_METHODS: &str = "CaptureLastKnownGoodFanCurve,ClearAutomationRules,ClearFanPresetProfileMap,ClearGpuModePending,ClearHardwareProfileTriggers,ClearHardwareProfiles,GetAutomationRulePreview,GetAutomationRules,GetCapabilities,GetFanPresetProfileMap,GetFanPresetReapplyAfterResume,GetGpuModePending,GetHardwareProfileApplyPreview,GetHardwareProfileTriggerApplyPreview,GetHardwareProfileTriggers,GetHardwareProfiles,GetHardwareSummary,GetLastAutomationRuleApply,GetLastCurveOptimizerAllCore,GetLastHardwareProfileApply,GetLastKnownGoodFanCurve,GetLiveFanCurveReadings,GetRawProbeReport,GetRecentDesktopPowerProfileChanges,GetRecentPlatformProfileChanges,GetRyzenBackendStatus,GetTelemetry,PlanAmdGpuDpmForceLevelWrite,PlanBatteryChargeTypeWrite,PlanConservationModeWrite,PlanCpuBoostWrite,PlanCpuEppWrite,PlanCpuGovernorWrite,PlanCurveOptimizerAllCoreWrite,PlanCustomThermalFanPresetWrite,PlanCustomThermalFirmwareAttributeWrite,PlanCustomThermalFirmwarePptPresetWrite,PlanCustomThermalRestoreAutoFanWrite,PlanFanPresetWrite,PlanFirmwareAttributeResetWrite,PlanFirmwareAttributeWrite,PlanGpuModeWrite,PlanIdeapadToggleWrite,PlanKeyboardRgbWrite,PlanLedStateWrite,PlanOpenRgbAccessSetup,PlanOpenRgbKeyboardRgbBridge,PlanOpenRgbKeyboardRgbSdkWrite,PlanPlatformProfileWrite,PlanPrepareCustomThermalMode,PlanRestoreAutoFanWrite,RefreshCapabilities,RemoveAutomationRule,RemoveFanPresetProfileMapEntry,RemoveHardwareProfile,RemoveHardwareProfileTrigger,SetAutomationRule,SetFanPresetProfileMapEntry,SetFanPresetReapplyAfterResume,SetGpuModePending,SetHardwareProfile,SetHardwareProfileTrigger";
+pub const READ_ONLY_METHODS: &str = "CaptureLastKnownGoodFanCurve,ClearAutomationRules,ClearFanPresetProfileMap,ClearGpuModePending,ClearHardwareProfileTriggers,ClearHardwareProfiles,GetAutomationRulePreview,GetAutomationRules,GetCapabilities,GetFanPresetProfileMap,GetFanPresetReapplyAfterResume,GetGpuModePending,GetHardwareProfileApplyPreview,GetHardwareProfileTriggerApplyPreview,GetHardwareProfileTriggers,GetHardwareProfiles,GetHardwareSummary,GetLastAutomationRuleApply,GetLastCurveOptimizerAllCore,GetLastHardwareProfileApply,GetLastKnownGoodFanCurve,GetLiveFanCurveReadings,GetRawProbeReport,GetRecentDesktopPowerProfileChanges,GetRecentPlatformProfileChanges,GetRyzenBackendStatus,GetTelemetry,PlanAmdGpuDpmForceLevelWrite,PlanBatteryChargeTypeWrite,PlanConservationModeWrite,PlanCpuBoostWrite,PlanCpuEppWrite,PlanCpuGovernorWrite,PlanCurveOptimizerAllCoreWrite,PlanCustomThermalFanPresetWrite,PlanCustomThermalFirmwareAttributeWrite,PlanCustomThermalFirmwarePptPresetWrite,PlanCustomThermalRestoreAutoFanWrite,PlanFanPresetWrite,PlanFirmwareAttributeResetWrite,PlanFirmwareAttributeWrite,PlanGpuModeRuntimeWrite,PlanGpuModeWrite,PlanIdeapadToggleWrite,PlanKeyboardRgbWrite,PlanLedStateWrite,PlanOpenRgbAccessSetup,PlanOpenRgbKeyboardRgbBridge,PlanOpenRgbKeyboardRgbSdkWrite,PlanPlatformProfileWrite,PlanPrepareCustomThermalMode,PlanRestoreAutoFanWrite,RefreshCapabilities,RemoveAutomationRule,RemoveFanPresetProfileMapEntry,RemoveHardwareProfile,RemoveHardwareProfileTrigger,SetAutomationRule,SetFanPresetProfileMapEntry,SetFanPresetReapplyAfterResume,SetGpuModePending,SetHardwareProfile,SetHardwareProfileTrigger";
 pub const GATED_WRITE_METHODS: &str =
     "SetPlatformProfile,SetBatteryChargeType,SetLedState,SetKeyboardRgb,SetIdeapadToggle,SetGpuMode,SetCpuGovernor,SetCpuEpp,SetFirmwareAttribute,SetCpuBoost,SetConservationMode,SetAmdGpuDpmForceLevel,SetCurveOptimizerAllCore,SetupOpenRgbAccess,ApplyHardwareProfile,ApplyHardwareProfileTrigger,ApplyAutomationRule";
 pub const DEFAULT_STATE_PATH: &str = "/var/lib/legion-control/state.toml";
@@ -777,7 +778,6 @@ impl LegionControl {
         let state_path = state_path.into();
         let registry = probe(&options);
         let state = load_state(&state_path).unwrap_or_default();
-
         Self {
             options,
             registry: Mutex::new(registry),
@@ -963,6 +963,15 @@ impl LegionControl {
     pub fn plan_gpu_mode_write(&self, requested: &str) -> Result<WriteDryRunPlan, PlanningError> {
         let registry = self.planning_snapshot()?;
         plan_gpu_mode(registry.gpu.as_ref(), requested).map_err(PlanningError::Validation)
+    }
+
+    pub fn plan_gpu_mode_runtime_write(
+        &self,
+        requested: &str,
+    ) -> Result<WriteDryRunPlan, PlanningError> {
+        let registry = self.planning_snapshot()?;
+        plan_gpu_mode_runtime(registry.gpu_runtime.as_ref(), requested)
+            .map_err(PlanningError::Validation)
     }
 
     pub fn plan_fan_preset_write(&self, requested: &str) -> Result<WriteDryRunPlan, PlanningError> {
@@ -3584,6 +3593,10 @@ impl LegionControl {
 
     fn PlanGpuModeWrite(&self, requested: &str) -> fdo::Result<String> {
         to_plan_json(self.plan_gpu_mode_write(requested))
+    }
+
+    fn PlanGpuModeRuntimeWrite(&self, requested: &str) -> fdo::Result<String> {
+        to_plan_json(self.plan_gpu_mode_runtime_write(requested))
     }
 
     fn PlanFanPresetWrite(&self, requested: &str) -> fdo::Result<String> {

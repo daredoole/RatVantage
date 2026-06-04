@@ -6,10 +6,11 @@ use std::process::Command;
 use legion_common::{
     AcAdapterTelemetry, AmdGpuPowerDpmCapability, BatteryChargeTypeCapability, BatteryTelemetry,
     Capability, CapabilityRegistry, CapabilityStatus, CpuPowerCapability, FanCurveCapability,
-    FirmwareAttributeCapability, GpuCapability, GpuSwitchType, HardwareSummary, HwmonSensor,
-    IdeapadToggleCapability, KeyboardRgbCandidate, KeyboardRgbCapability, KeyboardRgbHidReport,
-    KeyboardRgbOpenRgbDevice, KeyboardRgbOpenRgbStatus, LedCapability, PlatformProfileCapability,
-    RiskLevel, TelemetrySnapshot, ThermalZone,
+    FirmwareAttributeCapability, GpuCapability, GpuRuntimeCapability, GpuSwitchType,
+    HardwareSummary, HwmonSensor, IdeapadToggleCapability, KeyboardRgbCandidate,
+    KeyboardRgbCapability, KeyboardRgbHidReport, KeyboardRgbOpenRgbDevice,
+    KeyboardRgbOpenRgbStatus, LedCapability, PlatformProfileCapability, RiskLevel,
+    TelemetrySnapshot, ThermalZone,
 };
 
 mod power_profiles;
@@ -40,6 +41,7 @@ pub fn probe(options: &ProbeOptions) -> CapabilityRegistry {
     let firmware_attributes = detect_firmware_attributes(&options.sysfs_root);
     let ideapad_toggles = detect_ideapad_toggles(&options.sysfs_root);
     let gpu = detect_envycontrol_gpu(&options.sysfs_root);
+    let gpu_runtime = detect_gpu_runtime_capability(&options.sysfs_root, gpu.as_ref());
     let amd_gpu_power_dpm = detect_amd_gpu_power_dpm(&options.sysfs_root);
     let cpu_power = detect_cpu_power(&options.sysfs_root);
     let thermal_zones = detect_thermal_zones(&options.sysfs_root);
@@ -93,6 +95,12 @@ pub fn probe(options: &ProbeOptions) -> CapabilityRegistry {
     push_capability(&mut capabilities, "gpu", "GPU mode", gpu.is_some());
     push_capability(
         &mut capabilities,
+        "gpu_runtime",
+        "GPU PCI hotswap",
+        gpu_runtime.is_some(),
+    );
+    push_capability(
+        &mut capabilities,
         "amd_gpu_power_dpm",
         "AMD GPU power DPM",
         amd_gpu_power_dpm.is_some(),
@@ -138,6 +146,7 @@ pub fn probe(options: &ProbeOptions) -> CapabilityRegistry {
         firmware_attributes,
         ideapad_toggles,
         gpu,
+        gpu_runtime,
         amd_gpu_power_dpm,
         cpu_power,
         thermal_zones,
@@ -1248,6 +1257,43 @@ fn detect_envycontrol_gpu(root: &Path) -> Option<GpuCapability> {
         switch_type: GpuSwitchType::RebootRequired,
         switch_notes: vec![
             "EnvyControl mode changes are treated as reboot-required until a runtime mux path is detected and validated".to_owned(),
+        ],
+    })
+}
+
+fn detect_gpu_runtime_capability(
+    root: &Path,
+    gpu: Option<&GpuCapability>,
+) -> Option<GpuRuntimeCapability> {
+    if root != Path::new("/") {
+        return None;
+    }
+    // PCI hotswap requires /sys/bus/pci/rescan to exist and envycontrol to be available.
+    let rescan = root.join("sys/bus/pci/rescan");
+    if !rescan.exists() {
+        return None;
+    }
+    let gpu = gpu?;
+    if gpu.provider != "envycontrol" || gpu.status != CapabilityStatus::ProbeOnly {
+        return None;
+    }
+    let current_mode = gpu.mode.clone()?;
+    // Only integrated and hybrid are candidates. Runtime execution remains blocked until
+    // dedicated live evidence promotes this path.
+    let candidate_runtime_modes = match current_mode.as_str() {
+        "integrated" => vec!["hybrid".to_owned()],
+        "hybrid" => vec!["integrated".to_owned()],
+        _ => return None,
+    };
+    Some(GpuRuntimeCapability {
+        status: CapabilityStatus::ProbeOnly,
+        current_mode,
+        candidate_runtime_modes,
+        promotion_ready: false,
+        evidence: vec![
+            format!("{} exists", rescan.display()),
+            "envycontrol reported integrated/hybrid current mode".to_owned(),
+            "runtime execution requires ratvantage-review-gpu-mux-evidence --require-session-restart-confirmed or stricter evidence before promotion".to_owned(),
         ],
     })
 }
