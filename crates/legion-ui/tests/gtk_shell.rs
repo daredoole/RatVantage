@@ -788,6 +788,14 @@ fn automations_page_renders_ac_profile_router_starter() {
     assert!(find_button_by_label(&automations.clone().upcast(), "Create repair").is_some());
     assert!(text
         .iter()
+        .any(|value| value == "Desktop power repair starter"));
+    assert!(text.iter().any(|value| {
+        value.contains("Creates a balanced profile for desktop power mode changes")
+            && value.contains("PowerProfiles changes")
+    }));
+    assert!(find_button_by_label(&automations.clone().upcast(), "Create power repair").is_some());
+    assert!(text
+        .iter()
         .any(|value| value == "RGB breathing profile starter"));
     assert!(text.iter().any(|value| {
         value.contains("Creates an RGB breathing hardware profile")

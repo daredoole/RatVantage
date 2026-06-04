@@ -323,3 +323,7 @@ Do not hide unsupported controls; show them as disabled with the reason.
     exposes `--recent-desktop-power-profile-changes`, automation diagnostics
     includes the history, and GTK Automations renders the trigger and recent
     changes.
+26. Done: add a Desktop Power Repair GTK starter that saves
+    `desktop_power_balanced_repair` with balanced platform/CPU repair actions
+    and maps `desktop_power_profile_changed` to it. Execution remains behind the
+    daemon's existing hardware-profile policy/read-back gates.

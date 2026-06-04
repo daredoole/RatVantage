@@ -138,6 +138,7 @@ pub fn automations_page(diagnostics: Result<DiagnosticsBundle>) -> adw::Preferen
     append_resume_balanced_profile_starter(&templates_group);
     append_gpu_reboot_completion_starter(&templates_group);
     append_profile_change_tuning_starter(&templates_group);
+    append_desktop_power_profile_change_starter(&templates_group);
     append_rgb_breathing_profile_starter(&templates_group);
     append_co_experimental_profile_starter(&templates_group);
 
@@ -1973,6 +1974,87 @@ fn append_profile_change_tuning_starter(group: &adw::PreferencesGroup) {
                         feedback_for_recv.set_subtitle(&subtitle);
                         store_write_feedback_state(
                             "Fn+Q tuning repair starter",
+                            "Create error",
+                            &subtitle,
+                        );
+                    }
+                }
+            },
+        );
+    });
+}
+
+fn append_desktop_power_profile_change_starter(group: &adw::PreferencesGroup) {
+    let row = adw::ActionRow::builder()
+        .title("Desktop power repair starter")
+        .subtitle(
+            "Creates a balanced profile for desktop power mode changes and maps PowerProfiles changes to it",
+        )
+        .selectable(false)
+        .build();
+    let create = gtk4::Button::builder()
+        .label("Create power repair")
+        .css_classes(["suggested-action", "pill"])
+        .valign(gtk4::Align::Center)
+        .build();
+    row.add_suffix(&create);
+    group.add(&row);
+
+    let feedback = write_feedback_row("Desktop power repair starter");
+    group.add(&feedback);
+
+    create.connect_clicked(move |button| {
+        button.set_sensitive(false);
+        feedback.set_title("Creating desktop power repair");
+        feedback.set_subtitle(
+            "Saving daemon-owned desktop power profile response and trigger mapping...",
+        );
+
+        let button_for_recv = button.clone();
+        let feedback_for_recv = feedback.clone();
+        spawn_dbus_call(
+            || {
+                let client = make_client()?;
+                let repair_profile = serde_json::json!({
+                    "schema_version": 1,
+                    "label": "Desktop power balanced repair",
+                    "actions": {
+                        "platform_profile": "balanced",
+                        "cpu_governor": "powersave",
+                        "cpu_epp": "balance_performance",
+                        "cpu_boost": "1"
+                    }
+                })
+                .to_string();
+
+                client.set_hardware_profile("desktop_power_balanced_repair", &repair_profile)?;
+                client.set_hardware_profile_trigger(
+                    "desktop_power_profile_changed",
+                    "desktop_power_balanced_repair",
+                )?;
+                Ok(())
+            },
+            move |result| {
+                button_for_recv.set_sensitive(true);
+                match result {
+                    Ok(()) => {
+                        feedback_for_recv.set_title("Desktop power repair ready");
+                        feedback_for_recv.set_subtitle(
+                            "Saved desktop_power_balanced_repair profile and desktop_power_profile_changed trigger; execution remains policy/read-back gated.",
+                        );
+                        store_write_feedback_state(
+                            "Desktop power repair starter",
+                            "Desktop power repair ready",
+                            "Saved desktop_power_balanced_repair profile and desktop_power_profile_changed trigger; execution remains policy/read-back gated.",
+                        );
+                        let _ = request_dashboard_refresh();
+                    }
+                    Err(error) => {
+                        let subtitle = format!("Failed: {error}");
+                        feedback_for_recv.set_title("Create error");
+                        feedback_for_recv.set_subtitle(&subtitle);
+                        store_write_feedback_state(
+                            "Desktop power repair starter",
                             "Create error",
                             &subtitle,
                         );
