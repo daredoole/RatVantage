@@ -13,6 +13,7 @@ use super::shared::{
 };
 
 const GPU_MODE_CHOICES: &[&str] = &["integrated", "hybrid", "nvidia"];
+const GPU_SWITCHING_EVIDENCE_COMMANDS: &str = "ratvantage-capture-compatibility-bundle --output target/validation/gpu-switching-evidence\nlegion-control-ui --diagnostics\nlegion-control-ui --reset-diagnostics\nlegion-control-ui --overview";
 
 pub fn gpu_page(
     diagnostics: Result<DiagnosticsBundle>,
@@ -80,6 +81,7 @@ fn append_gpu(
     let pending_row = info_row("Pending reboot", &render_gpu_pending_row(&gpu_pending));
     mode.add(&pending_row);
     page.add(&mode);
+    page.add(&build_gpu_switching_evidence_controls());
 
     if let Some(dpm) = &bundle.raw_probe_report.amd_gpu_power_dpm {
         let dpm_group = adw::PreferencesGroup::new();
@@ -112,6 +114,33 @@ fn append_gpu(
         bundle.raw_probe_report.gpu.as_ref(),
         pending_row,
     ));
+}
+
+fn build_gpu_switching_evidence_controls() -> adw::PreferencesGroup {
+    let group = adw::PreferencesGroup::new();
+    group.set_title("GPU Switching Evidence");
+    group.add(&section_note(
+        "Runtime/session GPU switching stays research-only until read-only state, blocker, and display recovery evidence are captured.",
+    ));
+
+    let row = adw::ActionRow::builder()
+        .title("Read-only GPU switching evidence")
+        .subtitle("Copies compatibility, diagnostics, reset, and overview commands; no GPU mode write is sent")
+        .selectable(false)
+        .build();
+    let copy = gtk4::Button::with_label("Copy evidence commands");
+    copy.add_css_class("pill");
+    copy.set_valign(gtk4::Align::Center);
+    copy.connect_clicked(move |_| {
+        if let Some(display) = gtk4::gdk::Display::default() {
+            display
+                .clipboard()
+                .set_text(GPU_SWITCHING_EVIDENCE_COMMANDS);
+        }
+    });
+    row.add_suffix(&copy);
+    group.add(&row);
+    group
 }
 
 fn build_amd_gpu_dpm_controls(

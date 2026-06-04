@@ -15,8 +15,8 @@ use std::rc::Rc;
 
 use super::shared::{
     append_error, clone_result, info_row, make_client, render_dry_run_plan_summary,
-    render_dry_run_recovery_summary, request_dashboard_refresh, selected_dropdown_value,
-    spawn_dbus_call,
+    render_dry_run_recovery_summary, request_dashboard_refresh, section_note,
+    selected_dropdown_value, spawn_dbus_call,
 };
 
 const FAN_PRESET_IDS: &[&str] = &["quiet-office", "balanced-daily", "gaming", "max-safe"];
@@ -28,6 +28,7 @@ const SCRATCHPAD_KEY_TEMP_FINE: i32 = 500;
 const SCRATCHPAD_KEY_TEMP_COARSE: i32 = 5000;
 const SCRATCHPAD_KEY_PWM_FINE: i32 = 1;
 const SCRATCHPAD_KEY_PWM_COARSE: i32 = 8;
+const FAN_VALIDATION_EVIDENCE_COMMANDS: &str = "ratvantage-capture-compatibility-bundle --output target/validation/fan-validation-evidence\nlegion-control-ui --fan-curve-live\nlegion-control-ui --last-known-good-fan-curve\nlegion-control-ui --plan-restore-auto-fan";
 
 type ScratchpadChartSelection = Rc<RefCell<Option<usize>>>;
 type ManualFanScratchRows = Rc<RefCell<Vec<(FanCurveHwmonPointPair, gtk4::Entry, gtk4::Entry)>>>;
@@ -142,12 +143,40 @@ fn append_fans(
         last_known_row,
         lkg_points_group,
     ));
+    page.add(&build_fan_validation_evidence_controls());
 
     if !bundle.raw_probe_report.fan_curves.is_empty() {
         append_fan_live_curve_readings(page);
         append_fan_live_vs_saved_compare(page);
         append_manual_fan_curve_scratchpad(page, &bundle.raw_probe_report.fan_curves[0]);
     }
+}
+
+fn build_fan_validation_evidence_controls() -> adw::PreferencesGroup {
+    let group = adw::PreferencesGroup::new();
+    group.set_title("Fan Validation Evidence");
+    group.add(&section_note(
+        "Fan curve execution remains plan-only until live writable curve evidence exists; these commands collect read-only bundle, live, saved, and restore-plan data.",
+    ));
+
+    let row = adw::ActionRow::builder()
+        .title("Read-only fan evidence")
+        .subtitle("Copies compatibility, live curve, saved snapshot, and restore-plan commands without applying fan writes")
+        .selectable(false)
+        .build();
+    let copy = gtk4::Button::with_label("Copy evidence commands");
+    copy.add_css_class("pill");
+    copy.set_valign(gtk4::Align::Center);
+    copy.connect_clicked(move |_| {
+        if let Some(display) = gtk4::gdk::Display::default() {
+            display
+                .clipboard()
+                .set_text(FAN_VALIDATION_EVIDENCE_COMMANDS);
+        }
+    });
+    row.add_suffix(&copy);
+    group.add(&row);
+    group
 }
 
 fn format_fan_snapshot_display(snapshot: &FanCurveSnapshot) -> String {

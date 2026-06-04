@@ -396,6 +396,22 @@ fn dashboard_pages_render_quick_apply_and_gpu_controls() {
     assert!(fans_text
         .iter()
         .any(|text| text == "Re-apply mapped fan preset after resume"));
+    assert!(fans_text
+        .iter()
+        .any(|text| text == "Fan Validation Evidence"));
+    assert!(fans_text.iter().any(|text| {
+        text.contains("Fan curve execution remains plan-only")
+            && text.contains("live writable curve evidence")
+    }));
+    assert!(fans_text
+        .iter()
+        .any(|text| text == "Read-only fan evidence"));
+    assert!(fans_text.iter().any(|text| {
+        text.contains("live curve")
+            && text.contains("saved snapshot")
+            && text.contains("restore-plan")
+    }));
+    assert!(find_button_by_label(&fans.clone().upcast(), "Copy evidence commands").is_some());
 
     let gpu_text = collect_widget_text(&gpu.clone().upcast());
     assert!(gpu_text.iter().any(|text| text == "GPU"));
@@ -437,6 +453,18 @@ fn dashboard_pages_render_quick_apply_and_gpu_controls() {
     assert!(gpu_text.iter().any(|text| text == "Execution model"));
     assert!(gpu_text.iter().any(|text| text == "Runtime plan"));
     assert!(gpu_text.iter().any(|text| text == "Pending reboot"));
+    assert!(gpu_text.iter().any(|text| text == "GPU Switching Evidence"));
+    assert!(gpu_text.iter().any(|text| {
+        text.contains("Runtime/session GPU switching stays research-only")
+            && text.contains("display recovery evidence")
+    }));
+    assert!(gpu_text
+        .iter()
+        .any(|text| text == "Read-only GPU switching evidence"));
+    assert!(gpu_text.iter().any(|text| {
+        text.contains("compatibility") && text.contains("reset") && text.contains("overview")
+    }));
+    assert!(find_button_by_label(&gpu.clone().upcast(), "Copy evidence commands").is_some());
     assert!(gpu_text.iter().any(|text| text == "Target mode"));
     assert!(gpu_text.iter().any(|text| text == "Confirm GPU switch"));
     assert!(
