@@ -136,6 +136,7 @@ scripts/test-compare-keyboard-rgb-evidence.sh >/tmp/ratvantage-keyboard-rgb-comp
 scripts/test-check-keyboard-rgb-openrgb.sh >/tmp/ratvantage-keyboard-rgb-openrgb-test.txt
 scripts/test-setup-keyboard-rgb-openrgb-access.sh >/tmp/ratvantage-keyboard-rgb-openrgb-access-test.txt
 scripts/test-capture-compatibility-bundle.sh >/tmp/ratvantage-compatibility-bundle-test.txt
+scripts/test-capture-gpu-mux-evidence.sh >/tmp/ratvantage-gpu-mux-evidence-test.txt
 scripts/test-install-user-session-metadata.sh >/tmp/ratvantage-install-user-session-metadata-test.txt
 scripts/test-rgb-helper-packaging-metadata.sh >/tmp/ratvantage-rgb-helper-packaging-metadata-test.txt
 scripts/test-dev-daemon-args.sh >/tmp/ratvantage-dev-daemon-args-test.txt

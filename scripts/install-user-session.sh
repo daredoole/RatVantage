@@ -55,6 +55,8 @@ install -m0755 "$repo_root/scripts/openrgb-sdk-server-session.sh" \
   "$HOME/.local/bin/ratvantage-openrgb-sdk-server"
 install -m0755 "$repo_root/scripts/capture-compatibility-bundle.sh" \
   "$HOME/.local/bin/ratvantage-capture-compatibility-bundle"
+install -m0755 "$repo_root/scripts/capture-gpu-mux-evidence.sh" \
+  "$HOME/.local/bin/ratvantage-capture-gpu-mux-evidence"
 cat >"$HOME/.local/bin/legion-control-tray-launch" <<EOF
 #!/usr/bin/env bash
 set -euo pipefail

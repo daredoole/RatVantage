@@ -462,7 +462,10 @@ fn dashboard_pages_render_quick_apply_and_gpu_controls() {
         .iter()
         .any(|text| text == "Read-only GPU switching evidence"));
     assert!(gpu_text.iter().any(|text| {
-        text.contains("compatibility") && text.contains("reset") && text.contains("overview")
+        text.contains("compatibility")
+            && text.contains("mux-only")
+            && text.contains("reset")
+            && text.contains("overview")
     }));
     assert!(find_button_by_label(&gpu.clone().upcast(), "Copy evidence commands").is_some());
     assert!(gpu_text.iter().any(|text| text == "Target mode"));

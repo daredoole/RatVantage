@@ -47,7 +47,7 @@ Requires:       python3
 
 %description helpers
 Support helpers for read-only compatibility bundles, keyboard RGB evidence,
-OpenRGB readiness checks, and the user-session OpenRGB SDK server/client path.
+GPU switching evidence, OpenRGB readiness checks, and the user-session OpenRGB SDK server/client path.
 The access setup fallback must still be run explicitly with administrator
 authorization; no setuid helper is packaged.
 
@@ -104,6 +104,8 @@ install -Dpm0755 scripts/openrgb-sdk-server-session.sh \
     %{buildroot}%{_bindir}/ratvantage-openrgb-sdk-server
 install -Dpm0755 scripts/capture-compatibility-bundle.sh \
     %{buildroot}%{_bindir}/ratvantage-capture-compatibility-bundle
+install -Dpm0755 scripts/capture-gpu-mux-evidence.sh \
+    %{buildroot}%{_bindir}/ratvantage-capture-gpu-mux-evidence
 
 install -Dpm0644 data/systemd/legion-control-daemon.service \
     %{buildroot}%{_unitdir}/legion-control-daemon.service
@@ -164,6 +166,7 @@ appstreamcli validate --no-net %{buildroot}%{_datadir}/metainfo/org.ratvantage.L
 %{_bindir}/ratvantage-openrgb-keyboard-rgb-sdk-helper
 %{_bindir}/ratvantage-openrgb-sdk-server
 %{_bindir}/ratvantage-capture-compatibility-bundle
+%{_bindir}/ratvantage-capture-gpu-mux-evidence
 
 %files ui
 %{_bindir}/legion-control-ui
