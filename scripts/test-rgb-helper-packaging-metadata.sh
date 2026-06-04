@@ -26,6 +26,7 @@ helpers = {
     "ratvantage-openrgb-sdk-server": True,
     "ratvantage-capture-compatibility-bundle": True,
     "ratvantage-capture-gpu-mux-evidence": True,
+    "ratvantage-review-gpu-mux-evidence": True,
 }
 
 if "%package helpers" not in spec or "%files helpers" not in spec:

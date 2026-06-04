@@ -106,6 +106,8 @@ install -Dpm0755 scripts/capture-compatibility-bundle.sh \
     %{buildroot}%{_bindir}/ratvantage-capture-compatibility-bundle
 install -Dpm0755 scripts/capture-gpu-mux-evidence.sh \
     %{buildroot}%{_bindir}/ratvantage-capture-gpu-mux-evidence
+install -Dpm0755 scripts/review-gpu-mux-evidence.sh \
+    %{buildroot}%{_bindir}/ratvantage-review-gpu-mux-evidence
 
 install -Dpm0644 data/systemd/legion-control-daemon.service \
     %{buildroot}%{_unitdir}/legion-control-daemon.service
@@ -167,6 +169,7 @@ appstreamcli validate --no-net %{buildroot}%{_datadir}/metainfo/org.ratvantage.L
 %{_bindir}/ratvantage-openrgb-sdk-server
 %{_bindir}/ratvantage-capture-compatibility-bundle
 %{_bindir}/ratvantage-capture-gpu-mux-evidence
+%{_bindir}/ratvantage-review-gpu-mux-evidence
 
 %files ui
 %{_bindir}/legion-control-ui

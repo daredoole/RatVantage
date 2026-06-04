@@ -464,6 +464,7 @@ fn dashboard_pages_render_quick_apply_and_gpu_controls() {
     assert!(gpu_text.iter().any(|text| {
         text.contains("compatibility")
             && text.contains("mux-only")
+            && text.contains("review")
             && text.contains("reset")
             && text.contains("overview")
     }));

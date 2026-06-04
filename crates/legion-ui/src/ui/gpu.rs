@@ -13,7 +13,7 @@ use super::shared::{
 };
 
 const GPU_MODE_CHOICES: &[&str] = &["integrated", "hybrid", "nvidia"];
-const GPU_SWITCHING_EVIDENCE_COMMANDS: &str = "ratvantage-capture-compatibility-bundle --output target/validation/gpu-switching-evidence\nratvantage-capture-gpu-mux-evidence --phase mux-only --output target/validation/gpu-mux-evidence\nlegion-control-ui --diagnostics\nlegion-control-ui --reset-diagnostics\nlegion-control-ui --overview";
+const GPU_SWITCHING_EVIDENCE_COMMANDS: &str = "ratvantage-capture-compatibility-bundle --output target/validation/gpu-switching-evidence\nratvantage-capture-gpu-mux-evidence --phase mux-only --output target/validation/gpu-mux-evidence\nratvantage-review-gpu-mux-evidence target/validation/gpu-mux-evidence\nlegion-control-ui --diagnostics\nlegion-control-ui --reset-diagnostics\nlegion-control-ui --overview";
 
 pub fn gpu_page(
     diagnostics: Result<DiagnosticsBundle>,
@@ -125,7 +125,7 @@ fn build_gpu_switching_evidence_controls() -> adw::PreferencesGroup {
 
     let row = adw::ActionRow::builder()
         .title("Read-only GPU switching evidence")
-        .subtitle("Copies compatibility, mux-only, diagnostics, reset, and overview commands; no GPU mode write is sent")
+        .subtitle("Copies compatibility, mux-only, review, diagnostics, reset, and overview commands; no GPU mode write is sent")
         .selectable(false)
         .build();
     let copy = gtk4::Button::with_label("Copy evidence commands");

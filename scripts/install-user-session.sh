@@ -57,6 +57,8 @@ install -m0755 "$repo_root/scripts/capture-compatibility-bundle.sh" \
   "$HOME/.local/bin/ratvantage-capture-compatibility-bundle"
 install -m0755 "$repo_root/scripts/capture-gpu-mux-evidence.sh" \
   "$HOME/.local/bin/ratvantage-capture-gpu-mux-evidence"
+install -m0755 "$repo_root/scripts/review-gpu-mux-evidence.sh" \
+  "$HOME/.local/bin/ratvantage-review-gpu-mux-evidence"
 cat >"$HOME/.local/bin/legion-control-tray-launch" <<EOF
 #!/usr/bin/env bash
 set -euo pipefail
