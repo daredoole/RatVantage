@@ -2017,6 +2017,33 @@ fn fan_preset_plan_cli_prints_read_only_write_preview_json() {
 }
 
 #[test]
+fn gpu_runtime_plan_cli_reaches_read_only_daemon_gate() {
+    let (_bus, _service_connection, address) = fixture_service();
+    let client = LegionControlClient::address(&address).unwrap();
+    let error = client
+        .plan_gpu_mode_runtime_write("integrated")
+        .unwrap_err()
+        .to_string();
+    assert!(error.contains("gpu_runtime"));
+
+    let output = Command::new(env!("CARGO_BIN_EXE_legion-control-ui"))
+        .args([
+            "--plan-gpu-mode-runtime",
+            "integrated",
+            "--bus-address",
+            &address,
+        ])
+        .output()
+        .unwrap();
+
+    assert!(!output.status.success());
+    assert!(output.stdout.is_empty());
+    assert!(String::from_utf8(output.stderr)
+        .unwrap()
+        .contains("gpu_runtime"));
+}
+
+#[test]
 fn restore_auto_fan_plan_cli_prints_read_only_write_preview_json() {
     let (_bus, _service_connection, address) = runtime_fixture_service();
     let client = LegionControlClient::address(&address).unwrap();

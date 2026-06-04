@@ -2156,6 +2156,10 @@ impl LegionControlClient {
         self.call_json_arg("PlanGpuModeWrite", requested)
     }
 
+    pub fn plan_gpu_mode_runtime_write(&self, requested: &str) -> Result<WriteDryRunPlan> {
+        self.call_json_arg("PlanGpuModeRuntimeWrite", requested)
+    }
+
     pub fn set_gpu_mode(&self, requested: &str) -> Result<WriteExecutionResult> {
         self.call_json_arg("SetGpuMode", requested)
     }

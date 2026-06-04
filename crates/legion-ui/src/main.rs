@@ -133,6 +133,9 @@ struct Args {
     plan_gpu_mode: Option<String>,
 
     #[arg(long, value_name = "MODE")]
+    plan_gpu_mode_runtime: Option<String>,
+
+    #[arg(long, value_name = "MODE")]
     set_gpu_mode: Option<String>,
 
     #[arg(long, value_name = "PRESET_ID")]
@@ -276,6 +279,7 @@ fn main() -> Result<()> {
         args.plan_amd_gpu_dpm_force_level.is_some(),
         args.set_amd_gpu_dpm_force_level.is_some(),
         args.plan_gpu_mode.is_some(),
+        args.plan_gpu_mode_runtime.is_some(),
         args.set_gpu_mode.is_some(),
         args.plan_fan_preset.is_some(),
         args.plan_custom_thermal_fan_preset.is_some(),
@@ -409,6 +413,8 @@ fn main() -> Result<()> {
             print_json(&client.set_amd_gpu_dpm_force_level(&requested)?)?;
         } else if let Some(mode) = args.plan_gpu_mode {
             print_write_plan(&client.plan_gpu_mode_write(&mode)?)?;
+        } else if let Some(mode) = args.plan_gpu_mode_runtime {
+            print_write_plan(&client.plan_gpu_mode_runtime_write(&mode)?)?;
         } else if let Some(mode) = args.set_gpu_mode {
             print_json(&client.set_gpu_mode(&mode)?)?;
         } else if let Some(preset_id) = args.plan_fan_preset {
