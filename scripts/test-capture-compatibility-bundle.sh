@@ -23,7 +23,7 @@ case "${1:-}" in
     echo "keyboard_rgb_status=research_candidates=0 backend_ready=false"
     ;;
   --diagnostics)
-    echo '{"summary":{"capability_count":1},"hardware_profile_drift":{"status":"drifted","profile_id":"rgb_breathing_blue","checked_count":1,"drifted_count":1,"items":[{"action_id":"keyboard_rgb","method":"SetOpenRgbKeyboardRgbSdk","requested_value":"Breathing #333333","readback_value":"Breathing #333333","current_value":"Direct #000000","status":"drifted","detail":"current value differs"}]},"fan_curve_drift":{"status":"drifted","curve_id":"quiet-office","checked_count":1,"drifted_count":1,"detail":"Live fan curve differs","items":[{"path":"hwmon0/pwm1_auto_point1_pwm","saved_value":"80","live_value":"100","status":"drifted"}]},"gpu_switching":{"status":"runtime_mux_research_blocked","provider":"fixture-mux","current_mode":"hybrid","switch_type":"runtime-mux","execution_model":"runtime_mux","runtime_plan_available":false,"blockers":["no dedicated runtime mux backend exists yet","no automatic display recovery evidence has been captured"],"evidence":["provider=fixture-mux","current_mode=hybrid"],"next_action":"capture read-only mux state and recovery evidence before adding a switch plan"}}'
+    echo '{"summary":{"capability_count":1},"hardware_profile_drift":{"status":"drifted","profile_id":"rgb_breathing_blue","checked_count":1,"drifted_count":1,"items":[{"action_id":"keyboard_rgb","method":"SetOpenRgbKeyboardRgbSdk","requested_value":"Breathing #333333","readback_value":"Breathing #333333","current_value":"Direct #000000","status":"drifted","detail":"current value differs"}]},"fan_curve_drift":{"status":"drifted","curve_id":"quiet-office","checked_count":1,"drifted_count":1,"detail":"Live fan curve differs","items":[{"path":"hwmon0/pwm1_auto_point1_pwm","saved_value":"80","live_value":"100","status":"drifted"}]},"gpu_switching":{"status":"runtime_candidate_blocked","provider":"envycontrol","current_mode":"hybrid","switch_type":"reboot-required","execution_model":"runtime_candidate","runtime_plan_available":false,"blockers":["gpu_runtime candidate is detected but not promoted","strict GPU mux/session evidence review has not accepted this path"],"evidence":["gpu_runtime_candidate_modes=integrated","gpu_runtime_promotion_ready=false","gpu_runtime_current_mode=hybrid"],"next_action":"run ratvantage-review-gpu-mux-evidence --require-session-restart-confirmed before promoting runtime planning"}}'
     ;;
   --automation-diagnostics)
     if [[ "${RATVANTAGE_TEST_EMPTY_AUTOMATION:-0}" == "1" ]]; then
@@ -220,14 +220,15 @@ grep -q '"action_id": "keyboard_rgb"' "$out/compatibility-bundle.json"
 grep -q '"current_value": "Direct #000000"' "$out/compatibility-bundle.json"
 grep -q '"path": "hwmon0/pwm1_auto_point1_pwm"' "$out/compatibility-bundle.json"
 grep -q '"live_value": "100"' "$out/compatibility-bundle.json"
-grep -q '"status": "runtime_mux_research_blocked"' "$out/compatibility-bundle.json"
-grep -q '"switch_type": "runtime-mux"' "$out/compatibility-bundle.json"
+grep -q '"status": "runtime_candidate_blocked"' "$out/compatibility-bundle.json"
+grep -q '"switch_type": "reboot-required"' "$out/compatibility-bundle.json"
 grep -q '"runtime_plan_available": false' "$out/compatibility-bundle.json"
-grep -q "display recovery evidence" "$out/compatibility-bundle.json"
+grep -q "gpu_runtime_candidate_modes=integrated" "$out/compatibility-bundle.json"
+grep -q "gpu_runtime_promotion_ready=false" "$out/compatibility-bundle.json"
 grep -q "keyboard_rgb_status=research_candidates=0" "$out/logs/overview.stdout"
 grep -q "hardware_profile_drift" "$out/logs/diagnostics.stdout"
 grep -q "fan_curve_drift" "$out/logs/diagnostics.stdout"
-grep -q "runtime_mux_research_blocked" "$out/logs/diagnostics.stdout"
+grep -q "runtime_candidate_blocked" "$out/logs/diagnostics.stdout"
 grep -q "hardware_profiles" "$out/logs/automation-diagnostics.stdout"
 grep -q "quiet_below_30" "$out/logs/automation-diagnostics.stdout"
 grep -q "recent_platform_profile_changes" "$out/logs/automation-diagnostics.stdout"
@@ -253,9 +254,9 @@ grep -q "high_value_gpu_switching" "$out/compatibility-bundle.md"
 grep -q "high_value_gpu_mux" "$out/compatibility-bundle.md"
 grep -q "high_value_automation" "$out/compatibility-bundle.md"
 grep -q "gpu_switching_next_action" "$out/compatibility-bundle.md"
-grep -q "capture read-only mux state and recovery evidence" "$out/compatibility-bundle.md"
+grep -q "ratvantage-review-gpu-mux-evidence" "$out/compatibility-bundle.md"
 grep -q "gpu_switching_first_blocker" "$out/compatibility-bundle.md"
-grep -q "no dedicated runtime mux backend exists yet" "$out/compatibility-bundle.md"
+grep -q "gpu_runtime candidate is detected but not promoted" "$out/compatibility-bundle.md"
 grep -q 'gpu_mux_current_mode: `hybrid`' "$out/compatibility-bundle.md"
 grep -q 'gpu_mux_first_d3cold: `0000:01:00.0  driver=nvidia  d3cold_allowed=1`' "$out/compatibility-bundle.md"
 grep -q 'hardware_profile_drift: `drifted (1/1)`' "$out/compatibility-bundle.md"

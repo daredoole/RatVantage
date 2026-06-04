@@ -344,10 +344,63 @@ fn gpu_switching_diagnostics(report: &CapabilityRegistry) -> GpuSwitchingDiagnos
         };
     };
 
-    let mut evidence = gpu.switch_notes.clone();
+    let gpu_runtime = report.gpu_runtime.as_ref();
+    let mut evidence = Vec::new();
+    if let Some(runtime) = gpu_runtime {
+        let modes = if runtime.candidate_runtime_modes.is_empty() {
+            "none".to_owned()
+        } else {
+            runtime.candidate_runtime_modes.join("|")
+        };
+        evidence.push(format!("gpu_runtime_candidate_modes={modes}"));
+        evidence.push(format!(
+            "gpu_runtime_promotion_ready={}",
+            runtime.promotion_ready
+        ));
+        evidence.push(format!("gpu_runtime_current_mode={}", runtime.current_mode));
+        for item in &runtime.evidence {
+            evidence.push(format!("gpu_runtime_evidence={item}"));
+        }
+    }
+    evidence.extend(gpu.switch_notes.clone());
     evidence.push(format!("provider={}", gpu.provider));
     if let Some(mode) = &gpu.mode {
         evidence.push(format!("current_mode={mode}"));
+    }
+
+    if let Some(runtime) = gpu_runtime {
+        if !runtime.promotion_ready {
+            return GpuSwitchingDiagnostics {
+                status: "runtime_candidate_blocked".to_owned(),
+                provider: Some(gpu.provider.clone()),
+                current_mode: gpu.mode.clone(),
+                switch_type: format_gpu_switch_type(gpu.switch_type).to_owned(),
+                execution_model: "runtime_candidate".to_owned(),
+                runtime_plan_available: false,
+                blockers: vec![
+                    "gpu_runtime candidate is detected but not promoted".to_owned(),
+                    "strict GPU mux/session evidence review has not accepted this path".to_owned(),
+                    "runtime execution remains disabled in the daemon".to_owned(),
+                ],
+                evidence,
+                next_action:
+                    "run ratvantage-review-gpu-mux-evidence --require-session-restart-confirmed before promoting runtime planning"
+                        .to_owned(),
+            };
+        }
+        return GpuSwitchingDiagnostics {
+            status: "runtime_candidate_plan_ready".to_owned(),
+            provider: Some(gpu.provider.clone()),
+            current_mode: gpu.mode.clone(),
+            switch_type: format_gpu_switch_type(gpu.switch_type).to_owned(),
+            execution_model: "runtime_candidate".to_owned(),
+            runtime_plan_available: true,
+            blockers: vec!["runtime execution remains disabled in the daemon".to_owned()],
+            evidence,
+            next_action:
+                "review PlanGpuModeRuntimeWrite output; do not add execution until rollback/read-back evidence exists"
+                    .to_owned(),
+        };
     }
 
     match gpu.switch_type {
@@ -1298,6 +1351,7 @@ fn detected_sysfs_paths(report: &CapabilityRegistry) -> Vec<String> {
 #[allow(clippy::items_after_test_module)]
 mod tests {
     use super::*;
+    use legion_common::GpuRuntimeCapability;
     use legion_common::{
         Capability, CapabilityRegistry, CapabilityStatus, FanCurvePointSnapshot, FanCurveSnapshot,
         GpuCapability, HardwareProfileApplyActionResult, HardwareProfileApplyRun, HardwareSummary,
@@ -1455,6 +1509,79 @@ mod tests {
             .evidence
             .iter()
             .any(|item| item == "provider=runtime-mux-fixture"));
+    }
+
+    #[test]
+    fn gpu_switching_diagnostics_surfaces_unpromoted_runtime_candidate() {
+        let report = CapabilityRegistry {
+            gpu: Some(GpuCapability {
+                provider: "envycontrol".to_owned(),
+                status: CapabilityStatus::ProbeOnly,
+                mode: Some("hybrid".to_owned()),
+                switch_type: GpuSwitchType::RebootRequired,
+                switch_notes: vec!["reboot baseline is still available".to_owned()],
+            }),
+            gpu_runtime: Some(GpuRuntimeCapability {
+                status: CapabilityStatus::ProbeOnly,
+                current_mode: "hybrid".to_owned(),
+                candidate_runtime_modes: vec!["integrated".to_owned()],
+                promotion_ready: false,
+                evidence: vec!["/sys/bus/pci/rescan exists".to_owned()],
+            }),
+            ..Default::default()
+        };
+
+        let diagnostics = gpu_switching_diagnostics(&report);
+
+        assert_eq!(diagnostics.status, "runtime_candidate_blocked");
+        assert_eq!(diagnostics.execution_model, "runtime_candidate");
+        assert!(!diagnostics.runtime_plan_available);
+        assert!(diagnostics
+            .blockers
+            .iter()
+            .any(|blocker| blocker.contains("not promoted")));
+        assert!(diagnostics
+            .evidence
+            .iter()
+            .any(|item| item == "gpu_runtime_candidate_modes=integrated"));
+        assert!(diagnostics
+            .evidence
+            .iter()
+            .any(|item| item == "gpu_runtime_promotion_ready=false"));
+        assert!(diagnostics
+            .next_action
+            .contains("ratvantage-review-gpu-mux-evidence"));
+    }
+
+    #[test]
+    fn gpu_switching_diagnostics_marks_promoted_runtime_candidate_plan_ready() {
+        let report = CapabilityRegistry {
+            gpu: Some(GpuCapability {
+                provider: "envycontrol".to_owned(),
+                status: CapabilityStatus::ProbeOnly,
+                mode: Some("hybrid".to_owned()),
+                switch_type: GpuSwitchType::RebootRequired,
+                switch_notes: vec![],
+            }),
+            gpu_runtime: Some(GpuRuntimeCapability {
+                status: CapabilityStatus::ProbeOnly,
+                current_mode: "hybrid".to_owned(),
+                candidate_runtime_modes: vec!["integrated".to_owned()],
+                promotion_ready: true,
+                evidence: vec!["strict reviewer accepted live mux evidence".to_owned()],
+            }),
+            ..Default::default()
+        };
+
+        let diagnostics = gpu_switching_diagnostics(&report);
+
+        assert_eq!(diagnostics.status, "runtime_candidate_plan_ready");
+        assert!(diagnostics.runtime_plan_available);
+        assert_eq!(diagnostics.execution_model, "runtime_candidate");
+        assert!(diagnostics
+            .blockers
+            .iter()
+            .any(|blocker| blocker.contains("execution remains disabled")));
     }
 
     #[test]
