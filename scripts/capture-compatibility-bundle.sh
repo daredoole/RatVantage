@@ -364,6 +364,9 @@ def high_value_automation_summary():
         "recent_platform_profile_change_count": map_count(
             automation.get("recent_platform_profile_changes")
         ),
+        "recent_desktop_power_profile_change_count": map_count(
+            automation.get("recent_desktop_power_profile_changes")
+        ),
     }
     first_rule = first_map_item_summary(
         automation.get("automation_rules"),
@@ -383,6 +386,12 @@ def high_value_automation_summary():
     )
     if first_change is not None:
         summary["first_recent_platform_profile_change"] = first_change
+    first_desktop_power_change = first_map_item_summary(
+        automation.get("recent_desktop_power_profile_changes"),
+        ("previous_profile", "current_profile", "source", "timestamp_unix_secs"),
+    )
+    if first_desktop_power_change is not None:
+        summary["first_recent_desktop_power_profile_change"] = first_desktop_power_change
     last_apply = automation.get("last_hardware_profile_apply")
     if isinstance(last_apply, dict):
         summary["last_hardware_profile_apply"] = {
@@ -477,6 +486,7 @@ pr_lines = [
     f"- gpu_switching: `{report['high_value_gpu_switching'].get('status', 'unknown')}`",
     f"- automation_rules: `{report['high_value_automation'].get('automation_rule_count', 0)}`",
     f"- recent_profile_changes: `{report['high_value_automation'].get('recent_platform_profile_change_count', 0)}`",
+    f"- recent_desktop_power_changes: `{report['high_value_automation'].get('recent_desktop_power_profile_change_count', 0)}`",
     "",
     "### Safety",
     "- Read-only capture only.",
