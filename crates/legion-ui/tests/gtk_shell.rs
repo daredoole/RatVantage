@@ -589,6 +589,18 @@ fn automations_page_renders_ac_profile_router_rules() {
             },
         },
     );
+    diagnostics.automation_rules.insert(
+        "periodic_idle_correction".to_owned(),
+        AutomationRule {
+            schema_version: 1,
+            label: "Periodic idle correction".to_owned(),
+            enabled: true,
+            kind: AutomationRuleKind::PeriodicIdle {
+                profile_id: "on_battery".to_owned(),
+                cooldown_secs: 1800,
+            },
+        },
+    );
     diagnostics
         .recent_platform_profile_changes
         .push(PlatformProfileChangeEvent {
@@ -615,6 +627,10 @@ fn automations_page_renders_ac_profile_router_rules() {
     assert!(text
         .iter()
         .any(|value| value == "Desktop power profile changed"));
+    assert!(text
+        .iter()
+        .any(|value| value == "Periodic idle correction starter"));
+    assert!(text.iter().any(|value| value == "Periodic idle correction"));
     assert!(text
         .iter()
         .any(|value| value == "Recent Platform Profile Changes"));

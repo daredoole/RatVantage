@@ -2817,6 +2817,13 @@ impl LegionControl {
                     )));
                 }
             }
+            AutomationRuleKind::PeriodicIdle { profile_id, .. } => {
+                if !state.hardware_profiles.contains_key(profile_id) {
+                    return Err(fdo::Error::InvalidArgs(format!(
+                        "hardware profile `{profile_id}` is not stored"
+                    )));
+                }
+            }
         }
         state.automation_rules.insert(rule_id.to_owned(), rule);
         save_state(&self.state_path, &state)
@@ -3090,6 +3097,13 @@ impl LegionControl {
                         "battery {capacity}% is at or above threshold {threshold_percent}%; selecting profile"
                     )
                 };
+                evaluation.selected_profile_id = Some(profile_id.clone());
+                evaluation.profile_preview = Some(self.hardware_profile_apply_preview(profile_id)?);
+            }
+            AutomationRuleKind::PeriodicIdle { profile_id, .. } => {
+                evaluation.matched = true;
+                evaluation.reason =
+                    "periodic idle correction selected the configured profile".to_owned();
                 evaluation.selected_profile_id = Some(profile_id.clone());
                 evaluation.profile_preview = Some(self.hardware_profile_apply_preview(profile_id)?);
             }
@@ -4024,6 +4038,7 @@ pub fn handle_automation_observer_tick(
             AutomationRuleKind::FastChargeUntilThreshold { cooldown_secs, .. } => *cooldown_secs,
             AutomationRuleKind::AcProfileRouter { cooldown_secs, .. } => *cooldown_secs,
             AutomationRuleKind::BatteryProfileThreshold { cooldown_secs, .. } => *cooldown_secs,
+            AutomationRuleKind::PeriodicIdle { cooldown_secs, .. } => *cooldown_secs,
         };
         let run = ctl
             .apply_automation_rule_with_cooldown(

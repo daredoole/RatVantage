@@ -85,10 +85,11 @@ is enabled: if the durable pending GPU mode matches the current EnvyControl
 probe after reboot, the daemon clears pending state and applies the mapped
 hardware profile trigger through the existing profile-apply policy path.
 
-Needed additions:
+Latest addition:
 
-- Battery threshold trigger, sampled from `BAT*` capacity/status.
-- Periodic idle trigger with cooldown, for state correction.
+- Periodic idle correction rules are now daemon-owned automation rules:
+  the observer selects the configured hardware profile every tick and uses the
+  rule cooldown to avoid repeated same-profile applies.
 
 Each trigger should be daemon-owned. The GTK UI configures mappings; it should
 not run background hardware writes itself.

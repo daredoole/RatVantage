@@ -3258,6 +3258,105 @@ fn battery_threshold_automation_selects_profile() {
 }
 
 #[test]
+fn periodic_idle_automation_reapplies_profile_with_cooldown() {
+    let fixture = copied_fixture_root("automation-periodic-idle");
+    let state_path = unique_state_path("automation-periodic-idle");
+    let service = LegionControl::new_with_runtime(
+        ProbeOptions {
+            sysfs_root: fixture.clone(),
+        },
+        &state_path,
+        WriteAccessPolicy {
+            platform_profile_enabled: true,
+            hardware_profile_apply_enabled: true,
+            ..Default::default()
+        },
+        Arc::new(AllowAllAuthorizer),
+        Arc::new(RealFixturePlatformProfileWriter),
+        Arc::new(RealFixtureBatteryChargeTypeWriter),
+        Arc::new(RealFixtureLedStateWriter),
+        Arc::new(RealFixtureIdeapadToggleWriter),
+        Arc::new(NoOpCpuGovernorWriter),
+        Arc::new(NoOpCpuEppWriter),
+    );
+    let repair_profile = serde_json::json!({
+        "schema_version": 1,
+        "label": "Periodic repair",
+        "actions": {
+            "platform_profile": "low-power"
+        }
+    })
+    .to_string();
+    service
+        .set_hardware_profile("periodic_repair", &repair_profile)
+        .unwrap();
+    let rule = serde_json::json!({
+        "schema_version": 1,
+        "label": "Periodic idle correction",
+        "enabled": true,
+        "kind": "periodic_idle",
+        "profile_id": "periodic_repair",
+        "cooldown_secs": 300
+    })
+    .to_string();
+    service
+        .set_automation_rule("periodic_idle_correction", &rule)
+        .unwrap();
+
+    let preview = service
+        .automation_rule_preview("periodic_idle_correction")
+        .unwrap();
+    assert!(preview.matched);
+    assert_eq!(
+        preview.selected_profile_id.as_deref(),
+        Some("periodic_repair")
+    );
+    assert!(preview.reason.contains("periodic idle correction"));
+
+    let runs = legion_control_daemon::handle_automation_observer_tick(
+        &state_path,
+        &ProbeOptions {
+            sysfs_root: fixture.clone(),
+        },
+        WriteAccessPolicy {
+            platform_profile_enabled: true,
+            hardware_profile_apply_enabled: true,
+            ..Default::default()
+        },
+        300,
+    )
+    .unwrap();
+    assert_eq!(runs.len(), 1);
+    assert!(runs[0].profile_run.as_ref().unwrap().completed);
+    assert_eq!(
+        fs::read_to_string(fixture.join("sys/firmware/acpi/platform_profile"))
+            .unwrap()
+            .trim(),
+        "low-power"
+    );
+
+    let runs = legion_control_daemon::handle_automation_observer_tick(
+        &state_path,
+        &ProbeOptions {
+            sysfs_root: fixture.clone(),
+        },
+        WriteAccessPolicy {
+            platform_profile_enabled: true,
+            hardware_profile_apply_enabled: true,
+            ..Default::default()
+        },
+        300,
+    )
+    .unwrap();
+    assert_eq!(runs.len(), 1);
+    assert!(runs[0].profile_run.is_none());
+    assert!(runs[0].evaluation.reason.contains("cooldown"));
+
+    let _ = fs::remove_file(state_path);
+    let _ = fs::remove_dir_all(fixture);
+}
+
+#[test]
 fn ac_profile_router_rule_selects_profile_from_ac_telemetry() {
     let fixture = copied_fixture_root("automation-ac-profile-router");
     let state_path = unique_state_path("automation-ac-profile-router");

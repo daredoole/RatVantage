@@ -237,6 +237,11 @@ pub enum AutomationRuleKind {
         #[serde(default = "default_automation_cooldown_secs")]
         cooldown_secs: u64,
     },
+    PeriodicIdle {
+        profile_id: String,
+        #[serde(default = "default_automation_cooldown_secs")]
+        cooldown_secs: u64,
+    },
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -2255,6 +2260,19 @@ pub fn validate_automation_rule(rule: &AutomationRule) -> Result<(), ValidationE
                     reason: "threshold_percent must be 1..=100".to_owned(),
                 });
             }
+            validate_hardware_profile_id(profile_id)?;
+            if *cooldown_secs > 86_400 {
+                return Err(ValidationError::BlockedChoice {
+                    capability_id: "automation_rules:cooldown_secs".to_owned(),
+                    requested: cooldown_secs.to_string(),
+                    reason: "cooldown_secs must be 0..=86400".to_owned(),
+                });
+            }
+        }
+        AutomationRuleKind::PeriodicIdle {
+            profile_id,
+            cooldown_secs,
+        } => {
             validate_hardware_profile_id(profile_id)?;
             if *cooldown_secs > 86_400 {
                 return Err(ValidationError::BlockedChoice {
