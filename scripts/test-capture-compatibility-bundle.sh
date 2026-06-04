@@ -28,7 +28,7 @@ case "${1:-}" in
     echo '{"hardware_profiles":{"quiet_battery":{"label":"Quiet battery"}},"hardware_profile_triggers":{"ac_unplugged":"quiet_battery","desktop_power_profile_changed":"quiet_battery"},"automation_rules":{"quiet_below_30":{"profile_id":"quiet_battery","enabled":true,"trigger_kind":"battery_threshold","cooldown_seconds":600}},"last_automation_rule_apply":{"quiet_below_30":{"rule_id":"quiet_below_30","selected_profile_id":"quiet_battery","completed":true,"message":"profile applied","timestamp_unix_secs":42}},"recent_platform_profile_changes":[{"previous_profile":"balanced","current_profile":"performance","source":"firmware","timestamp_unix_secs":41}],"recent_desktop_power_profile_changes":[{"previous_profile":"balanced","current_profile":"power-saver","source":"desktop_power_profile_observer","timestamp_unix_secs":43}],"last_hardware_profile_apply":{"profile_id":"quiet_battery","profile_label":"Quiet battery","completed":true,"message":"all actions applied","timestamp_unix_secs":40}}'
     ;;
   --reset-diagnostics)
-    echo '{"curve_optimizer_all_core_reset":{"ok":true},"keyboard_rgb_sdk_recovery":{"ok":true,"value":{"available":true,"current_mode":"Breathing","current_colors":{"left":"#112233"},"recovery_note":"read-only"}},"gpu_mode_pending_recovery":{"ok":true,"value":{"pending":{"requested_mode":"hybrid","previous_mode":"nvidia","reboot_required":true},"clear_command":"legion-control-ui --clear-gpu-mode-pending"}},"gpu_switching_recovery":{"ok":true,"value":{"available":true,"status":"reboot_required","current_mode":"hybrid","switch_type":"reboot-required","steps":["reboot"]}}}'
+    echo '{"curve_optimizer_all_core_reset":{"ok":true,"plan_command":"legion-control-ui --plan-curve-optimizer-all-core 0","execute_command":"legion-control-ui --reset-curve-optimizer-all-core"},"keyboard_rgb_sdk_recovery":{"ok":true,"value":{"available":true,"current_mode":"Breathing","current_colors":{"left":"#112233"},"plan_command":"legion-control-ui --plan-openrgb-keyboard-rgb-sdk '\''{\"effect\":\"Breathing\"}'\''","recovery_note":"read-only"}},"gpu_mode_pending_recovery":{"ok":true,"value":{"pending":{"requested_mode":"hybrid","previous_mode":"nvidia","reboot_required":true},"clear_command":"legion-control-ui --clear-gpu-mode-pending","verification_command":"legion-control-ui --overview"}},"gpu_switching_recovery":{"ok":true,"value":{"available":true,"status":"reboot_required","current_mode":"hybrid","switch_type":"reboot-required","verification_command":"legion-control-ui --overview","steps":["reboot"]}}}'
     ;;
   *)
     echo "unexpected ui args: $*" >&2
@@ -136,6 +136,11 @@ grep -q '"source": "desktop_power_profile_observer"' "$out/compatibility-bundle.
 grep -q '"last_hardware_profile_apply"' "$out/compatibility-bundle.json"
 grep -q '"keyboard_rgb_sdk_recovery"' "$out/compatibility-bundle.json"
 grep -q '"current_mode": "Breathing"' "$out/compatibility-bundle.json"
+grep -q '"plan_command": "legion-control-ui --plan-curve-optimizer-all-core 0"' "$out/compatibility-bundle.json"
+grep -q '"execute_command": "legion-control-ui --reset-curve-optimizer-all-core"' "$out/compatibility-bundle.json"
+grep -q '"plan_command": "legion-control-ui --plan-openrgb-keyboard-rgb-sdk' "$out/compatibility-bundle.json"
+grep -q '"clear_command": "legion-control-ui --clear-gpu-mode-pending"' "$out/compatibility-bundle.json"
+grep -q '"verification_command": "legion-control-ui --overview"' "$out/compatibility-bundle.json"
 grep -q '"gpu_switching_recovery"' "$out/compatibility-bundle.json"
 grep -q '"status": "reboot_required"' "$out/compatibility-bundle.json"
 grep -q '"switch_type": "reboot-required"' "$out/compatibility-bundle.json"

@@ -249,9 +249,22 @@ def reset_recovery_summary():
         if not isinstance(item, dict):
             continue
         entry = {"ok": item.get("ok")}
+        for item_key in ("plan_command", "execute_command"):
+            if item_key in item:
+                entry[item_key] = item[item_key]
         value = item.get("value")
         if isinstance(value, dict):
-            for value_key in ("available", "status", "current_mode", "switch_type", "reason"):
+            for value_key in (
+                "available",
+                "status",
+                "current_mode",
+                "switch_type",
+                "reason",
+                "plan_command",
+                "clear_command",
+                "verification_command",
+                "next_action",
+            ):
                 if value_key in value:
                     entry[value_key] = value[value_key]
         elif "error" in item:

@@ -9,6 +9,7 @@ const COMPATIBILITY_BUNDLE_COMMAND: &str =
     "ratvantage-capture-compatibility-bundle --output target/validation/compatibility-bundle";
 const AUTOMATION_DIAGNOSTICS_COMMAND: &str = "legion-control-ui --automation-diagnostics";
 const RESET_DIAGNOSTICS_COMMAND: &str = "legion-control-ui --reset-diagnostics";
+const RESET_RECOVERY_COMMANDS: &str = "legion-control-ui --reset-diagnostics\nlegion-control-ui --plan-curve-optimizer-all-core 0\nlegion-control-ui --reset-curve-optimizer-all-core\nlegion-control-ui --plan-custom-thermal-firmware-ppt-preset reset-defaults\nlegion-control-ui --plan-restore-auto-fan\nlegion-control-ui --plan-custom-thermal-restore-auto-fan\nlegion-control-ui --clear-gpu-mode-pending";
 const RYZEN_BACKEND_STATUS_COMMAND: &str = "legion-control-ui --ryzen-backend-status";
 const RYZEN_SMU_SETUP_COMMAND: &str = "legion-control-ui --ryzen-smu-setup";
 
@@ -160,6 +161,24 @@ fn append_diagnostics(page: &adw::PreferencesPage, bundle: &DiagnosticsBundle) {
     });
     reset_row.add_suffix(&copy_reset);
     resets.add(&reset_row);
+    let reset_commands_row = adw::ActionRow::builder()
+        .title("Recovery command reference")
+        .subtitle("Copy the safe reset planning commands for Curve Optimizer, firmware PPT defaults, fan auto-restore, custom thermal auto-restore, and GPU pending-marker cleanup; RGB SDK recovery is generated from the live snapshot in reset diagnostics")
+        .selectable(false)
+        .build();
+    let copy_reset_commands = gtk4::Button::with_label("Copy recovery commands");
+    copy_reset_commands.set_tooltip_text(Some(
+        "Copy reset planning commands; execution remains on the existing gated per-family paths.",
+    ));
+    copy_reset_commands.add_css_class("pill");
+    copy_reset_commands.set_valign(gtk4::Align::Center);
+    copy_reset_commands.connect_clicked(move |_| {
+        if let Some(display) = gtk4::gdk::Display::default() {
+            display.clipboard().set_text(RESET_RECOVERY_COMMANDS);
+        }
+    });
+    reset_commands_row.add_suffix(&copy_reset_commands);
+    resets.add(&reset_commands_row);
     page.add(&resets);
 
     if let Some(status) = &bundle.ryzen_backend_status {

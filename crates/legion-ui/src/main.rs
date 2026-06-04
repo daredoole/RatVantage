@@ -552,15 +552,22 @@ fn print_json<T: serde::Serialize>(value: &T) -> Result<()> {
 
 fn reset_diagnostics_snapshot(client: &LegionControlClient) -> serde_json::Value {
     serde_json::json!({
-        "curve_optimizer_all_core_reset": diagnostic_result(
-            client.plan_curve_optimizer_all_core_write("0")
+        "curve_optimizer_all_core_reset": diagnostic_result_with_commands(
+            client.plan_curve_optimizer_all_core_write("0"),
+            &[("plan_command", "legion-control-ui --plan-curve-optimizer-all-core 0"),
+              ("execute_command", "legion-control-ui --reset-curve-optimizer-all-core")]
         ),
-        "firmware_ppt_reset_defaults": diagnostic_result(
-            client.plan_custom_thermal_firmware_ppt_preset_write("reset-defaults")
+        "firmware_ppt_reset_defaults": diagnostic_result_with_commands(
+            client.plan_custom_thermal_firmware_ppt_preset_write("reset-defaults"),
+            &[("plan_command", "legion-control-ui --plan-custom-thermal-firmware-ppt-preset reset-defaults")]
         ),
-        "restore_auto_fan": diagnostic_result(client.plan_restore_auto_fan_write()),
-        "custom_thermal_restore_auto_fan": diagnostic_result(
-            client.plan_custom_thermal_restore_auto_fan()
+        "restore_auto_fan": diagnostic_result_with_commands(
+            client.plan_restore_auto_fan_write(),
+            &[("plan_command", "legion-control-ui --plan-restore-auto-fan")]
+        ),
+        "custom_thermal_restore_auto_fan": diagnostic_result_with_commands(
+            client.plan_custom_thermal_restore_auto_fan(),
+            &[("plan_command", "legion-control-ui --plan-custom-thermal-restore-auto-fan")]
         ),
         "keyboard_rgb_sdk_recovery": keyboard_rgb_sdk_recovery_result(client),
         "gpu_mode_pending_recovery": gpu_mode_pending_recovery_result(
@@ -616,6 +623,11 @@ fn keyboard_rgb_sdk_recovery_result(client: &LegionControlClient) -> serde_json:
         brightness: 100,
         speed: None,
     };
+    let request_json = serde_json::to_string(&request).unwrap_or_default();
+    let plan_command = format!(
+        "legion-control-ui --plan-openrgb-keyboard-rgb-sdk {}",
+        shell_single_quote(&request_json)
+    );
     serde_json::json!({
         "ok": true,
         "value": {
@@ -623,6 +635,7 @@ fn keyboard_rgb_sdk_recovery_result(client: &LegionControlClient) -> serde_json:
             "current_mode": openrgb.sdk_active_mode,
             "current_colors": openrgb.sdk_colors,
             "recovery_request": request,
+            "plan_command": plan_command,
             "plan": diagnostic_result(client.plan_openrgb_keyboard_rgb_sdk_write(&request)),
             "recovery_note": "Read-only plan for restoring the current OpenRGB SDK mode/colors; no RGB write is sent by reset diagnostics.",
         },
@@ -636,11 +649,12 @@ fn gpu_mode_pending_recovery_result(
         Ok(pending) => serde_json::json!({
             "ok": true,
             "value": {
-                "pending": pending,
-                "clear_command": "legion-control-ui --clear-gpu-mode-pending",
-                "recovery_note": if pending.is_some() {
-                    "After confirming the requested GPU mode has been handled or dismissed, clear the pending marker through the daemon."
-                } else {
+            "pending": pending,
+            "clear_command": "legion-control-ui --clear-gpu-mode-pending",
+            "verification_command": "legion-control-ui --overview",
+            "recovery_note": if pending.is_some() {
+                "After confirming the requested GPU mode has been handled or dismissed, clear the pending marker through the daemon."
+            } else {
                     "No pending GPU mode marker is recorded."
                 },
             },
@@ -725,6 +739,7 @@ fn gpu_switching_recovery_result(client: &LegionControlClient) -> serde_json::Va
             "switch_type": switch_type,
             "recovery_note": recovery_note,
             "next_action": next_action,
+            "verification_command": "legion-control-ui --overview",
             "steps": steps,
         },
     })
@@ -741,6 +756,23 @@ fn diagnostic_result<T: serde::Serialize>(result: Result<T>) -> serde_json::Valu
             "error": error.to_string(),
         }),
     }
+}
+
+fn diagnostic_result_with_commands<T: serde::Serialize>(
+    result: Result<T>,
+    commands: &[(&str, &str)],
+) -> serde_json::Value {
+    let mut value = diagnostic_result(result);
+    if let Some(object) = value.as_object_mut() {
+        for (key, command) in commands {
+            object.insert((*key).to_owned(), serde_json::json!(command));
+        }
+    }
+    value
+}
+
+fn shell_single_quote(value: &str) -> String {
+    format!("'{}'", value.replace('\'', "'\"'\"'"))
 }
 
 fn parse_led_state_spec(spec: &str) -> Result<(String, bool)> {

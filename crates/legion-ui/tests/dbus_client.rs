@@ -806,10 +806,22 @@ reboot_required = true
     let json: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
     assert_eq!(json["curve_optimizer_all_core_reset"]["ok"], true);
     assert_eq!(
+        json["curve_optimizer_all_core_reset"]["plan_command"],
+        "legion-control-ui --plan-curve-optimizer-all-core 0"
+    );
+    assert_eq!(
+        json["curve_optimizer_all_core_reset"]["execute_command"],
+        "legion-control-ui --reset-curve-optimizer-all-core"
+    );
+    assert_eq!(
         json["curve_optimizer_all_core_reset"]["value"]["method"],
         "SetCurveOptimizerAllCore"
     );
     assert!(json["firmware_ppt_reset_defaults"]["ok"].is_boolean());
+    assert_eq!(
+        json["firmware_ppt_reset_defaults"]["plan_command"],
+        "legion-control-ui --plan-custom-thermal-firmware-ppt-preset reset-defaults"
+    );
     if json["firmware_ppt_reset_defaults"]["ok"] == true {
         assert_eq!(
             json["firmware_ppt_reset_defaults"]["value"]["preset_id"],
@@ -822,10 +834,18 @@ reboot_required = true
     }
     assert_eq!(json["restore_auto_fan"]["ok"], true);
     assert_eq!(
+        json["restore_auto_fan"]["plan_command"],
+        "legion-control-ui --plan-restore-auto-fan"
+    );
+    assert_eq!(
         json["restore_auto_fan"]["value"]["method"],
         "RestoreAutoFan"
     );
     assert!(json["custom_thermal_restore_auto_fan"]["ok"].is_boolean());
+    assert_eq!(
+        json["custom_thermal_restore_auto_fan"]["plan_command"],
+        "legion-control-ui --plan-custom-thermal-restore-auto-fan"
+    );
     if json["custom_thermal_restore_auto_fan"]["ok"] == false {
         assert!(json["custom_thermal_restore_auto_fan"]["error"]
             .as_str()
@@ -852,6 +872,10 @@ reboot_required = true
         json["gpu_mode_pending_recovery"]["value"]["clear_command"],
         "legion-control-ui --clear-gpu-mode-pending"
     );
+    assert_eq!(
+        json["gpu_mode_pending_recovery"]["value"]["verification_command"],
+        "legion-control-ui --overview"
+    );
     assert!(json["gpu_mode_pending_recovery"]["value"]["recovery_note"]
         .as_str()
         .is_some_and(|note| note.contains("clear the pending marker")));
@@ -864,6 +888,10 @@ reboot_required = true
         assert!(json["gpu_switching_recovery"]["value"]["steps"]
             .as_array()
             .is_some_and(|steps| !steps.is_empty()));
+        assert_eq!(
+            json["gpu_switching_recovery"]["value"]["verification_command"],
+            "legion-control-ui --overview"
+        );
     } else {
         assert!(json["gpu_switching_recovery"]["value"]["reason"]
             .as_str()

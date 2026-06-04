@@ -207,6 +207,15 @@ fn diagnostics_page_surfaces_compatibility_bundle_command() {
             && value.contains("restore-auto-fan")
     }));
     assert!(find_button_by_label(&root, "Copy reset command").is_some());
+    assert!(text
+        .iter()
+        .any(|value| value == "Recovery command reference"));
+    assert!(text.iter().any(|value| {
+        value.contains("Curve Optimizer")
+            && value.contains("firmware PPT defaults")
+            && value.contains("GPU pending-marker cleanup")
+    }));
+    assert!(find_button_by_label(&root, "Copy recovery commands").is_some());
     assert!(text.iter().any(|value| value == "Ryzen Backend Setup"));
     assert!(text.iter().any(|value| value == "Curve Optimizer backend"));
     assert!(text.iter().any(|value| value == "ryzenadj_write_only"));
