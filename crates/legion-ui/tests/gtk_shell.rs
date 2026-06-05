@@ -452,6 +452,12 @@ fn dashboard_pages_render_quick_apply_and_gpu_controls() {
         .any(|text| text == "reboot_required_baseline"));
     assert!(gpu_text.iter().any(|text| text == "Execution model"));
     assert!(gpu_text.iter().any(|text| text == "Runtime plan"));
+    assert!(gpu_text.iter().any(|text| text == "Switch next action"));
+    assert!(gpu_text.iter().any(|text| {
+        text.contains("continue using the reboot-gated EnvyControl path")
+            || text.contains("ratvantage-review-gpu-mux-evidence")
+    }));
+    assert!(gpu_text.iter().any(|text| text == "Runtime evidence"));
     assert!(gpu_text.iter().any(|text| text == "Pending reboot"));
     assert!(gpu_text.iter().any(|text| text == "GPU Switching Evidence"));
     assert!(gpu_text.iter().any(|text| {
@@ -461,6 +467,13 @@ fn dashboard_pages_render_quick_apply_and_gpu_controls() {
     assert!(gpu_text
         .iter()
         .any(|text| text == "Read-only GPU switching evidence"));
+    assert!(gpu_text
+        .iter()
+        .any(|text| text == "Read-only runtime plan commands"));
+    assert!(gpu_text.iter().any(|text| {
+        text.contains("plan-only integrated/hybrid runtime commands")
+            && text.contains("reviewed mux/session evidence")
+    }));
     assert!(gpu_text.iter().any(|text| {
         text.contains("compatibility")
             && text.contains("mux-only")
@@ -469,6 +482,7 @@ fn dashboard_pages_render_quick_apply_and_gpu_controls() {
             && text.contains("overview")
     }));
     assert!(find_button_by_label(&gpu.clone().upcast(), "Copy evidence commands").is_some());
+    assert!(find_button_by_label(&gpu.clone().upcast(), "Copy runtime plans").is_some());
     assert!(gpu_text.iter().any(|text| text == "Target mode"));
     assert!(gpu_text.iter().any(|text| text == "Confirm GPU switch"));
     assert!(

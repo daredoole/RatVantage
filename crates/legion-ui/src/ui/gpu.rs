@@ -14,6 +14,7 @@ use super::shared::{
 
 const GPU_MODE_CHOICES: &[&str] = &["integrated", "hybrid", "nvidia"];
 const GPU_SWITCHING_EVIDENCE_COMMANDS: &str = "ratvantage-capture-compatibility-bundle --output target/validation/gpu-switching-evidence\nratvantage-capture-gpu-mux-evidence --phase mux-only --output target/validation/gpu-mux-evidence\nratvantage-review-gpu-mux-evidence target/validation/gpu-mux-evidence\nlegion-control-ui --diagnostics\nlegion-control-ui --reset-diagnostics\nlegion-control-ui --overview";
+const GPU_RUNTIME_PLAN_COMMANDS: &str = "legion-control-ui --plan-gpu-mode-runtime integrated\nlegion-control-ui --plan-gpu-mode-runtime hybrid";
 
 pub fn gpu_page(
     diagnostics: Result<DiagnosticsBundle>,
@@ -71,6 +72,13 @@ fn append_gpu(
         ));
         for blocker in &bundle.gpu_switching.blockers {
             mode.add(&info_row("Switch blocker", blocker));
+        }
+        mode.add(&info_row(
+            "Switch next action",
+            &bundle.gpu_switching.next_action,
+        ));
+        for evidence in bundle.gpu_switching.evidence.iter().take(4) {
+            mode.add(&info_row("Runtime evidence", evidence));
         }
         for note in &gpu.switch_notes {
             mode.add(&info_row("Switch evidence", note));
@@ -140,6 +148,22 @@ fn build_gpu_switching_evidence_controls() -> adw::PreferencesGroup {
     });
     row.add_suffix(&copy);
     group.add(&row);
+
+    let runtime_row = adw::ActionRow::builder()
+        .title("Read-only runtime plan commands")
+        .subtitle("Copies plan-only integrated/hybrid runtime commands; current daemon validation blocks them until reviewed mux/session evidence promotes the candidate")
+        .selectable(false)
+        .build();
+    let copy_runtime = gtk4::Button::with_label("Copy runtime plans");
+    copy_runtime.add_css_class("pill");
+    copy_runtime.set_valign(gtk4::Align::Center);
+    copy_runtime.connect_clicked(move |_| {
+        if let Some(display) = gtk4::gdk::Display::default() {
+            display.clipboard().set_text(GPU_RUNTIME_PLAN_COMMANDS);
+        }
+    });
+    runtime_row.add_suffix(&copy_runtime);
+    group.add(&runtime_row);
     group
 }
 
