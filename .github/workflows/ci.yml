@@ -36,6 +36,7 @@ jobs:
             python3-gobject \
             python3-pillow \
             python3-pyatspi \
+            shadow-utils \
             systemd \
             systemd-devel \
             systemd-rpm-macros \
@@ -50,6 +51,10 @@ jobs:
         uses: dtolnay/rust-toolchain@stable
         with:
           components: rustfmt, clippy
+
+      - name: Prepare unprivileged QA user
+        run: |
+          useradd --create-home --shell /bin/bash ratvantage
 
       - name: Check formatting
         run: cargo fmt --all --check
@@ -82,7 +87,14 @@ jobs:
         run: scripts/capture-gtk-smoke-report.sh --sysfs-root tests/fixtures/sysfs-82wm-confirmed --pages status,battery,gpu,fans --output /tmp/ratvantage-gtk-smoke
 
       - name: GUI QA evidence bundle
-        run: scripts/qa-gui.sh
+        run: |
+          chown -R ratvantage:ratvantage "$GITHUB_WORKSPACE" /github/home/.cargo /github/home/.rustup
+          runuser -u ratvantage -- env \
+            HOME=/home/ratvantage \
+            CARGO_HOME=/github/home/.cargo \
+            RUSTUP_HOME=/github/home/.rustup \
+            PATH="/github/home/.cargo/bin:$PATH" \
+            scripts/qa-gui.sh
 
       - name: Print GUI QA review summary
         if: always()

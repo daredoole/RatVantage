@@ -194,11 +194,12 @@ cargo run -q -p legion-control-ui -- --diagnostics --bus-address "$bus_address" 
 for page in "${pages[@]}"; do
   page_png="$output_dir/screenshots/$page.png"
   page_log="$output_dir/$page-ui.log"
-  log_command xvfb-run -a -s "-screen 0 1280x900x24" bash --noprofile --norc -lc "DBUS_SESSION_BUS_ADDRESS='$bus_address' GSK_RENDERER='$gsk_renderer' GTK_A11Y=none GDK_BACKEND=x11 GDK_DISABLE=dmabuf cargo run -q -p legion-control-ui --features gtk-ui -- --bus-address '$bus_address' --gtk-page '$page' --gtk-auto-quit-ms '$auto_quit_ms'"
+  log_command xvfb-run -a -s "-screen 0 1280x900x24" bash --noprofile --norc -lc "DBUS_SESSION_BUS_ADDRESS='$bus_address' GSK_RENDERER='$gsk_renderer' ADW_DEBUG_COLOR_SCHEME=prefer-dark GTK_A11Y=none GDK_BACKEND=x11 GDK_DISABLE=dmabuf cargo run -q -p legion-control-ui --features gtk-ui -- --bus-address '$bus_address' --gtk-page '$page' --gtk-auto-quit-ms '$auto_quit_ms'"
   xvfb-run -a -s "-screen 0 1280x900x24" bash --noprofile --norc -lc "
     set -euo pipefail
     export DBUS_SESSION_BUS_ADDRESS='$bus_address'
     export GSK_RENDERER='$gsk_renderer'
+    export ADW_DEBUG_COLOR_SCHEME=prefer-dark
     export GTK_A11Y=none
     export GDK_BACKEND=x11
     export GDK_DISABLE=dmabuf
