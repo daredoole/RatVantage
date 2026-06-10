@@ -154,15 +154,29 @@ fn append_battery(page: &adw::PreferencesPage, bundle: &DiagnosticsBundle) {
 fn build_conservation_mode_controls(
     toggle: Option<&IdeapadToggleCapability>,
 ) -> adw::PreferencesGroup {
-    let choices = vec!["0".to_owned(), "1".to_owned()];
+    let choices = vec!["Off (0)".to_owned(), "On (1)".to_owned()];
+    let current_label = toggle
+        .and_then(|toggle| toggle.current_value.as_deref())
+        .map(|value| match value {
+            "0" => "Off (0)",
+            "1" => "On (1)",
+            other => other,
+        });
     let group = build_write_controls(
         "Conservation Mode Control",
-        toggle.and_then(|toggle| toggle.current_value.as_deref()),
+        current_label,
         toggle.map(|_| choices.as_slice()),
         "Requested conservation mode",
         "Apply conservation mode",
         "Conservation mode",
-        |requested| make_client().and_then(|client| client.set_conservation_mode(requested)),
+        |requested| {
+            let value = if requested.starts_with("On") {
+                "1"
+            } else {
+                "0"
+            };
+            make_client().and_then(|client| client.set_conservation_mode(value))
+        },
         move |_| {
             request_dashboard_refresh();
         },

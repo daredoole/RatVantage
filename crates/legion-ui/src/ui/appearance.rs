@@ -422,15 +422,21 @@ fn build_keyboard_rgb_controls(bundle: &DiagnosticsBundle) -> adw::PreferencesGr
     group.add(&effect_row);
 
     let mut color_entry_widgets = Vec::new();
-    for (zone_id, default_color) in keyboard_rgb_color_entries(bundle) {
+    let zone_entries = keyboard_rgb_color_entries(bundle);
+    if !zone_entries.is_empty() {
+        group.add(&super::shared::section_note(
+            "Zone colors use #RRGGBB hex. OpenRGB preview sends all listed zones together.",
+        ));
+    }
+    for (zone_id, default_color) in zone_entries {
         let entry = gtk4::Entry::new();
         entry.set_text(&default_color);
         entry.set_width_chars(9);
         entry.set_max_width_chars(9);
         entry.set_valign(gtk4::Align::Center);
+        entry.set_tooltip_text(Some("Hex color in #RRGGBB form."));
         let row = adw::ActionRow::builder()
             .title(format!("Zone color: {zone_id}"))
-            .subtitle("Use #RRGGBB. OpenRGB preview sends all listed zones together.")
             .selectable(false)
             .build();
         row.add_suffix(&entry);
@@ -498,10 +504,10 @@ fn build_keyboard_rgb_controls(bundle: &DiagnosticsBundle) -> adw::PreferencesGr
             preview_backend,
         );
     });
-    let copy_json = keyboard_rgb_copy_json_button("Copy request JSON", controls.clone());
+    let copy_json = keyboard_rgb_copy_json_button("Copy JSON", controls.clone());
     let preview_action_row = adw::ActionRow::builder()
         .title("RGB request preview")
-        .subtitle("Builds a validated D-Bus/OpenRGB dry-run plan; no RGB write is sent.")
+        .subtitle("Dry-run plan only; no RGB write is sent.")
         .selectable(false)
         .build();
     preview_action_row.add_suffix(&preview);

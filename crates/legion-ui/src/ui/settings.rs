@@ -17,7 +17,7 @@ pub fn settings_page(diagnostics: Result<DiagnosticsBundle>) -> adw::Preferences
     ));
 
     let scheme_row = adw::ActionRow::builder()
-        .title("Colour scheme")
+        .title("Color scheme")
         .subtitle("Follows the system GNOME/Adwaita dark/light preference via GTK portal")
         .selectable(false)
         .build();
@@ -121,7 +121,7 @@ pub fn settings_page(diagnostics: Result<DiagnosticsBundle>) -> adw::Preferences
             false,
         ),
         (
-            "Minimise to tray on window close",
+            "Minimize to tray on window close",
             "Keeps the daemon connection alive and the tray icon visible",
             true,
         ),

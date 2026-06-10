@@ -2,6 +2,8 @@
 
 use adw::prelude::*;
 use std::{
+    fs,
+    path::Path,
     sync::Once,
     time::{Duration, Instant},
 };
@@ -387,9 +389,7 @@ fn dashboard_pages_render_quick_apply_and_gpu_controls() {
     assert!(fans_text
         .iter()
         .any(|text| text == "Fan preset per platform profile"));
-    assert!(fans_text
-        .iter()
-        .any(|text| text == "Save app-state mapping"));
+    assert!(fans_text.iter().any(|text| text == "Save preference"));
     assert!(fans_text
         .iter()
         .any(|text| text == "Clear all profile mappings"));
@@ -533,9 +533,7 @@ fn dashboard_pages_render_quick_apply_and_gpu_controls() {
         .iter()
         .any(|text| text == "Zone color: Right side"));
     assert!(appearance_text.iter().any(|text| text == "Preview plan"));
-    assert!(appearance_text
-        .iter()
-        .any(|text| text == "Copy request JSON"));
+    assert!(appearance_text.iter().any(|text| text == "Copy JSON"));
     assert!(appearance_text.iter().any(|text| text == "Apply RGB"));
     let rgb_apply =
         find_button_by_label(&appearance.clone().upcast(), "Apply").expect("RGB apply button");
@@ -574,6 +572,19 @@ fn dashboard_pages_render_quick_apply_and_gpu_controls() {
         .subtitle()
         .as_deref()
         .is_some_and(|subtitle| subtitle.contains("Current: Auto (0)")));
+
+    let settings = ui::settings::settings_page(Ok(sample_diagnostics()));
+    let settings_text = collect_widget_text(&settings.clone().upcast());
+    assert!(settings_text.iter().any(|text| text == "Appearance"));
+    assert!(settings_text.iter().any(|text| text == "Color scheme"));
+    assert!(settings_text.iter().any(|text| text == "Notifications"));
+    assert!(settings_text.iter().any(|text| text == "Telemetry Refresh"));
+    assert!(settings_text.iter().any(|text| text == "Startup and Tray"));
+    assert!(settings_text
+        .iter()
+        .any(|text| text == "Enabled Write Surfaces"));
+    assert!(settings_text.iter().any(|text| text == "Daemon Connection"));
+    assert!(find_button_by_label(&settings.clone().upcast(), "Reconnect").is_some());
 }
 
 #[gtk4::test]
@@ -1166,7 +1177,7 @@ fn appearance_keyboard_rgb_research_controls_stage_requests_without_apply() {
     assert!(text.iter().any(|value| value == "Speed"));
     assert!(text.iter().any(|value| value == "RGB request preview"));
     assert!(find_button_by_label(&group_root, "Preview plan").is_some());
-    assert!(find_button_by_label(&group_root, "Copy request JSON").is_some());
+    assert!(find_button_by_label(&group_root, "Copy JSON").is_some());
     assert!(text.iter().any(|value| value == "Apply RGB"));
 
     let effect = find_dropdown(&group_root).expect("RGB effect dropdown should render");
@@ -1383,6 +1394,235 @@ fn dashboard_stack_has_all_nine_pages() {
             "ViewStack should have page named '{name}'"
         );
     }
+}
+
+#[gtk4::test]
+fn semantic_ui_snapshot_can_be_emitted() {
+    init_gtk();
+
+    let Ok(path) = std::env::var("RATVANTAGE_SEMANTIC_UI_SNAPSHOT") else {
+        return;
+    };
+
+    let diagnostics = sample_diagnostics();
+    let status = ui::status::status_page(Ok(sample_status()), Ok(diagnostics.clone()), Ok(None));
+    let profiles = ui::profiles::profiles_page(Ok(diagnostics.clone()));
+    let battery = ui::battery::battery_page(Ok(diagnostics.clone()));
+    let gpu = ui::gpu::gpu_page(Ok(diagnostics.clone()), Ok(Some(sample_gpu_pending())));
+    let fans = ui::fans::fans_page(Ok(diagnostics.clone()), Ok(Some(sample_fan_snapshot())));
+    let appearance = ui::appearance::appearance_page(Ok(diagnostics.clone()));
+    let automations = ui::automations::automations_page(Ok(diagnostics.clone()));
+    let settings = ui::settings::settings_page(Ok(diagnostics.clone()));
+    let diagnostics_page = ui::diagnostics::diagnostics_page(Ok(diagnostics.with_runtime_state(
+        DiagnosticsRuntimeState {
+            ryzen_backend_status: Some(sample_ryzen_backend_status()),
+            ..Default::default()
+        },
+    )));
+
+    let profiles_root = profiles.clone().upcast::<gtk4::Widget>();
+    let battery_root = battery.clone().upcast::<gtk4::Widget>();
+    let gpu_root = gpu.clone().upcast::<gtk4::Widget>();
+    let fans_root = fans.clone().upcast::<gtk4::Widget>();
+    let appearance_root = appearance.clone().upcast::<gtk4::Widget>();
+    let automations_root = automations.clone().upcast::<gtk4::Widget>();
+    let settings_root = settings.clone().upcast::<gtk4::Widget>();
+    let diagnostics_root = diagnostics_page.clone().upcast::<gtk4::Widget>();
+
+    let dpm_apply = find_button_by_label(&gpu_root, "Apply force level")
+        .expect("semantic snapshot should see DPM apply button");
+    let gpu_switch = find_button_by_label(&gpu_root, "Switch mode")
+        .expect("semantic snapshot should see GPU switch button");
+    let rgb_apply = find_button_by_label(&appearance_root, "Apply")
+        .expect("semantic snapshot should see RGB apply button");
+    let ylogo_off = find_button_by_label(&appearance_root, "Turn off")
+        .expect("semantic snapshot should see Y-logo off button");
+    let ylogo_on = find_button_by_label(&appearance_root, "Turn on")
+        .expect("semantic snapshot should see Y-logo on button");
+    let camera_confirm = find_button_by_label(&appearance_root, "Confirm")
+        .expect("semantic snapshot should see camera confirm button");
+    let curve_group =
+        find_preferences_group_by_title(&profiles_root, "Advanced CPU Tuning - Curve Optimizer")
+            .expect("semantic snapshot should see Curve Optimizer group");
+
+    let snapshot = serde_json::json!({
+        "schema_version": 1,
+        "source": "gtk-native-fixture",
+        "test_mode": "fixture-private-dbus-read-only",
+        "real_hardware_writes_enabled": false,
+        "atspi_structural_gate": "unavailable",
+        "semantic_structural_gate": "blocking",
+        "visual_gate": "blocking",
+        "native_gtk_state_gate": "blocking",
+        "pages": [
+            semantic_page("status", "Overview", &status.clone().upcast(), &["Control Center", "Machine", "Capability Health"], vec![
+                semantic_control("status.product", "Product", "readout", Some("82WM / Legion Pro 5 16ARX8"), true, true, true, false, false, false, false, None, Some("/tmp/fixture DMI summary"), "read_only", "none", Some("Fixture-backed hardware identity readout.")),
+                semantic_control("status.capabilities", "Capabilities", "readout", Some("platform_profile, fan_curves"), true, true, true, false, false, false, false, None, Some("capability registry"), "read_only", "none", Some("Read-only registry summary.")),
+            ]),
+            semantic_page("profiles", "Power", &profiles_root, &["Power Profiles", "Platform Control", "Advanced CPU Tuning", "Firmware Power Limits (TDP)"], vec![
+                semantic_control("profiles.platform_profile.requested", "Requested profile", "expander_row", Some("balanced"), true, true, true, true, false, false, false, Some("platform_profile"), Some("platform_profile.current"), "dry_run", "medium", Some("Apply uses daemon policy and readback validation; QA daemon has writes disabled.")),
+                semantic_control("profiles.platform_profile.apply", "Apply profile", "button", None, true, true, true, true, false, false, false, Some("platform_profile"), Some("platform_profile choices"), "write_blocked", "medium", Some("No write is attempted in QA without daemon --enable-platform-profile-write.")),
+                semantic_control("profiles.cpu_governor", "CPU governor", "control_group", Some("powersave"), true, true, true, true, false, false, false, Some("cpu_power"), Some("cpu_power.governor"), "dry_run", "medium", Some("Existing CPU power surface is daemon-planned and write-disabled in QA.")),
+                semantic_control("profiles.cpu_epp", "CPU EPP", "control_group", Some("balance_performance"), true, true, true, true, false, false, false, Some("cpu_power"), Some("cpu_power.epp"), "dry_run", "medium", Some("Existing CPU EPP surface is daemon-planned and write-disabled in QA.")),
+                semantic_control("profiles.cpu_boost", "CPU boost", "control_group", Some("enabled"), true, true, true, true, false, false, false, Some("cpu_power"), Some("cpu_power.boost"), "dry_run", "medium", Some("Existing CPU boost surface is daemon-planned and write-disabled in QA.")),
+                semantic_control("profiles.firmware_ppt.spl", "SPL", "spin_button", Some("70"), true, true, true, true, false, false, false, Some("firmware_attribute:ppt_pl1_spl"), Some("firmware_attributes.ppt_pl1_spl"), "dry_run", "high", Some("Firmware PPT writes are daemon-gated and write-disabled in QA.")),
+                semantic_control("profiles.firmware_ppt.sppt", "SPPT", "spin_button", Some("85"), true, true, true, true, false, false, false, Some("firmware_attribute:ppt_pl2_sppt"), Some("firmware_attributes.ppt_pl2_sppt"), "dry_run", "high", Some("Firmware PPT writes are daemon-gated and write-disabled in QA.")),
+                semantic_control("profiles.firmware_ppt.fppt", "FPPT", "spin_button", Some("102"), true, true, true, true, false, false, false, Some("firmware_attribute:ppt_pl3_fppt"), Some("firmware_attributes.ppt_pl3_fppt"), "dry_run", "high", Some("Firmware PPT writes are daemon-gated and write-disabled in QA.")),
+                semantic_control("profiles.curve_optimizer.gate", "Show Curve Optimizer controls", "switch", Some("off"), true, true, true, false, false, false, false, Some("curve_optimizer_all_core"), Some("ryzen backend status"), "confirmation_required", "high", Some("Advanced controls start hidden until deliberately enabled.")),
+                semantic_control("profiles.curve_optimizer.all_core", "Curve Optimizer all-core", "hidden_group", Some("hidden"), true, curve_group.is_visible(), true, true, false, false, false, Some("curve_optimizer_all_core"), Some("ryzen backend status"), "write_blocked", "high", Some("Write-only backend requires explicit advanced gate and daemon policy.")),
+            ]),
+            semantic_page("battery", "Battery", &battery_root, &["Charge Control"], vec![
+                semantic_control("battery.charge_type.requested", "Requested charge type", "expander_row", Some("Standard"), true, true, true, true, false, false, false, Some("conservation_mode"), Some("battery_charge_type.current"), "dry_run", "medium", Some("Charge type apply is daemon-planned and write-disabled in QA.")),
+                semantic_control("battery.charge_type.apply", "Apply charge type", "button", None, true, true, true, true, false, false, false, Some("conservation_mode"), Some("battery_charge_type.choices"), "write_blocked", "medium", Some("No battery sysfs write occurs without daemon write flags.")),
+            ]),
+            semantic_page("gpu", "GPU", &gpu_root, &["AMD GPU DPM", "AMD GPU DPM Control", "Switch Planning", "GPU Switching Evidence"], vec![
+                semantic_control("gpu.amd_dpm.current", "DPM force level", "readout", Some("auto"), true, true, true, false, false, false, false, Some("amd_gpu_dpm_force_level"), Some("amd_gpu_power_dpm.current_force_performance_level"), "read_only", "none", Some("Current AMD DPM readback.")),
+                semantic_control("gpu.amd_dpm.confirm", "Confirm DPM force-level write", "check_button", Some("false"), true, true, true, false, false, true, false, Some("amd_gpu_dpm_force_level"), Some("amd_gpu_power_dpm.choices"), "confirmation_required", "high", Some("Execution button starts disabled until confirmation.")),
+                semantic_control("gpu.amd_dpm.apply", "Apply force level", "button", None, true, dpm_apply.is_sensitive(), true, true, false, true, false, Some("amd_gpu_dpm_force_level"), Some("amd_gpu_power_dpm.force_performance_level_path"), "confirmation_required", "high", Some("QA starts disabled; daemon write flags remain off.")),
+                semantic_control("gpu.mode.target", "Target mode", "dropdown", Some("hybrid"), true, true, true, true, false, false, true, Some("gpu_mode"), Some("gpu.mode"), "reboot_required", "high", Some("Switching is reboot-gated on this fixture.")),
+                semantic_control("gpu.mode.confirm", "Confirm GPU switch", "check_button", Some("false"), true, true, true, false, false, true, true, Some("gpu_mode"), Some("gpu.switch_type"), "confirmation_required", "high", Some("Execution button starts disabled until confirmation.")),
+                semantic_control("gpu.mode.switch", "Switch mode", "button", None, true, gpu_switch.is_sensitive(), true, true, false, true, true, Some("gpu_mode"), Some("gpu.switch_notes"), "confirmation_required", "high", Some("QA confirms button is initially disabled and writes are daemon-gated.")),
+            ]),
+            semantic_page("fans", "Fans", &fans_root, &["Guided fan planning", "Live curve readings", "Manual curve scratchpad", "Fan Validation Evidence"], vec![
+                semantic_control("fans.preset", "Packaged preset", "action_row", Some("fixture preset choices"), true, true, true, true, false, false, false, Some("fan_curves"), Some("fan_curves"), "dry_run", "high", Some("Fan execution remains plan-only without validated writable curve evidence.")),
+                semantic_control("fans.preview_preset", "Preview dry-run plan", "button", None, true, true, true, false, false, false, false, Some("fan_curves"), Some("fan_curves"), "dry_run", "medium", Some("Preview produces a plan only.")),
+                semantic_control("fans.preview_restore", "Preview restore dry-run", "button", None, true, true, true, false, false, false, false, Some("fan_curves"), Some("last_known_good_fan_curve"), "dry_run", "medium", Some("Restore preview produces a plan only.")),
+                semantic_control("fans.capture_snapshot", "Capture snapshot", "button", None, true, true, true, false, false, false, false, Some("fan_curves"), Some("live fan snapshot"), "read_only", "none", Some("Snapshot capture records read-only curve state.")),
+                semantic_control("fans.save_profile_mapping", "Save preference", "button", None, true, true, true, false, false, false, false, None, Some("app state"), "daemon_state_only", "low", Some("Mapping changes app state, not hardware sysfs.")),
+            ]),
+            semantic_page("appearance", "Devices", &appearance_root, &["Keyboard RGB", "Logo LED", "Keyboard", "Camera", "USB Power", "Fan Mode"], vec![
+                semantic_control("appearance.rgb.apply", "Apply RGB", "button", None, true, rgb_apply.is_sensitive(), true, true, false, false, false, Some("keyboard_rgb"), Some("keyboard_rgb_openrgb.backend_ready"), "evidence_missing", "high", Some("RGB apply stays disabled until backend-ready evidence is promoted.")),
+                semantic_control("appearance.ylogo.off", "Turn off", "button", Some("brightness=0"), true, ylogo_off.is_sensitive(), true, true, false, false, false, Some("ylogo_led"), Some("leds.platform::ylogo.brightness"), "write_blocked", "medium", Some("Already-off action is insensitive for fixture state.")),
+                semantic_control("appearance.ylogo.on", "Turn on", "button", Some("brightness=0"), true, ylogo_on.is_sensitive(), true, true, false, false, false, Some("ylogo_led"), Some("leds.platform::ylogo.brightness"), "write_blocked", "medium", Some("LED writes require daemon policy outside QA.")),
+                semantic_control("appearance.camera.confirm", "Confirm", "button", Some("no pending request"), true, camera_confirm.is_sensitive(), true, true, false, true, false, Some("camera_power"), Some("ideapad_toggles.camera_power"), "confirmation_required", "medium", Some("Camera power flow requires explicit request before confirm.")),
+                semantic_control("appearance.fan_mode", "Fan mode", "button_group", Some("Auto (0)"), true, true, true, true, false, false, false, Some("fan_mode"), Some("ideapad_toggles.fan_mode"), "write_blocked", "medium", Some("Fan mode writes require daemon policy outside QA.")),
+            ]),
+            semantic_page("automations", "Automations", &automations_root, &["Quick Templates", "Saved Automation Rules", "Create Automation Rule", "Create AC Router Rule", "Create Fast Charge Rule"], vec![
+                semantic_control("automations.saved_rules", "Saved Automation Rules", "section", Some("fixture rules"), true, true, true, false, false, false, false, None, Some("daemon automation state"), "read_only", "none", Some("Current saved rules are rendered from fixture diagnostics.")),
+                semantic_control("automations.preview", "Preview", "button", None, true, true, true, false, false, false, false, None, Some("automation rule plan"), "dry_run", "low", Some("Preview/test-run surfaces do not write hardware.")),
+                semantic_control("automations.save", "Save", "button", None, true, true, true, false, false, false, false, None, Some("daemon automation state"), "daemon_state_only", "low", Some("Rule persistence is daemon-owned app state, not a hardware write.")),
+                semantic_control("automations.delete", "Delete", "button", None, true, true, true, false, false, false, false, None, Some("daemon automation state"), "daemon_state_only", "low", Some("Rule deletion is daemon-owned app state, not a hardware write.")),
+            ]),
+            semantic_page("settings", "Settings", &settings_root, &["Appearance", "Notifications", "Telemetry Refresh", "Startup and Tray", "Enabled Write Surfaces", "Daemon Connection"], vec![
+                semantic_control("settings.write_surfaces", "Enabled Write Surfaces", "readout", Some("daemon policy"), true, true, true, false, false, false, false, None, Some("daemon status"), "read_only", "none", Some("Settings page reports daemon write policy instead of enabling writes.")),
+                semantic_control("settings.reconnect", "Reconnect", "button", None, true, true, true, false, false, false, false, None, Some("D-Bus client"), "read_only", "none", Some("Reconnect only refreshes the unprivileged client connection.")),
+            ]),
+            semantic_page("diagnostics", "Diagnostics", &diagnostics_root, &["System Snapshot", "Compatibility Bundle", "Automation Diagnostics", "Reset Diagnostics", "Ryzen Backend Setup", "Raw Probe Data"], vec![
+                semantic_control("diagnostics.compat_bundle", "Compatibility Bundle", "command_row", Some("read-only support bundle"), true, true, true, false, false, false, false, None, Some("diagnostics bundle command"), "read_only", "none", Some("Diagnostics commands collect evidence without hardware writes.")),
+                semantic_control("diagnostics.ryzen_backend", "Ryzen Backend Setup", "command_row", Some("ryzenadj_write_only"), true, true, true, false, false, false, false, Some("curve_optimizer_all_core"), Some("ryzen backend status"), "read_only", "none", Some("Setup assistant is informational; RatVantage does not load kernel modules.")),
+            ]),
+        ],
+        "supplemental": {
+            "tray_status": {
+                "id": "tray.status",
+                "covered_by": "legion-control-tray Rust tests and scripts/ci-local.sh",
+                "fixture_source": "capability registry",
+                "safety_state": "read_only",
+                "real_hardware_writes_enabled": false
+            }
+        }
+    });
+
+    write_semantic_snapshot(Path::new(&path), &snapshot);
+}
+
+#[allow(clippy::too_many_arguments)]
+fn semantic_control(
+    id: &str,
+    label: &str,
+    role: &str,
+    displayed_value: Option<&str>,
+    supported: bool,
+    enabled: bool,
+    visible: bool,
+    write_capable: bool,
+    write_enabled_in_tests: bool,
+    requires_confirmation: bool,
+    requires_reboot: bool,
+    evidence_gate: Option<&str>,
+    fixture_source: Option<&str>,
+    safety_state: &str,
+    danger_level: &str,
+    safety_notes: Option<&str>,
+) -> serde_json::Value {
+    serde_json::json!({
+        "id": id,
+        "label": label,
+        "role": role,
+        "displayed_value": displayed_value,
+        "supported": supported,
+        "enabled": enabled,
+        "visible": visible,
+        "write_capable": write_capable,
+        "write_enabled_in_tests": write_enabled_in_tests,
+        "requires_confirmation": requires_confirmation,
+        "requires_reboot": requires_reboot,
+        "evidence_gate": evidence_gate,
+        "fixture_source": fixture_source,
+        "safety_state": safety_state,
+        "danger_level": danger_level,
+        "reason_disabled": if enabled { None } else { safety_notes },
+        "safety_notes": safety_notes,
+    })
+}
+
+fn semantic_page(
+    id: &str,
+    title: &str,
+    root: &gtk4::Widget,
+    section_titles: &[&str],
+    controls: Vec<serde_json::Value>,
+) -> serde_json::Value {
+    let text = collect_widget_text(root);
+    for section in section_titles {
+        assert!(
+            text.iter().any(|value| value == section),
+            "semantic snapshot page {id} is missing section {section}"
+        );
+    }
+    serde_json::json!({
+        "id": id,
+        "title": title,
+        "visible": root.is_visible(),
+        "enabled": root.is_sensitive(),
+        "screenshot_coverage": true,
+        "native_gtk_state_test_coverage": true,
+        "unsupported_state_policy": "show explanatory empty/unsupported copy instead of blank UI",
+        "sections": section_titles.iter().map(|title| serde_json::json!({
+            "id": stable_id(title),
+            "title": title,
+            "visible": true,
+        })).collect::<Vec<_>>(),
+        "controls": controls,
+        "text_markers": section_titles,
+    })
+}
+
+fn stable_id(value: &str) -> String {
+    value
+        .chars()
+        .map(|ch| {
+            if ch.is_ascii_alphanumeric() {
+                ch.to_ascii_lowercase()
+            } else {
+                '_'
+            }
+        })
+        .collect::<String>()
+        .split('_')
+        .filter(|part| !part.is_empty())
+        .collect::<Vec<_>>()
+        .join("_")
+}
+
+fn write_semantic_snapshot(path: &Path, snapshot: &serde_json::Value) {
+    if let Some(parent) = path.parent() {
+        fs::create_dir_all(parent).expect("semantic snapshot parent should be creatable");
+    }
+    let mut payload =
+        serde_json::to_string_pretty(snapshot).expect("semantic snapshot should serialize");
+    payload.push('\n');
+    fs::write(path, payload).expect("semantic snapshot should be writable");
 }
 
 fn sample_status() -> UiStatus {

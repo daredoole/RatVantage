@@ -1,0 +1,1112 @@
+{
+  "atspi_structural_gate": "unavailable",
+  "native_gtk_state_gate": "blocking",
+  "pages": [
+    {
+      "controls": [
+        {
+          "danger_level": "none",
+          "displayed_value": "82WM / Legion Pro 5 16ARX8",
+          "enabled": true,
+          "evidence_gate": null,
+          "fixture_source": "/tmp/fixture DMI summary",
+          "id": "status.product",
+          "label": "Product",
+          "reason_disabled": null,
+          "requires_confirmation": false,
+          "requires_reboot": false,
+          "role": "readout",
+          "safety_notes": "Fixture-backed hardware identity readout.",
+          "safety_state": "read_only",
+          "supported": true,
+          "visible": true,
+          "write_capable": false,
+          "write_enabled_in_tests": false
+        },
+        {
+          "danger_level": "none",
+          "displayed_value": "platform_profile, fan_curves",
+          "enabled": true,
+          "evidence_gate": null,
+          "fixture_source": "capability registry",
+          "id": "status.capabilities",
+          "label": "Capabilities",
+          "reason_disabled": null,
+          "requires_confirmation": false,
+          "requires_reboot": false,
+          "role": "readout",
+          "safety_notes": "Read-only registry summary.",
+          "safety_state": "read_only",
+          "supported": true,
+          "visible": true,
+          "write_capable": false,
+          "write_enabled_in_tests": false
+        }
+      ],
+      "enabled": true,
+      "id": "status",
+      "native_gtk_state_test_coverage": true,
+      "screenshot_coverage": true,
+      "sections": [
+        {
+          "id": "control_center",
+          "title": "Control Center",
+          "visible": true
+        },
+        {
+          "id": "machine",
+          "title": "Machine",
+          "visible": true
+        },
+        {
+          "id": "capability_health",
+          "title": "Capability Health",
+          "visible": true
+        }
+      ],
+      "text_markers": [
+        "Control Center",
+        "Machine",
+        "Capability Health"
+      ],
+      "title": "Overview",
+      "unsupported_state_policy": "show explanatory empty/unsupported copy instead of blank UI",
+      "visible": true
+    },
+    {
+      "controls": [
+        {
+          "danger_level": "medium",
+          "displayed_value": "balanced",
+          "enabled": true,
+          "evidence_gate": "platform_profile",
+          "fixture_source": "platform_profile.current",
+          "id": "profiles.platform_profile.requested",
+          "label": "Requested profile",
+          "reason_disabled": null,
+          "requires_confirmation": false,
+          "requires_reboot": false,
+          "role": "expander_row",
+          "safety_notes": "Apply uses daemon policy and readback validation; QA daemon has writes disabled.",
+          "safety_state": "dry_run",
+          "supported": true,
+          "visible": true,
+          "write_capable": true,
+          "write_enabled_in_tests": false
+        },
+        {
+          "danger_level": "medium",
+          "displayed_value": null,
+          "enabled": true,
+          "evidence_gate": "platform_profile",
+          "fixture_source": "platform_profile choices",
+          "id": "profiles.platform_profile.apply",
+          "label": "Apply profile",
+          "reason_disabled": null,
+          "requires_confirmation": false,
+          "requires_reboot": false,
+          "role": "button",
+          "safety_notes": "No write is attempted in QA without daemon --enable-platform-profile-write.",
+          "safety_state": "write_blocked",
+          "supported": true,
+          "visible": true,
+          "write_capable": true,
+          "write_enabled_in_tests": false
+        },
+        {
+          "danger_level": "medium",
+          "displayed_value": "powersave",
+          "enabled": true,
+          "evidence_gate": "cpu_power",
+          "fixture_source": "cpu_power.governor",
+          "id": "profiles.cpu_governor",
+          "label": "CPU governor",
+          "reason_disabled": null,
+          "requires_confirmation": false,
+          "requires_reboot": false,
+          "role": "control_group",
+          "safety_notes": "Existing CPU power surface is daemon-planned and write-disabled in QA.",
+          "safety_state": "dry_run",
+          "supported": true,
+          "visible": true,
+          "write_capable": true,
+          "write_enabled_in_tests": false
+        },
+        {
+          "danger_level": "medium",
+          "displayed_value": "balance_performance",
+          "enabled": true,
+          "evidence_gate": "cpu_power",
+          "fixture_source": "cpu_power.epp",
+          "id": "profiles.cpu_epp",
+          "label": "CPU EPP",
+          "reason_disabled": null,
+          "requires_confirmation": false,
+          "requires_reboot": false,
+          "role": "control_group",
+          "safety_notes": "Existing CPU EPP surface is daemon-planned and write-disabled in QA.",
+          "safety_state": "dry_run",
+          "supported": true,
+          "visible": true,
+          "write_capable": true,
+          "write_enabled_in_tests": false
+        },
+        {
+          "danger_level": "medium",
+          "displayed_value": "enabled",
+          "enabled": true,
+          "evidence_gate": "cpu_power",
+          "fixture_source": "cpu_power.boost",
+          "id": "profiles.cpu_boost",
+          "label": "CPU boost",
+          "reason_disabled": null,
+          "requires_confirmation": false,
+          "requires_reboot": false,
+          "role": "control_group",
+          "safety_notes": "Existing CPU boost surface is daemon-planned and write-disabled in QA.",
+          "safety_state": "dry_run",
+          "supported": true,
+          "visible": true,
+          "write_capable": true,
+          "write_enabled_in_tests": false
+        },
+        {
+          "danger_level": "high",
+          "displayed_value": "70",
+          "enabled": true,
+          "evidence_gate": "firmware_attribute:ppt_pl1_spl",
+          "fixture_source": "firmware_attributes.ppt_pl1_spl",
+          "id": "profiles.firmware_ppt.spl",
+          "label": "SPL",
+          "reason_disabled": null,
+          "requires_confirmation": false,
+          "requires_reboot": false,
+          "role": "spin_button",
+          "safety_notes": "Firmware PPT writes are daemon-gated and write-disabled in QA.",
+          "safety_state": "dry_run",
+          "supported": true,
+          "visible": true,
+          "write_capable": true,
+          "write_enabled_in_tests": false
+        },
+        {
+          "danger_level": "high",
+          "displayed_value": "85",
+          "enabled": true,
+          "evidence_gate": "firmware_attribute:ppt_pl2_sppt",
+          "fixture_source": "firmware_attributes.ppt_pl2_sppt",
+          "id": "profiles.firmware_ppt.sppt",
+          "label": "SPPT",
+          "reason_disabled": null,
+          "requires_confirmation": false,
+          "requires_reboot": false,
+          "role": "spin_button",
+          "safety_notes": "Firmware PPT writes are daemon-gated and write-disabled in QA.",
+          "safety_state": "dry_run",
+          "supported": true,
+          "visible": true,
+          "write_capable": true,
+          "write_enabled_in_tests": false
+        },
+        {
+          "danger_level": "high",
+          "displayed_value": "102",
+          "enabled": true,
+          "evidence_gate": "firmware_attribute:ppt_pl3_fppt",
+          "fixture_source": "firmware_attributes.ppt_pl3_fppt",
+          "id": "profiles.firmware_ppt.fppt",
+          "label": "FPPT",
+          "reason_disabled": null,
+          "requires_confirmation": false,
+          "requires_reboot": false,
+          "role": "spin_button",
+          "safety_notes": "Firmware PPT writes are daemon-gated and write-disabled in QA.",
+          "safety_state": "dry_run",
+          "supported": true,
+          "visible": true,
+          "write_capable": true,
+          "write_enabled_in_tests": false
+        },
+        {
+          "danger_level": "high",
+          "displayed_value": "off",
+          "enabled": true,
+          "evidence_gate": "curve_optimizer_all_core",
+          "fixture_source": "ryzen backend status",
+          "id": "profiles.curve_optimizer.gate",
+          "label": "Show Curve Optimizer controls",
+          "reason_disabled": null,
+          "requires_confirmation": false,
+          "requires_reboot": false,
+          "role": "switch",
+          "safety_notes": "Advanced controls start hidden until deliberately enabled.",
+          "safety_state": "confirmation_required",
+          "supported": true,
+          "visible": true,
+          "write_capable": false,
+          "write_enabled_in_tests": false
+        },
+        {
+          "danger_level": "high",
+          "displayed_value": "hidden",
+          "enabled": false,
+          "evidence_gate": "curve_optimizer_all_core",
+          "fixture_source": "ryzen backend status",
+          "id": "profiles.curve_optimizer.all_core",
+          "label": "Curve Optimizer all-core",
+          "reason_disabled": "Write-only backend requires explicit advanced gate and daemon policy.",
+          "requires_confirmation": false,
+          "requires_reboot": false,
+          "role": "hidden_group",
+          "safety_notes": "Write-only backend requires explicit advanced gate and daemon policy.",
+          "safety_state": "write_blocked",
+          "supported": true,
+          "visible": true,
+          "write_capable": true,
+          "write_enabled_in_tests": false
+        }
+      ],
+      "enabled": true,
+      "id": "profiles",
+      "native_gtk_state_test_coverage": true,
+      "screenshot_coverage": true,
+      "sections": [
+        {
+          "id": "power_profiles",
+          "title": "Power Profiles",
+          "visible": true
+        },
+        {
+          "id": "platform_control",
+          "title": "Platform Control",
+          "visible": true
+        },
+        {
+          "id": "advanced_cpu_tuning",
+          "title": "Advanced CPU Tuning",
+          "visible": true
+        },
+        {
+          "id": "firmware_power_limits_tdp",
+          "title": "Firmware Power Limits (TDP)",
+          "visible": true
+        }
+      ],
+      "text_markers": [
+        "Power Profiles",
+        "Platform Control",
+        "Advanced CPU Tuning",
+        "Firmware Power Limits (TDP)"
+      ],
+      "title": "Power",
+      "unsupported_state_policy": "show explanatory empty/unsupported copy instead of blank UI",
+      "visible": true
+    },
+    {
+      "controls": [
+        {
+          "danger_level": "medium",
+          "displayed_value": "Standard",
+          "enabled": true,
+          "evidence_gate": "conservation_mode",
+          "fixture_source": "battery_charge_type.current",
+          "id": "battery.charge_type.requested",
+          "label": "Requested charge type",
+          "reason_disabled": null,
+          "requires_confirmation": false,
+          "requires_reboot": false,
+          "role": "expander_row",
+          "safety_notes": "Charge type apply is daemon-planned and write-disabled in QA.",
+          "safety_state": "dry_run",
+          "supported": true,
+          "visible": true,
+          "write_capable": true,
+          "write_enabled_in_tests": false
+        },
+        {
+          "danger_level": "medium",
+          "displayed_value": null,
+          "enabled": true,
+          "evidence_gate": "conservation_mode",
+          "fixture_source": "battery_charge_type.choices",
+          "id": "battery.charge_type.apply",
+          "label": "Apply charge type",
+          "reason_disabled": null,
+          "requires_confirmation": false,
+          "requires_reboot": false,
+          "role": "button",
+          "safety_notes": "No battery sysfs write occurs without daemon write flags.",
+          "safety_state": "write_blocked",
+          "supported": true,
+          "visible": true,
+          "write_capable": true,
+          "write_enabled_in_tests": false
+        }
+      ],
+      "enabled": true,
+      "id": "battery",
+      "native_gtk_state_test_coverage": true,
+      "screenshot_coverage": true,
+      "sections": [
+        {
+          "id": "charge_control",
+          "title": "Charge Control",
+          "visible": true
+        }
+      ],
+      "text_markers": [
+        "Charge Control"
+      ],
+      "title": "Battery",
+      "unsupported_state_policy": "show explanatory empty/unsupported copy instead of blank UI",
+      "visible": true
+    },
+    {
+      "controls": [
+        {
+          "danger_level": "none",
+          "displayed_value": "auto",
+          "enabled": true,
+          "evidence_gate": "amd_gpu_dpm_force_level",
+          "fixture_source": "amd_gpu_power_dpm.current_force_performance_level",
+          "id": "gpu.amd_dpm.current",
+          "label": "DPM force level",
+          "reason_disabled": null,
+          "requires_confirmation": false,
+          "requires_reboot": false,
+          "role": "readout",
+          "safety_notes": "Current AMD DPM readback.",
+          "safety_state": "read_only",
+          "supported": true,
+          "visible": true,
+          "write_capable": false,
+          "write_enabled_in_tests": false
+        },
+        {
+          "danger_level": "high",
+          "displayed_value": "false",
+          "enabled": true,
+          "evidence_gate": "amd_gpu_dpm_force_level",
+          "fixture_source": "amd_gpu_power_dpm.choices",
+          "id": "gpu.amd_dpm.confirm",
+          "label": "Confirm DPM force-level write",
+          "reason_disabled": null,
+          "requires_confirmation": true,
+          "requires_reboot": false,
+          "role": "check_button",
+          "safety_notes": "Execution button starts disabled until confirmation.",
+          "safety_state": "confirmation_required",
+          "supported": true,
+          "visible": true,
+          "write_capable": false,
+          "write_enabled_in_tests": false
+        },
+        {
+          "danger_level": "high",
+          "displayed_value": null,
+          "enabled": false,
+          "evidence_gate": "amd_gpu_dpm_force_level",
+          "fixture_source": "amd_gpu_power_dpm.force_performance_level_path",
+          "id": "gpu.amd_dpm.apply",
+          "label": "Apply force level",
+          "reason_disabled": "QA starts disabled; daemon write flags remain off.",
+          "requires_confirmation": true,
+          "requires_reboot": false,
+          "role": "button",
+          "safety_notes": "QA starts disabled; daemon write flags remain off.",
+          "safety_state": "confirmation_required",
+          "supported": true,
+          "visible": true,
+          "write_capable": true,
+          "write_enabled_in_tests": false
+        },
+        {
+          "danger_level": "high",
+          "displayed_value": "hybrid",
+          "enabled": true,
+          "evidence_gate": "gpu_mode",
+          "fixture_source": "gpu.mode",
+          "id": "gpu.mode.target",
+          "label": "Target mode",
+          "reason_disabled": null,
+          "requires_confirmation": false,
+          "requires_reboot": true,
+          "role": "dropdown",
+          "safety_notes": "Switching is reboot-gated on this fixture.",
+          "safety_state": "reboot_required",
+          "supported": true,
+          "visible": true,
+          "write_capable": true,
+          "write_enabled_in_tests": false
+        },
+        {
+          "danger_level": "high",
+          "displayed_value": "false",
+          "enabled": true,
+          "evidence_gate": "gpu_mode",
+          "fixture_source": "gpu.switch_type",
+          "id": "gpu.mode.confirm",
+          "label": "Confirm GPU switch",
+          "reason_disabled": null,
+          "requires_confirmation": true,
+          "requires_reboot": true,
+          "role": "check_button",
+          "safety_notes": "Execution button starts disabled until confirmation.",
+          "safety_state": "confirmation_required",
+          "supported": true,
+          "visible": true,
+          "write_capable": false,
+          "write_enabled_in_tests": false
+        },
+        {
+          "danger_level": "high",
+          "displayed_value": null,
+          "enabled": false,
+          "evidence_gate": "gpu_mode",
+          "fixture_source": "gpu.switch_notes",
+          "id": "gpu.mode.switch",
+          "label": "Switch mode",
+          "reason_disabled": "QA confirms button is initially disabled and writes are daemon-gated.",
+          "requires_confirmation": true,
+          "requires_reboot": true,
+          "role": "button",
+          "safety_notes": "QA confirms button is initially disabled and writes are daemon-gated.",
+          "safety_state": "confirmation_required",
+          "supported": true,
+          "visible": true,
+          "write_capable": true,
+          "write_enabled_in_tests": false
+        }
+      ],
+      "enabled": true,
+      "id": "gpu",
+      "native_gtk_state_test_coverage": true,
+      "screenshot_coverage": true,
+      "sections": [
+        {
+          "id": "amd_gpu_dpm",
+          "title": "AMD GPU DPM",
+          "visible": true
+        },
+        {
+          "id": "amd_gpu_dpm_control",
+          "title": "AMD GPU DPM Control",
+          "visible": true
+        },
+        {
+          "id": "switch_planning",
+          "title": "Switch Planning",
+          "visible": true
+        },
+        {
+          "id": "gpu_switching_evidence",
+          "title": "GPU Switching Evidence",
+          "visible": true
+        }
+      ],
+      "text_markers": [
+        "AMD GPU DPM",
+        "AMD GPU DPM Control",
+        "Switch Planning",
+        "GPU Switching Evidence"
+      ],
+      "title": "GPU",
+      "unsupported_state_policy": "show explanatory empty/unsupported copy instead of blank UI",
+      "visible": true
+    },
+    {
+      "controls": [
+        {
+          "danger_level": "high",
+          "displayed_value": "fixture preset choices",
+          "enabled": true,
+          "evidence_gate": "fan_curves",
+          "fixture_source": "fan_curves",
+          "id": "fans.preset",
+          "label": "Packaged preset",
+          "reason_disabled": null,
+          "requires_confirmation": false,
+          "requires_reboot": false,
+          "role": "action_row",
+          "safety_notes": "Fan execution remains plan-only without validated writable curve evidence.",
+          "safety_state": "dry_run",
+          "supported": true,
+          "visible": true,
+          "write_capable": true,
+          "write_enabled_in_tests": false
+        },
+        {
+          "danger_level": "medium",
+          "displayed_value": null,
+          "enabled": true,
+          "evidence_gate": "fan_curves",
+          "fixture_source": "fan_curves",
+          "id": "fans.preview_preset",
+          "label": "Preview dry-run plan",
+          "reason_disabled": null,
+          "requires_confirmation": false,
+          "requires_reboot": false,
+          "role": "button",
+          "safety_notes": "Preview produces a plan only.",
+          "safety_state": "dry_run",
+          "supported": true,
+          "visible": true,
+          "write_capable": false,
+          "write_enabled_in_tests": false
+        },
+        {
+          "danger_level": "medium",
+          "displayed_value": null,
+          "enabled": true,
+          "evidence_gate": "fan_curves",
+          "fixture_source": "last_known_good_fan_curve",
+          "id": "fans.preview_restore",
+          "label": "Preview restore dry-run",
+          "reason_disabled": null,
+          "requires_confirmation": false,
+          "requires_reboot": false,
+          "role": "button",
+          "safety_notes": "Restore preview produces a plan only.",
+          "safety_state": "dry_run",
+          "supported": true,
+          "visible": true,
+          "write_capable": false,
+          "write_enabled_in_tests": false
+        },
+        {
+          "danger_level": "none",
+          "displayed_value": null,
+          "enabled": true,
+          "evidence_gate": "fan_curves",
+          "fixture_source": "live fan snapshot",
+          "id": "fans.capture_snapshot",
+          "label": "Capture snapshot",
+          "reason_disabled": null,
+          "requires_confirmation": false,
+          "requires_reboot": false,
+          "role": "button",
+          "safety_notes": "Snapshot capture records read-only curve state.",
+          "safety_state": "read_only",
+          "supported": true,
+          "visible": true,
+          "write_capable": false,
+          "write_enabled_in_tests": false
+        },
+        {
+          "danger_level": "low",
+          "displayed_value": null,
+          "enabled": true,
+          "evidence_gate": null,
+          "fixture_source": "app state",
+          "id": "fans.save_profile_mapping",
+          "label": "Save preference",
+          "reason_disabled": null,
+          "requires_confirmation": false,
+          "requires_reboot": false,
+          "role": "button",
+          "safety_notes": "Mapping changes app state, not hardware sysfs.",
+          "safety_state": "daemon_state_only",
+          "supported": true,
+          "visible": true,
+          "write_capable": false,
+          "write_enabled_in_tests": false
+        }
+      ],
+      "enabled": true,
+      "id": "fans",
+      "native_gtk_state_test_coverage": true,
+      "screenshot_coverage": true,
+      "sections": [
+        {
+          "id": "guided_fan_planning",
+          "title": "Guided fan planning",
+          "visible": true
+        },
+        {
+          "id": "live_curve_readings",
+          "title": "Live curve readings",
+          "visible": true
+        },
+        {
+          "id": "manual_curve_scratchpad",
+          "title": "Manual curve scratchpad",
+          "visible": true
+        },
+        {
+          "id": "fan_validation_evidence",
+          "title": "Fan Validation Evidence",
+          "visible": true
+        }
+      ],
+      "text_markers": [
+        "Guided fan planning",
+        "Live curve readings",
+        "Manual curve scratchpad",
+        "Fan Validation Evidence"
+      ],
+      "title": "Fans",
+      "unsupported_state_policy": "show explanatory empty/unsupported copy instead of blank UI",
+      "visible": true
+    },
+    {
+      "controls": [
+        {
+          "danger_level": "high",
+          "displayed_value": null,
+          "enabled": false,
+          "evidence_gate": "keyboard_rgb",
+          "fixture_source": "keyboard_rgb_openrgb.backend_ready",
+          "id": "appearance.rgb.apply",
+          "label": "Apply RGB",
+          "reason_disabled": "RGB apply stays disabled until backend-ready evidence is promoted.",
+          "requires_confirmation": false,
+          "requires_reboot": false,
+          "role": "button",
+          "safety_notes": "RGB apply stays disabled until backend-ready evidence is promoted.",
+          "safety_state": "evidence_missing",
+          "supported": true,
+          "visible": true,
+          "write_capable": true,
+          "write_enabled_in_tests": false
+        },
+        {
+          "danger_level": "medium",
+          "displayed_value": "brightness=0",
+          "enabled": false,
+          "evidence_gate": "ylogo_led",
+          "fixture_source": "leds.platform::ylogo.brightness",
+          "id": "appearance.ylogo.off",
+          "label": "Turn off",
+          "reason_disabled": "Already-off action is insensitive for fixture state.",
+          "requires_confirmation": false,
+          "requires_reboot": false,
+          "role": "button",
+          "safety_notes": "Already-off action is insensitive for fixture state.",
+          "safety_state": "write_blocked",
+          "supported": true,
+          "visible": true,
+          "write_capable": true,
+          "write_enabled_in_tests": false
+        },
+        {
+          "danger_level": "medium",
+          "displayed_value": "brightness=0",
+          "enabled": true,
+          "evidence_gate": "ylogo_led",
+          "fixture_source": "leds.platform::ylogo.brightness",
+          "id": "appearance.ylogo.on",
+          "label": "Turn on",
+          "reason_disabled": null,
+          "requires_confirmation": false,
+          "requires_reboot": false,
+          "role": "button",
+          "safety_notes": "LED writes require daemon policy outside QA.",
+          "safety_state": "write_blocked",
+          "supported": true,
+          "visible": true,
+          "write_capable": true,
+          "write_enabled_in_tests": false
+        },
+        {
+          "danger_level": "medium",
+          "displayed_value": "no pending request",
+          "enabled": false,
+          "evidence_gate": "camera_power",
+          "fixture_source": "ideapad_toggles.camera_power",
+          "id": "appearance.camera.confirm",
+          "label": "Confirm",
+          "reason_disabled": "Camera power flow requires explicit request before confirm.",
+          "requires_confirmation": true,
+          "requires_reboot": false,
+          "role": "button",
+          "safety_notes": "Camera power flow requires explicit request before confirm.",
+          "safety_state": "confirmation_required",
+          "supported": true,
+          "visible": true,
+          "write_capable": true,
+          "write_enabled_in_tests": false
+        },
+        {
+          "danger_level": "medium",
+          "displayed_value": "Auto (0)",
+          "enabled": true,
+          "evidence_gate": "fan_mode",
+          "fixture_source": "ideapad_toggles.fan_mode",
+          "id": "appearance.fan_mode",
+          "label": "Fan mode",
+          "reason_disabled": null,
+          "requires_confirmation": false,
+          "requires_reboot": false,
+          "role": "button_group",
+          "safety_notes": "Fan mode writes require daemon policy outside QA.",
+          "safety_state": "write_blocked",
+          "supported": true,
+          "visible": true,
+          "write_capable": true,
+          "write_enabled_in_tests": false
+        }
+      ],
+      "enabled": true,
+      "id": "appearance",
+      "native_gtk_state_test_coverage": true,
+      "screenshot_coverage": true,
+      "sections": [
+        {
+          "id": "keyboard_rgb",
+          "title": "Keyboard RGB",
+          "visible": true
+        },
+        {
+          "id": "logo_led",
+          "title": "Logo LED",
+          "visible": true
+        },
+        {
+          "id": "keyboard",
+          "title": "Keyboard",
+          "visible": true
+        },
+        {
+          "id": "camera",
+          "title": "Camera",
+          "visible": true
+        },
+        {
+          "id": "usb_power",
+          "title": "USB Power",
+          "visible": true
+        },
+        {
+          "id": "fan_mode",
+          "title": "Fan Mode",
+          "visible": true
+        }
+      ],
+      "text_markers": [
+        "Keyboard RGB",
+        "Logo LED",
+        "Keyboard",
+        "Camera",
+        "USB Power",
+        "Fan Mode"
+      ],
+      "title": "Devices",
+      "unsupported_state_policy": "show explanatory empty/unsupported copy instead of blank UI",
+      "visible": true
+    },
+    {
+      "controls": [
+        {
+          "danger_level": "none",
+          "displayed_value": "fixture rules",
+          "enabled": true,
+          "evidence_gate": null,
+          "fixture_source": "daemon automation state",
+          "id": "automations.saved_rules",
+          "label": "Saved Automation Rules",
+          "reason_disabled": null,
+          "requires_confirmation": false,
+          "requires_reboot": false,
+          "role": "section",
+          "safety_notes": "Current saved rules are rendered from fixture diagnostics.",
+          "safety_state": "read_only",
+          "supported": true,
+          "visible": true,
+          "write_capable": false,
+          "write_enabled_in_tests": false
+        },
+        {
+          "danger_level": "low",
+          "displayed_value": null,
+          "enabled": true,
+          "evidence_gate": null,
+          "fixture_source": "automation rule plan",
+          "id": "automations.preview",
+          "label": "Preview",
+          "reason_disabled": null,
+          "requires_confirmation": false,
+          "requires_reboot": false,
+          "role": "button",
+          "safety_notes": "Preview/test-run surfaces do not write hardware.",
+          "safety_state": "dry_run",
+          "supported": true,
+          "visible": true,
+          "write_capable": false,
+          "write_enabled_in_tests": false
+        },
+        {
+          "danger_level": "low",
+          "displayed_value": null,
+          "enabled": true,
+          "evidence_gate": null,
+          "fixture_source": "daemon automation state",
+          "id": "automations.save",
+          "label": "Save",
+          "reason_disabled": null,
+          "requires_confirmation": false,
+          "requires_reboot": false,
+          "role": "button",
+          "safety_notes": "Rule persistence is daemon-owned app state, not a hardware write.",
+          "safety_state": "daemon_state_only",
+          "supported": true,
+          "visible": true,
+          "write_capable": false,
+          "write_enabled_in_tests": false
+        },
+        {
+          "danger_level": "low",
+          "displayed_value": null,
+          "enabled": true,
+          "evidence_gate": null,
+          "fixture_source": "daemon automation state",
+          "id": "automations.delete",
+          "label": "Delete",
+          "reason_disabled": null,
+          "requires_confirmation": false,
+          "requires_reboot": false,
+          "role": "button",
+          "safety_notes": "Rule deletion is daemon-owned app state, not a hardware write.",
+          "safety_state": "daemon_state_only",
+          "supported": true,
+          "visible": true,
+          "write_capable": false,
+          "write_enabled_in_tests": false
+        }
+      ],
+      "enabled": true,
+      "id": "automations",
+      "native_gtk_state_test_coverage": true,
+      "screenshot_coverage": true,
+      "sections": [
+        {
+          "id": "quick_templates",
+          "title": "Quick Templates",
+          "visible": true
+        },
+        {
+          "id": "saved_automation_rules",
+          "title": "Saved Automation Rules",
+          "visible": true
+        },
+        {
+          "id": "create_automation_rule",
+          "title": "Create Automation Rule",
+          "visible": true
+        },
+        {
+          "id": "create_ac_router_rule",
+          "title": "Create AC Router Rule",
+          "visible": true
+        },
+        {
+          "id": "create_fast_charge_rule",
+          "title": "Create Fast Charge Rule",
+          "visible": true
+        }
+      ],
+      "text_markers": [
+        "Quick Templates",
+        "Saved Automation Rules",
+        "Create Automation Rule",
+        "Create AC Router Rule",
+        "Create Fast Charge Rule"
+      ],
+      "title": "Automations",
+      "unsupported_state_policy": "show explanatory empty/unsupported copy instead of blank UI",
+      "visible": true
+    },
+    {
+      "controls": [
+        {
+          "danger_level": "none",
+          "displayed_value": "daemon policy",
+          "enabled": true,
+          "evidence_gate": null,
+          "fixture_source": "daemon status",
+          "id": "settings.write_surfaces",
+          "label": "Enabled Write Surfaces",
+          "reason_disabled": null,
+          "requires_confirmation": false,
+          "requires_reboot": false,
+          "role": "readout",
+          "safety_notes": "Settings page reports daemon write policy instead of enabling writes.",
+          "safety_state": "read_only",
+          "supported": true,
+          "visible": true,
+          "write_capable": false,
+          "write_enabled_in_tests": false
+        },
+        {
+          "danger_level": "none",
+          "displayed_value": null,
+          "enabled": true,
+          "evidence_gate": null,
+          "fixture_source": "D-Bus client",
+          "id": "settings.reconnect",
+          "label": "Reconnect",
+          "reason_disabled": null,
+          "requires_confirmation": false,
+          "requires_reboot": false,
+          "role": "button",
+          "safety_notes": "Reconnect only refreshes the unprivileged client connection.",
+          "safety_state": "read_only",
+          "supported": true,
+          "visible": true,
+          "write_capable": false,
+          "write_enabled_in_tests": false
+        }
+      ],
+      "enabled": true,
+      "id": "settings",
+      "native_gtk_state_test_coverage": true,
+      "screenshot_coverage": true,
+      "sections": [
+        {
+          "id": "appearance",
+          "title": "Appearance",
+          "visible": true
+        },
+        {
+          "id": "notifications",
+          "title": "Notifications",
+          "visible": true
+        },
+        {
+          "id": "telemetry_refresh",
+          "title": "Telemetry Refresh",
+          "visible": true
+        },
+        {
+          "id": "startup_and_tray",
+          "title": "Startup and Tray",
+          "visible": true
+        },
+        {
+          "id": "enabled_write_surfaces",
+          "title": "Enabled Write Surfaces",
+          "visible": true
+        },
+        {
+          "id": "daemon_connection",
+          "title": "Daemon Connection",
+          "visible": true
+        }
+      ],
+      "text_markers": [
+        "Appearance",
+        "Notifications",
+        "Telemetry Refresh",
+        "Startup and Tray",
+        "Enabled Write Surfaces",
+        "Daemon Connection"
+      ],
+      "title": "Settings",
+      "unsupported_state_policy": "show explanatory empty/unsupported copy instead of blank UI",
+      "visible": true
+    },
+    {
+      "controls": [
+        {
+          "danger_level": "none",
+          "displayed_value": "read-only support bundle",
+          "enabled": true,
+          "evidence_gate": null,
+          "fixture_source": "diagnostics bundle command",
+          "id": "diagnostics.compat_bundle",
+          "label": "Compatibility Bundle",
+          "reason_disabled": null,
+          "requires_confirmation": false,
+          "requires_reboot": false,
+          "role": "command_row",
+          "safety_notes": "Diagnostics commands collect evidence without hardware writes.",
+          "safety_state": "read_only",
+          "supported": true,
+          "visible": true,
+          "write_capable": false,
+          "write_enabled_in_tests": false
+        },
+        {
+          "danger_level": "none",
+          "displayed_value": "ryzenadj_write_only",
+          "enabled": true,
+          "evidence_gate": "curve_optimizer_all_core",
+          "fixture_source": "ryzen backend status",
+          "id": "diagnostics.ryzen_backend",
+          "label": "Ryzen Backend Setup",
+          "reason_disabled": null,
+          "requires_confirmation": false,
+          "requires_reboot": false,
+          "role": "command_row",
+          "safety_notes": "Setup assistant is informational; RatVantage does not load kernel modules.",
+          "safety_state": "read_only",
+          "supported": true,
+          "visible": true,
+          "write_capable": false,
+          "write_enabled_in_tests": false
+        }
+      ],
+      "enabled": true,
+      "id": "diagnostics",
+      "native_gtk_state_test_coverage": true,
+      "screenshot_coverage": true,
+      "sections": [
+        {
+          "id": "system_snapshot",
+          "title": "System Snapshot",
+          "visible": true
+        },
+        {
+          "id": "compatibility_bundle",
+          "title": "Compatibility Bundle",
+          "visible": true
+        },
+        {
+          "id": "automation_diagnostics",
+          "title": "Automation Diagnostics",
+          "visible": true
+        },
+        {
+          "id": "reset_diagnostics",
+          "title": "Reset Diagnostics",
+          "visible": true
+        },
+        {
+          "id": "ryzen_backend_setup",
+          "title": "Ryzen Backend Setup",
+          "visible": true
+        },
+        {
+          "id": "raw_probe_data",
+          "title": "Raw Probe Data",
+          "visible": true
+        }
+      ],
+      "text_markers": [
+        "System Snapshot",
+        "Compatibility Bundle",
+        "Automation Diagnostics",
+        "Reset Diagnostics",
+        "Ryzen Backend Setup",
+        "Raw Probe Data"
+      ],
+      "title": "Diagnostics",
+      "unsupported_state_policy": "show explanatory empty/unsupported copy instead of blank UI",
+      "visible": true
+    }
+  ],
+  "real_hardware_writes_enabled": false,
+  "schema_version": 1,
+  "semantic_structural_gate": "blocking",
+  "source": "gtk-native-fixture",
+  "supplemental": {
+    "tray_status": {
+      "covered_by": "legion-control-tray Rust tests and scripts/ci-local.sh",
+      "fixture_source": "capability registry",
+      "id": "tray.status",
+      "real_hardware_writes_enabled": false,
+      "safety_state": "read_only"
+    }
+  },
+  "test_mode": "fixture-private-dbus-read-only",
+  "visual_gate": "blocking"
+}

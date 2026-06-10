@@ -26,6 +26,10 @@ pub fn diagnostics_page(diagnostics: Result<DiagnosticsBundle>) -> adw::Preferen
 
 fn append_diagnostics(page: &adw::PreferencesPage, bundle: &DiagnosticsBundle) {
     let group = adw::PreferencesGroup::new();
+    group.set_title("System Snapshot");
+    group.set_description(Some(
+        "Read-only summary of what the probe and daemon currently see. Nothing on this page writes to hardware.",
+    ));
     group.add(&info_row(
         "Vendor",
         bundle.hardware.vendor.as_deref().unwrap_or("unknown"),
@@ -72,21 +76,6 @@ fn append_diagnostics(page: &adw::PreferencesPage, bundle: &DiagnosticsBundle) {
     page.add(&group);
 
     let json = render_diagnostics_json(bundle).unwrap_or_else(|error| error.to_string());
-
-    let actions = gtk4::Box::new(gtk4::Orientation::Horizontal, 8);
-    let copy = gtk4::Button::with_label("Copy JSON");
-    copy.set_tooltip_text(Some("Copy diagnostics JSON"));
-    let json_for_clipboard = json.clone();
-    copy.connect_clicked(move |_| {
-        if let Some(display) = gtk4::gdk::Display::default() {
-            display.clipboard().set_text(&json_for_clipboard);
-        }
-    });
-    actions.append(&copy);
-
-    let actions_group = adw::PreferencesGroup::new();
-    actions_group.add(&actions);
-    page.add(&actions_group);
 
     let compatibility = adw::PreferencesGroup::new();
     compatibility.set_title("Compatibility Bundle");
@@ -199,6 +188,21 @@ fn append_diagnostics(page: &adw::PreferencesPage, bundle: &DiagnosticsBundle) {
         .build();
 
     let json_group = adw::PreferencesGroup::new();
+    json_group.set_title("Raw Probe Data");
+    json_group.set_description(Some(
+        "The full diagnostics JSON, useful when filing a hardware support report.",
+    ));
+    let copy = gtk4::Button::with_label("Copy JSON");
+    copy.set_tooltip_text(Some("Copy the full diagnostics JSON to the clipboard."));
+    copy.add_css_class("pill");
+    copy.set_valign(gtk4::Align::Center);
+    let json_for_clipboard = json.clone();
+    copy.connect_clicked(move |_| {
+        if let Some(display) = gtk4::gdk::Display::default() {
+            display.clipboard().set_text(&json_for_clipboard);
+        }
+    });
+    json_group.set_header_suffix(Some(&copy));
     json_group.add(&scroller);
     page.add(&json_group);
 }

@@ -1046,7 +1046,9 @@ fn append_fan_preset_per_profile_section(page: &adw::PreferencesPage, bundle: &D
     for profile in &platform_cap.choices {
         let row = adw::ActionRow::builder()
             .title(profile.as_str())
-            .subtitle("Interactive: click this row or the dropdown to choose an app-state preset mapping.")
+            .subtitle(
+                "Pick the preset to remember for this profile. Saved as an app preference only.",
+            )
             .selectable(false)
             .build();
 
@@ -1064,7 +1066,10 @@ fn append_fan_preset_per_profile_section(page: &adw::PreferencesPage, bundle: &D
         };
         dropdown.set_selected(selected);
 
-        let save = gtk4::Button::with_label("Save app-state mapping");
+        let save = gtk4::Button::with_label("Save preference");
+        save.set_tooltip_text(Some(
+            "Stores the preset preference in daemon app state only; no fan hardware write runs.",
+        ));
         row.add_suffix(&dropdown);
         row.add_suffix(&save);
         row.set_activatable_widget(Some(&dropdown));
@@ -1829,7 +1834,7 @@ fn build_fan_planning_controls(
     let chooser_row = adw::ActionRow::builder()
         .title("Packaged preset")
         .subtitle(
-            "Interactive: click this row or the dropdown to choose a preset. Dry-run preview only; there is no dashboard ApplyFanPreset execution until live validation evidence exists.",
+            "Choose a packaged preset to preview. Dry-run only — fan preset execution stays disabled until live validation evidence exists.",
         )
         .selectable(false)
         .build();

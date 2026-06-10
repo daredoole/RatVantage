@@ -203,12 +203,12 @@ fn battery_summary(report: &CapabilityRegistry) -> String {
         parts.push(status.clone());
     }
     if let Some(health) = &battery.health {
-        parts.push(format!("health {health}"));
+        parts.push(format!("Health {health}"));
     }
     if parts.is_empty() {
         battery.name.clone()
     } else {
-        parts.join(" / ")
+        parts.join(" · ")
     }
 }
 
@@ -282,10 +282,10 @@ fn fan_summary(report: &CapabilityRegistry) -> String {
 
 fn devices_summary(report: &CapabilityRegistry) -> String {
     [
-        format!("Fn {}", toggle_state(report, "fn_lock")),
-        format!("USB {}", toggle_state(report, "usb_charging")),
+        format!("Fn lock {}", toggle_state(report, "fn_lock")),
+        format!("USB charge {}", toggle_state(report, "usb_charging")),
         format!("Logo {}", led_state(report, "platform::ylogo")),
         format!("Camera {}", toggle_state(report, "camera_power")),
     ]
-    .join(" / ")
+    .join(" · ")
 }
