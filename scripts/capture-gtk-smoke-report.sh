@@ -94,6 +94,7 @@ dbus_log="$output_dir/dbus.log"
 commands_log="$output_dir/commands.log"
 environment_txt="$output_dir/environment.txt"
 state_path="$tmpdir/state.toml"
+gtk_config_dir="$tmpdir/xdg-config/gtk-4.0"
 private_bus_pid=""
 daemon_pid=""
 
@@ -150,6 +151,12 @@ done
   echo "pages=$pages_csv"
 } >"$environment_txt"
 
+mkdir -p "$gtk_config_dir"
+cat >"$gtk_config_dir/settings.ini" <<'EOF'
+[Settings]
+gtk-font-name=JetBrains Mono 11
+EOF
+
 capture_delay_seconds="$(awk "BEGIN { printf \"%.3f\", $capture_delay_ms / 1000 }")"
 
 log_command cargo build -q -p legion-control-daemon
@@ -194,10 +201,11 @@ cargo run -q -p legion-control-ui -- --diagnostics --bus-address "$bus_address" 
 for page in "${pages[@]}"; do
   page_png="$output_dir/screenshots/$page.png"
   page_log="$output_dir/$page-ui.log"
-  log_command xvfb-run -a -s "-screen 0 1280x900x24" bash --noprofile --norc -lc "DBUS_SESSION_BUS_ADDRESS='$bus_address' GSK_RENDERER='$gsk_renderer' ADW_DEBUG_COLOR_SCHEME=prefer-dark GTK_A11Y=none GDK_BACKEND=x11 GDK_DISABLE=dmabuf cargo run -q -p legion-control-ui --features gtk-ui -- --bus-address '$bus_address' --gtk-page '$page' --gtk-auto-quit-ms '$auto_quit_ms'"
+  log_command xvfb-run -a -s "-screen 0 1280x900x24" bash --noprofile --norc -lc "DBUS_SESSION_BUS_ADDRESS='$bus_address' XDG_CONFIG_HOME='$tmpdir/xdg-config' GSK_RENDERER='$gsk_renderer' ADW_DEBUG_COLOR_SCHEME=prefer-dark GTK_A11Y=none GDK_BACKEND=x11 GDK_DISABLE=dmabuf cargo run -q -p legion-control-ui --features gtk-ui -- --bus-address '$bus_address' --gtk-page '$page' --gtk-auto-quit-ms '$auto_quit_ms'"
   xvfb-run -a -s "-screen 0 1280x900x24" bash --noprofile --norc -lc "
     set -euo pipefail
     export DBUS_SESSION_BUS_ADDRESS='$bus_address'
+    export XDG_CONFIG_HOME='$tmpdir/xdg-config'
     export GSK_RENDERER='$gsk_renderer'
     export ADW_DEBUG_COLOR_SCHEME=prefer-dark
     export GTK_A11Y=none
