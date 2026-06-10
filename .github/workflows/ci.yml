@@ -10,8 +10,38 @@ jobs:
   rust:
     name: Rust
     runs-on: ubuntu-latest
+    container: fedora:latest
 
     steps:
+      - name: Install system test dependencies
+        run: |
+          dnf install -y \
+            appstream \
+            appstream-compose \
+            cargo \
+            curl \
+            dbus \
+            dbus-devel \
+            desktop-file-utils \
+            findutils \
+            gcc \
+            git \
+            glib2-devel \
+            gtk4-devel \
+            ImageMagick \
+            libadwaita-devel \
+            polkit-devel \
+            pkgconf-pkg-config \
+            python3-gobject \
+            python3-pillow \
+            python3-pyatspi \
+            systemd \
+            systemd-devel \
+            systemd-rpm-macros \
+            tar \
+            xz \
+            xorg-x11-server-Xvfb
+
       - name: Checkout
         uses: actions/checkout@v6
 
@@ -19,22 +49,6 @@ jobs:
         uses: dtolnay/rust-toolchain@stable
         with:
           components: rustfmt, clippy
-
-      - name: Install system test dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y \
-            appstream \
-            dbus \
-            desktop-file-utils \
-            imagemagick \
-            libadwaita-1-dev \
-            libgtk-4-dev \
-            pkg-config \
-            python3-gi \
-            python3-pil \
-            python3-pyatspi \
-            xvfb
 
       - name: Check formatting
         run: cargo fmt --all --check
