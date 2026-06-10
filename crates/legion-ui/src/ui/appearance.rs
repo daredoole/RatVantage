@@ -151,7 +151,7 @@ fn build_keyboard_rgb_controls(bundle: &DiagnosticsBundle) -> adw::PreferencesGr
         let status = adw::ActionRow::builder()
             .title("Backend readiness")
             .subtitle(format!(
-                "backend={} device={} zones={} effect={} brightness={} speed={}",
+                "{} backend ready on {} with {} zones. Current effect {}, brightness {}, speed {}.",
                 rgb.backend,
                 rgb.device_id,
                 rgb.zones.len(),
@@ -161,6 +161,15 @@ fn build_keyboard_rgb_controls(bundle: &DiagnosticsBundle) -> adw::PreferencesGr
             ))
             .selectable(false)
             .build();
+        status.set_tooltip_text(Some(&format!(
+            "backend={} device={} zones={} effect={} brightness={} speed={}",
+            rgb.backend,
+            rgb.device_id,
+            rgb.zones.len(),
+            current_effect,
+            current_brightness,
+            current_speed
+        )));
         status.add_suffix(&status_pill("backend ready", PillTone::Good));
         group.add(&status);
     } else if bundle.raw_probe_report.keyboard_rgb_candidates.is_empty()
@@ -175,9 +184,10 @@ fn build_keyboard_rgb_controls(bundle: &DiagnosticsBundle) -> adw::PreferencesGr
         let candidates = &bundle.raw_probe_report.keyboard_rgb_candidates;
         let status = adw::ActionRow::builder()
             .title("Backend readiness")
-            .subtitle(format_keyboard_rgb_candidate_summary(candidates))
+            .subtitle(keyboard_rgb_candidate_readiness(candidates))
             .selectable(false)
             .build();
+        status.set_tooltip_text(Some(&format_keyboard_rgb_candidate_summary(candidates)));
         status.add_suffix(&status_pill("research", PillTone::Warning));
         group.add(&status);
 
@@ -190,9 +200,10 @@ fn build_keyboard_rgb_controls(bundle: &DiagnosticsBundle) -> adw::PreferencesGr
     if let Some(openrgb) = bundle.raw_probe_report.keyboard_rgb_openrgb.as_ref() {
         let status = adw::ActionRow::builder()
             .title("OpenRGB readiness")
-            .subtitle(format_keyboard_rgb_openrgb_summary(openrgb))
+            .subtitle(keyboard_rgb_openrgb_readiness(openrgb))
             .selectable(false)
             .build();
+        status.set_tooltip_text(Some(&format_keyboard_rgb_openrgb_summary(openrgb)));
         status.add_suffix(&status_pill(
             if openrgb.devices.is_empty() {
                 "not detected"
@@ -1825,6 +1836,40 @@ fn writable_ylogo(leds: &[LedCapability]) -> Option<&LedCapability> {
             && led.max_brightness == Some(1)
             && matches!(led.brightness, Some(0 | 1))
     })
+}
+
+fn keyboard_rgb_candidate_readiness(candidates: &[KeyboardRgbCandidate]) -> String {
+    let count = candidates.len();
+    let noun = if count == 1 {
+        "keyboard device"
+    } else {
+        "keyboard devices"
+    };
+    format!(
+        "Found {count} possible RGB {noun}, but no usable backend yet. \
+         RGB control stays read-only until hardware evidence is reviewed. \
+         Hover for raw device details."
+    )
+}
+
+fn keyboard_rgb_openrgb_readiness(openrgb: &legion_common::KeyboardRgbOpenRgbStatus) -> String {
+    let Some(device) = openrgb.devices.first() else {
+        return "OpenRGB did not detect a Lenovo keyboard RGB device.".to_owned();
+    };
+    let name = device.description.as_deref().unwrap_or(&device.name);
+    let modes = if device.modes.is_empty() {
+        "modes unknown".to_owned()
+    } else {
+        format!("modes: {}", device.modes.join(", "))
+    };
+    if openrgb.backend_ready {
+        format!("{name} detected ({modes}). The OpenRGB backend is ready.")
+    } else {
+        format!(
+            "{name} detected ({modes}), but the OpenRGB backend is not usable yet. \
+             Hover for the raw readiness checklist."
+        )
+    }
 }
 
 fn format_keyboard_rgb_candidate_summary(candidates: &[KeyboardRgbCandidate]) -> String {

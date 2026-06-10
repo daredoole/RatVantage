@@ -1094,17 +1094,16 @@ fn appearance_keyboard_rgb_research_controls_stage_requests_without_apply() {
 
     assert!(text.iter().any(|value| value == "Backend readiness"));
     assert!(text.iter().any(|value| {
-        value.contains("2 HID research candidates")
-            && value.contains("devices=048d:c103, 048d:c985")
-            && value.contains("backend_ready=false")
+        value.contains("Found 2 possible RGB keyboard devices")
+            && value.contains("no usable backend yet")
+            && value.contains("read-only until hardware evidence is reviewed")
     }));
     assert!(text.iter().any(|value| value.contains("Fn+Space cycles")));
     assert!(text.iter().any(|value| value == "OpenRGB readiness"));
     assert!(text.iter().any(|value| {
         value.contains("Lenovo 4-Zone device")
             && value.contains("Breathing")
-            && value.contains("i2c_rw=false")
-            && value.contains("backend_ready=false")
+            && value.contains("not usable yet")
     }));
     assert!(text.iter().any(|value| value == "OpenRGB access setup"));
     assert!(text.iter().any(|value| {

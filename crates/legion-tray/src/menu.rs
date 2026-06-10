@@ -318,12 +318,12 @@ fn battery_row(report: &CapabilityRegistry) -> Option<String> {
         parts.push(status.to_owned());
     }
     if let Some(health) = battery.health.as_deref() {
-        parts.push(health.to_owned());
+        parts.push(format!("Health {health}"));
     }
     if parts.is_empty() {
         None
     } else {
-        Some(format!("Battery: {}", parts.join(" / ")))
+        Some(format!("Battery: {}", parts.join(" · ")))
     }
 }
 
@@ -1131,7 +1131,7 @@ mod tests {
                 "Platform profile: Balanced",
                 "Desktop power profile: Power Saver",
                 "Charge type: Standard",
-                "Battery: 79% / Charging / Good",
+                "Battery: 79% · Charging · Health Good",
                 "Logo LED: on",
                 "Keyboard backlight: on",
                 "Fn-lock: off",

@@ -287,5 +287,5 @@ fn devices_summary(report: &CapabilityRegistry) -> String {
         format!("Logo {}", led_state(report, "platform::ylogo")),
         format!("Camera {}", toggle_state(report, "camera_power")),
     ]
-    .join(" · ")
+    .join("\n")
 }

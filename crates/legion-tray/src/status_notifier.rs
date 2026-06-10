@@ -990,7 +990,7 @@ mod tests {
         assert!(menu_has_disabled_item(&menu, "Charge type: Standard"));
         assert!(menu_has_disabled_item(
             &menu,
-            "Battery: 79% / Charging / Good"
+            "Battery: 79% · Charging · Health Good"
         ));
         assert!(menu_has_disabled_item(&menu, "Logo LED: on"));
         assert!(menu_has_disabled_item(&menu, "Fn-lock: off"));
