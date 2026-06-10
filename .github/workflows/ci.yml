@@ -21,6 +21,7 @@ jobs:
             cargo \
             curl \
             dbus \
+            dbus-daemon \
             dbus-devel \
             desktop-file-utils \
             findutils \
