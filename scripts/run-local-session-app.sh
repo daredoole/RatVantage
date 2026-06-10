@@ -23,7 +23,7 @@ Options:
   --gsk-renderer <name>  Set GSK_RENDERER for GTK UI mode.
   --gdk-backend <name>   Set GDK_BACKEND for GTK UI mode.
   --gdk-disable <value>  Set GDK_DISABLE for GTK UI mode.
-  --gtk-page <page>      GTK page for UI mode: status, profiles, battery, gpu, fans, appearance, diagnostics.
+  --gtk-page <page>      GTK page for UI mode: status, profiles, battery, gpu, fans, appearance, automations, settings, diagnostics.
   --gtk-auto-quit-ms <n> Auto-close GTK UI after N milliseconds.
   --dry-run              Print commands instead of running them.
   -h, --help             Show this help.

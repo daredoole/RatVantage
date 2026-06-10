@@ -1,0 +1,343 @@
+<?xml version="1.0"?>
+<!DOCTYPE node PUBLIC "-//freedesktop//DTD D-BUS Object Introspection 1.0//EN"
+ "http://www.freedesktop.org/standards/dbus/1.0/introspect.dtd">
+<node>
+  <interface name="org.freedesktop.DBus.Introspectable">
+    <method name="Introspect">
+      <arg type="s" direction="out" />
+    </method>
+  </interface>
+  <interface name="org.freedesktop.DBus.Peer">
+    <method name="GetMachineId">
+      <arg type="s" direction="out" />
+    </method>
+    <method name="Ping">
+    </method>
+  </interface>
+  <interface name="org.freedesktop.DBus.Properties">
+    <method name="Get">
+      <arg name="interface_name" type="s" direction="in" />
+      <arg name="property_name" type="s" direction="in" />
+      <arg type="v" direction="out" />
+    </method>
+    <method name="GetAll">
+      <arg name="interface_name" type="s" direction="in" />
+      <arg type="a{sv}" direction="out" />
+    </method>
+    <method name="Set">
+      <arg name="interface_name" type="s" direction="in" />
+      <arg name="property_name" type="s" direction="in" />
+      <arg name="value" type="v" direction="in" />
+    </method>
+    <signal name="PropertiesChanged">
+      <arg name="interface_name" type="s" />
+      <arg name="changed_properties" type="a{sv}" />
+      <arg name="invalidated_properties" type="as" />
+    </signal>
+  </interface>
+  <interface name="org.ratvantage.LegionControl1">
+    <method name="ApplyAutomationRule">
+      <arg name="rule_id" type="s" direction="in" />
+      <arg type="s" direction="out" />
+    </method>
+    <method name="ApplyHardwareProfile">
+      <arg name="profile_id" type="s" direction="in" />
+      <arg type="s" direction="out" />
+    </method>
+    <method name="ApplyHardwareProfileTrigger">
+      <arg name="trigger_id" type="s" direction="in" />
+      <arg type="s" direction="out" />
+    </method>
+    <method name="CaptureLastKnownGoodFanCurve">
+      <arg type="s" direction="out" />
+    </method>
+    <method name="ClearAutomationRules">
+      <arg type="s" direction="out" />
+    </method>
+    <method name="ClearFanPresetProfileMap">
+      <arg type="s" direction="out" />
+    </method>
+    <method name="ClearGpuModePending">
+      <arg type="s" direction="out" />
+    </method>
+    <method name="ClearHardwareProfileTriggers">
+      <arg type="s" direction="out" />
+    </method>
+    <method name="ClearHardwareProfiles">
+      <arg type="s" direction="out" />
+    </method>
+    <method name="GetAutomationRulePreview">
+      <arg name="rule_id" type="s" direction="in" />
+      <arg type="s" direction="out" />
+    </method>
+    <method name="GetAutomationRules">
+      <arg type="s" direction="out" />
+    </method>
+    <method name="GetCapabilities">
+      <arg type="s" direction="out" />
+    </method>
+    <method name="GetFanPresetProfileMap">
+      <arg type="s" direction="out" />
+    </method>
+    <method name="GetFanPresetReapplyAfterResume">
+      <arg type="s" direction="out" />
+    </method>
+    <method name="GetGpuModePending">
+      <arg type="s" direction="out" />
+    </method>
+    <method name="GetHardwareProfileApplyPreview">
+      <arg name="profile_id" type="s" direction="in" />
+      <arg type="s" direction="out" />
+    </method>
+    <method name="GetHardwareProfileTriggerApplyPreview">
+      <arg name="trigger_id" type="s" direction="in" />
+      <arg type="s" direction="out" />
+    </method>
+    <method name="GetHardwareProfileTriggers">
+      <arg type="s" direction="out" />
+    </method>
+    <method name="GetHardwareProfiles">
+      <arg type="s" direction="out" />
+    </method>
+    <method name="GetHardwareSummary">
+      <arg type="s" direction="out" />
+    </method>
+    <method name="GetLastAutomationRuleApply">
+      <arg type="s" direction="out" />
+    </method>
+    <method name="GetLastCurveOptimizerAllCore">
+      <arg type="s" direction="out" />
+    </method>
+    <method name="GetLastHardwareProfileApply">
+      <arg type="s" direction="out" />
+    </method>
+    <method name="GetLastKnownGoodFanCurve">
+      <arg type="s" direction="out" />
+    </method>
+    <method name="GetLiveFanCurveReadings">
+      <arg type="s" direction="out" />
+    </method>
+    <method name="GetRawProbeReport">
+      <arg type="s" direction="out" />
+    </method>
+    <method name="GetRecentDesktopPowerProfileChanges">
+      <arg type="s" direction="out" />
+    </method>
+    <method name="GetRecentPlatformProfileChanges">
+      <arg type="s" direction="out" />
+    </method>
+    <method name="GetRyzenBackendStatus">
+      <arg type="s" direction="out" />
+    </method>
+    <method name="GetTelemetry">
+      <arg type="s" direction="out" />
+    </method>
+    <method name="PlanAmdGpuDpmForceLevelWrite">
+      <arg name="requested" type="s" direction="in" />
+      <arg type="s" direction="out" />
+    </method>
+    <method name="PlanBatteryChargeTypeWrite">
+      <arg name="requested" type="s" direction="in" />
+      <arg type="s" direction="out" />
+    </method>
+    <method name="PlanConservationModeWrite">
+      <arg name="requested" type="s" direction="in" />
+      <arg type="s" direction="out" />
+    </method>
+    <method name="PlanCpuBoostWrite">
+      <arg name="requested" type="s" direction="in" />
+      <arg type="s" direction="out" />
+    </method>
+    <method name="PlanCpuEppWrite">
+      <arg name="requested" type="s" direction="in" />
+      <arg type="s" direction="out" />
+    </method>
+    <method name="PlanCpuGovernorWrite">
+      <arg name="requested" type="s" direction="in" />
+      <arg type="s" direction="out" />
+    </method>
+    <method name="PlanCurveOptimizerAllCoreWrite">
+      <arg name="requested" type="s" direction="in" />
+      <arg type="s" direction="out" />
+    </method>
+    <method name="PlanCustomThermalFanPresetWrite">
+      <arg name="requested" type="s" direction="in" />
+      <arg type="s" direction="out" />
+    </method>
+    <method name="PlanCustomThermalFirmwareAttributeWrite">
+      <arg name="attribute_id" type="s" direction="in" />
+      <arg name="requested" type="s" direction="in" />
+      <arg type="s" direction="out" />
+    </method>
+    <method name="PlanCustomThermalFirmwarePptPresetWrite">
+      <arg name="preset_id" type="s" direction="in" />
+      <arg type="s" direction="out" />
+    </method>
+    <method name="PlanCustomThermalRestoreAutoFanWrite">
+      <arg type="s" direction="out" />
+    </method>
+    <method name="PlanFanPresetWrite">
+      <arg name="requested" type="s" direction="in" />
+      <arg type="s" direction="out" />
+    </method>
+    <method name="PlanFirmwareAttributeResetWrite">
+      <arg name="attribute_id" type="s" direction="in" />
+      <arg type="s" direction="out" />
+    </method>
+    <method name="PlanFirmwareAttributeWrite">
+      <arg name="attribute_id" type="s" direction="in" />
+      <arg name="requested" type="s" direction="in" />
+      <arg type="s" direction="out" />
+    </method>
+    <method name="PlanGpuModeRuntimeWrite">
+      <arg name="requested" type="s" direction="in" />
+      <arg type="s" direction="out" />
+    </method>
+    <method name="PlanGpuModeWrite">
+      <arg name="requested" type="s" direction="in" />
+      <arg type="s" direction="out" />
+    </method>
+    <method name="PlanIdeapadToggleWrite">
+      <arg name="toggle_id" type="s" direction="in" />
+      <arg name="enabled" type="b" direction="in" />
+      <arg type="s" direction="out" />
+    </method>
+    <method name="PlanKeyboardRgbWrite">
+      <arg name="request_json" type="s" direction="in" />
+      <arg type="s" direction="out" />
+    </method>
+    <method name="PlanLedStateWrite">
+      <arg name="led_id" type="s" direction="in" />
+      <arg name="enabled" type="b" direction="in" />
+      <arg type="s" direction="out" />
+    </method>
+    <method name="PlanOpenRgbAccessSetup">
+      <arg name="target_user" type="s" direction="in" />
+      <arg type="s" direction="out" />
+    </method>
+    <method name="PlanOpenRgbKeyboardRgbBridge">
+      <arg name="request_json" type="s" direction="in" />
+      <arg type="s" direction="out" />
+    </method>
+    <method name="PlanOpenRgbKeyboardRgbSdkWrite">
+      <arg name="request_json" type="s" direction="in" />
+      <arg type="s" direction="out" />
+    </method>
+    <method name="PlanPlatformProfileWrite">
+      <arg name="requested" type="s" direction="in" />
+      <arg type="s" direction="out" />
+    </method>
+    <method name="PlanPrepareCustomThermalMode">
+      <arg type="s" direction="out" />
+    </method>
+    <method name="PlanRestoreAutoFanWrite">
+      <arg type="s" direction="out" />
+    </method>
+    <method name="RefreshCapabilities">
+      <arg type="s" direction="out" />
+    </method>
+    <method name="RemoveAutomationRule">
+      <arg name="rule_id" type="s" direction="in" />
+      <arg type="s" direction="out" />
+    </method>
+    <method name="RemoveFanPresetProfileMapEntry">
+      <arg name="platform_profile" type="s" direction="in" />
+      <arg type="s" direction="out" />
+    </method>
+    <method name="RemoveHardwareProfile">
+      <arg name="profile_id" type="s" direction="in" />
+      <arg type="s" direction="out" />
+    </method>
+    <method name="RemoveHardwareProfileTrigger">
+      <arg name="trigger_id" type="s" direction="in" />
+      <arg type="s" direction="out" />
+    </method>
+    <method name="SetAmdGpuDpmForceLevel">
+      <arg name="requested" type="s" direction="in" />
+      <arg type="s" direction="out" />
+    </method>
+    <method name="SetAutomationRule">
+      <arg name="rule_id" type="s" direction="in" />
+      <arg name="rule_json" type="s" direction="in" />
+      <arg type="s" direction="out" />
+    </method>
+    <method name="SetBatteryChargeType">
+      <arg name="requested" type="s" direction="in" />
+      <arg type="s" direction="out" />
+    </method>
+    <method name="SetConservationMode">
+      <arg name="requested" type="s" direction="in" />
+      <arg type="s" direction="out" />
+    </method>
+    <method name="SetCpuBoost">
+      <arg name="requested" type="s" direction="in" />
+      <arg type="s" direction="out" />
+    </method>
+    <method name="SetCpuEpp">
+      <arg name="requested" type="s" direction="in" />
+      <arg type="s" direction="out" />
+    </method>
+    <method name="SetCpuGovernor">
+      <arg name="requested" type="s" direction="in" />
+      <arg type="s" direction="out" />
+    </method>
+    <method name="SetCurveOptimizerAllCore">
+      <arg name="requested" type="s" direction="in" />
+      <arg type="s" direction="out" />
+    </method>
+    <method name="SetFanPresetProfileMapEntry">
+      <arg name="platform_profile" type="s" direction="in" />
+      <arg name="fan_preset_id" type="s" direction="in" />
+      <arg type="s" direction="out" />
+    </method>
+    <method name="SetFanPresetReapplyAfterResume">
+      <arg name="enabled" type="b" direction="in" />
+      <arg type="s" direction="out" />
+    </method>
+    <method name="SetFirmwareAttribute">
+      <arg name="attribute_id" type="s" direction="in" />
+      <arg name="requested" type="s" direction="in" />
+      <arg type="s" direction="out" />
+    </method>
+    <method name="SetGpuMode">
+      <arg name="requested" type="s" direction="in" />
+      <arg type="s" direction="out" />
+    </method>
+    <method name="SetGpuModePending">
+      <arg name="requested" type="s" direction="in" />
+      <arg type="s" direction="out" />
+    </method>
+    <method name="SetHardwareProfile">
+      <arg name="profile_id" type="s" direction="in" />
+      <arg name="profile_json" type="s" direction="in" />
+      <arg type="s" direction="out" />
+    </method>
+    <method name="SetHardwareProfileTrigger">
+      <arg name="trigger_id" type="s" direction="in" />
+      <arg name="profile_id" type="s" direction="in" />
+      <arg type="s" direction="out" />
+    </method>
+    <method name="SetIdeapadToggle">
+      <arg name="toggle_id" type="s" direction="in" />
+      <arg name="enabled" type="b" direction="in" />
+      <arg type="s" direction="out" />
+    </method>
+    <method name="SetKeyboardRgb">
+      <arg name="request_json" type="s" direction="in" />
+      <arg type="s" direction="out" />
+    </method>
+    <method name="SetLedState">
+      <arg name="led_id" type="s" direction="in" />
+      <arg name="enabled" type="b" direction="in" />
+      <arg type="s" direction="out" />
+    </method>
+    <method name="SetPlatformProfile">
+      <arg name="requested" type="s" direction="in" />
+      <arg type="s" direction="out" />
+    </method>
+    <method name="SetupOpenRgbAccess">
+      <arg name="target_user" type="s" direction="in" />
+      <arg type="s" direction="out" />
+    </method>
+  </interface>
+</node>

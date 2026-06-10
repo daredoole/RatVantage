@@ -109,10 +109,9 @@ These rules are not optional. An agent that violates them should stop and ask:
 
 For long or multi-session tasks:
 
-- Start from **`docs/session-handoff.md`** (short: next tasks, prompt, safety). Open
-  **`docs/session-handoff-archive.md`** only when you need the long completed-slice log,
-  full implemented inventory, or extended CLI reference.
-- After completing work, update **`docs/session-handoff.md`** (and roadmap docs as needed).
-  Optionally append one line to the archive **Completed slice log** for a durable audit trail.
+- Start from **`docs/session-handoff.md`** (short, public-safe maintainer context).
+- Keep private local machine state, raw validation evidence, and detailed session logs outside
+  tracked repository docs.
+- After completing work, update **`docs/session-handoff.md`** and roadmap docs as needed.
 - Run `./scripts/ci-local.sh` as the final check before committing.
 - Commit formatting fixes separately from logic changes when possible.

@@ -1242,8 +1242,7 @@ mod tests {
                 write_support_claimed: true,
                 sdk_helper_installed: true,
                 sdk_helper_path: Some(
-                    "/home/darrian/.local/bin/ratvantage-openrgb-keyboard-rgb-sdk-helper"
-                        .to_owned(),
+                    "/home/test/.local/bin/ratvantage-openrgb-keyboard-rgb-sdk-helper".to_owned(),
                 ),
                 sdk_server_running: true,
                 sdk_snapshot_supported: true,

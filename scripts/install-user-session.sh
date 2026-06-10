@@ -8,10 +8,13 @@ mkdir -p \
   "$HOME/.local/bin" \
   "$HOME/.local/libexec/ratvantage" \
   "$HOME/.local/share/applications" \
+  "$HOME/.local/share/icons/hicolor/scalable/apps" \
   "$HOME/.config/autostart"
 install -m0755 "$repo_root/target/release/legion-control-tray" "$HOME/.local/bin/legion-control-tray"
 install -m0755 "$repo_root/target/release/legion-control-ui" "$HOME/.local/bin/legion-control-ui"
 install -m0755 "$repo_root/target/release/legion-probe" "$HOME/.local/bin/legion-probe"
+install -m0644 "$repo_root/data/icons/hicolor/scalable/apps/org.ratvantage.LegionControl.svg" \
+  "$HOME/.local/share/icons/hicolor/scalable/apps/org.ratvantage.LegionControl.svg"
 install -m0755 "$repo_root/scripts/check-keyboard-rgb-openrgb.sh" \
   "$HOME/.local/bin/ratvantage-check-keyboard-rgb-openrgb"
 install -m0755 "$repo_root/scripts/capture-keyboard-rgb-evidence.sh" \

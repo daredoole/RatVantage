@@ -1049,10 +1049,7 @@ fn append_automation_rule_creator(page: &adw::PreferencesPage, bundle: &Diagnost
     let mut profile_ids = bundle.hardware_profiles.keys().cloned().collect::<Vec<_>>();
     profile_ids.sort();
 
-    let rule_id = gtk4::Entry::builder()
-        .text("custom_battery_threshold")
-        .hexpand(true)
-        .build();
+    let rule_id = automation_text_entry("custom_battery_threshold");
     let rule_id_row = adw::ActionRow::builder()
         .title("Rule ID")
         .subtitle("Lowercase letters, numbers, dash, or underscore")
@@ -1061,10 +1058,7 @@ fn append_automation_rule_creator(page: &adw::PreferencesPage, bundle: &Diagnost
     rule_id_row.add_suffix(&rule_id);
     group.add(&rule_id_row);
 
-    let label = gtk4::Entry::builder()
-        .text("Custom battery threshold")
-        .hexpand(true)
-        .build();
+    let label = automation_text_entry("Custom battery threshold");
     let label_row = adw::ActionRow::builder()
         .title("Label")
         .subtitle("Shown in saved automation rules")
@@ -1255,6 +1249,15 @@ fn append_automation_rule_creator(page: &adw::PreferencesPage, bundle: &Diagnost
     });
 }
 
+fn automation_text_entry(text: &str) -> gtk4::Entry {
+    let entry = gtk4::Entry::builder().text(text).hexpand(true).build();
+    entry.set_width_chars(32);
+    entry.set_max_width_chars(48);
+    entry.set_tooltip_text(Some(text));
+    entry.update_property(&[gtk4::accessible::Property::Label(text)]);
+    entry
+}
+
 fn append_ac_router_rule_creator(page: &adw::PreferencesPage, bundle: &DiagnosticsBundle) {
     let group = adw::PreferencesGroup::new();
     group.set_title("Create AC Router Rule");
@@ -1270,10 +1273,7 @@ fn append_ac_router_rule_creator(page: &adw::PreferencesPage, bundle: &Diagnosti
         .get(1)
         .map_or(default_ac_profile, String::as_str);
 
-    let rule_id = gtk4::Entry::builder()
-        .text("custom_ac_router")
-        .hexpand(true)
-        .build();
+    let rule_id = automation_text_entry("custom_ac_router");
     let rule_id_row = adw::ActionRow::builder()
         .title("AC router rule ID")
         .subtitle("Lowercase letters, numbers, dash, or underscore")
@@ -1282,10 +1282,7 @@ fn append_ac_router_rule_creator(page: &adw::PreferencesPage, bundle: &Diagnosti
     rule_id_row.add_suffix(&rule_id);
     group.add(&rule_id_row);
 
-    let label = gtk4::Entry::builder()
-        .text("Custom AC router")
-        .hexpand(true)
-        .build();
+    let label = automation_text_entry("Custom AC router");
     let label_row = adw::ActionRow::builder()
         .title("AC router label")
         .subtitle("Shown in saved automation rules")
@@ -1470,10 +1467,7 @@ fn append_fast_charge_rule_creator(page: &adw::PreferencesPage, bundle: &Diagnos
         .get(1)
         .map_or(default_fast_profile, String::as_str);
 
-    let rule_id = gtk4::Entry::builder()
-        .text("custom_fast_charge_until")
-        .hexpand(true)
-        .build();
+    let rule_id = automation_text_entry("custom_fast_charge_until");
     let rule_id_row = adw::ActionRow::builder()
         .title("Fast-charge rule ID")
         .subtitle("Lowercase letters, numbers, dash, or underscore")
@@ -1482,10 +1476,7 @@ fn append_fast_charge_rule_creator(page: &adw::PreferencesPage, bundle: &Diagnos
     rule_id_row.add_suffix(&rule_id);
     group.add(&rule_id_row);
 
-    let label = gtk4::Entry::builder()
-        .text("Custom fast charge until threshold")
-        .hexpand(true)
-        .build();
+    let label = automation_text_entry("Custom fast charge until threshold");
     let label_row = adw::ActionRow::builder()
         .title("Fast-charge label")
         .subtitle("Shown in saved automation rules")

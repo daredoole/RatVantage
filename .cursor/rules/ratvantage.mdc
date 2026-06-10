@@ -7,6 +7,6 @@ alwaysApply: true
 
 **Do not duplicate long rules here.** Read **[AGENTS.md](../../AGENTS.md)** for crate layout, `cargo` / `./scripts/ci-local.sh`, safety constraints, and PR workflow.
 
-**Continuation:** [docs/session-handoff.md](../../docs/session-handoff.md) — short next tasks; [docs/session-handoff-archive.md](../../docs/session-handoff-archive.md) only for deep history or full CLI inventory.
+**Continuation:** [docs/session-handoff.md](../../docs/session-handoff.md) — short public-safe maintainer context. Keep private machine state and raw validation evidence outside tracked docs.
 
 **Cursor reminder:** this rule loads in addition to `AGENTS.md`; keep edits minimal and match existing style.

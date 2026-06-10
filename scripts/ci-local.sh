@@ -48,10 +48,12 @@ need_pkg_config gtk4 "scripts/install-dev-deps-fedora.sh"
 need_pkg_config libadwaita-1 "scripts/install-dev-deps-fedora.sh"
 
 cargo fmt --all --check
+python3 -m py_compile tests/ui/*.py
+python3 tests/ui/test_semantic_diff_classifier.py
 cargo test --workspace
 xvfb-run -a cargo test -p legion-control-ui --features gtk-ui --test gtk_shell
 cargo clippy --all-targets --all-features -- -D warnings
-scripts/validate-packaging.sh
+scripts/validate-release-packaging.sh
 fixture_tmp="$(mktemp -d)"
 trap 'rm -rf "$fixture_tmp"' EXIT
 scripts/capture-sysfs-fixture.sh \
@@ -156,6 +158,8 @@ scripts/capture-gtk-smoke-report.sh \
   --sysfs-root tests/fixtures/sysfs-82wm-confirmed \
   --pages status,battery,gpu,fans \
   --output "$fixture_tmp/gtk-smoke" >/tmp/ratvantage-gtk-smoke.txt
+scripts/qa-gui.sh >/tmp/ratvantage-gui-qa.txt
+python3 tests/ui/check_qa_artifacts.py
 cargo run -p legion-probe -- --json --sysfs-root "$fixture_tmp/captured" >/tmp/ratvantage-captured-probe.json
 cargo run -p legion-probe -- --json --sysfs-root tests/fixtures/sysfs-82wm-confirmed >/tmp/ratvantage-probe.json
 cargo run -p legion-control-daemon -- --dry-run >/tmp/ratvantage-daemon.txt

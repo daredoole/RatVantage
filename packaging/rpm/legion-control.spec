@@ -123,6 +123,8 @@ install -Dpm0644 data/desktop/org.ratvantage.LegionControl.Tray.desktop \
     %{buildroot}%{_sysconfdir}/xdg/autostart/org.ratvantage.LegionControl.Tray.desktop
 install -Dpm0644 data/metainfo/org.ratvantage.LegionControl.metainfo.xml \
     %{buildroot}%{_datadir}/metainfo/org.ratvantage.LegionControl.metainfo.xml
+install -Dpm0644 data/icons/hicolor/scalable/apps/org.ratvantage.LegionControl.svg \
+    %{buildroot}%{_datadir}/icons/hicolor/scalable/apps/org.ratvantage.LegionControl.svg
 install -dm0755 %{buildroot}%{_datadir}/legion-control/presets
 install -pm0644 data/presets/*.toml \
     %{buildroot}%{_datadir}/legion-control/presets/
@@ -143,9 +145,10 @@ appstreamcli validate --no-net %{buildroot}%{_datadir}/metainfo/org.ratvantage.L
 
 %files
 %license LICENSE
-%doc README.md BRAND.md
+%doc README.md CHANGELOG.md SUPPORT.md
 %{_bindir}/legion-probe
 %{_datadir}/metainfo/org.ratvantage.LegionControl.metainfo.xml
+%{_datadir}/icons/hicolor/scalable/apps/org.ratvantage.LegionControl.svg
 %{_datadir}/legion-control/presets/*.toml
 
 %files daemon

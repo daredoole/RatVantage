@@ -6,7 +6,6 @@
 
 .rv-sidebar {
     min-width: 196px;
-    max-width: 196px;
     background-color: @sidebar_bg_color;
 }
 

@@ -64,11 +64,20 @@ pub fn run(
             );
         }
 
+        let default_width = std::env::var("RATVANTAGE_GTK_DEFAULT_WIDTH")
+            .ok()
+            .and_then(|value| value.parse::<i32>().ok())
+            .unwrap_or(960);
+        let default_height = std::env::var("RATVANTAGE_GTK_DEFAULT_HEIGHT")
+            .ok()
+            .and_then(|value| value.parse::<i32>().ok())
+            .unwrap_or(680);
+
         let window = adw::ApplicationWindow::builder()
             .application(app)
             .title("RatVantage")
-            .default_width(960)
-            .default_height(680)
+            .default_width(default_width)
+            .default_height(default_height)
             .build();
 
         let root = gtk4::Box::new(gtk4::Orientation::Vertical, 0);
@@ -239,6 +248,7 @@ fn build_sidebar(
 ) -> gtk4::Box {
     let sidebar = gtk4::Box::new(gtk4::Orientation::Vertical, 0);
     sidebar.add_css_class("rv-sidebar");
+    sidebar.set_size_request(196, -1);
     sidebar.set_vexpand(true);
 
     // Brand
@@ -302,6 +312,10 @@ fn build_sidebar(
             btn.set_child(Some(&row));
             btn.add_css_class("rv-nav-btn");
             btn.set_has_frame(false);
+            btn.set_tooltip_text(Some(&format!("Open {label} page")));
+            btn.update_property(&[gtk4::accessible::Property::Label(&format!(
+                "Open {label} page"
+            ))]);
             if *id == active_id {
                 btn.add_css_class("active");
             }

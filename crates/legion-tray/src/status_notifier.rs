@@ -623,6 +623,7 @@ fn same_hardware_profile_drift(
                 (
                     item.action_id.as_str(),
                     item.requested_value.as_str(),
+                    item.readback_value.as_deref(),
                     item.current_value.as_deref(),
                 )
             })
@@ -635,6 +636,7 @@ fn same_hardware_profile_drift(
                     (
                         item.action_id.as_str(),
                         item.requested_value.as_str(),
+                        item.readback_value.as_deref(),
                         item.current_value.as_deref(),
                     )
                 })
@@ -647,10 +649,16 @@ fn hardware_profile_drift_first_item(drift: &HardwareProfileDriftReport) -> Stri
         .iter()
         .find(|item| item.status == "drifted")
         .map(|item| {
+            let (expected_label, expected_value) = item
+                .readback_value
+                .as_deref()
+                .map(|readback| ("last readback", readback))
+                .unwrap_or(("requested", item.requested_value.as_str()));
             format!(
-                " ({}: requested {}, current {})",
+                " ({}: {} {}, current {})",
                 item.action_id,
-                item.requested_value,
+                expected_label,
+                expected_value,
                 item.current_value.as_deref().unwrap_or("unknown")
             )
         })
@@ -1437,7 +1445,7 @@ mod tests {
             &[DesktopNotification {
                 key: "hardware_profile_drift",
                 title: "Hardware profile drift".to_owned(),
-                body: "82WM Legion Pro 5 16ARX8 — last hardware profile gaming drifted: 1 of 1 checked action(s) differ (platform_profile: requested performance, current balanced)".to_owned(),
+                body: "82WM Legion Pro 5 16ARX8 — last hardware profile gaming drifted: 1 of 1 checked action(s) differ (platform_profile: last readback performance, current balanced)".to_owned(),
             }]
         );
     }

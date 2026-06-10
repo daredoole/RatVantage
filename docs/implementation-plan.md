@@ -2,7 +2,7 @@
 
 ## Implemented baseline
 
-The repository now has a working pre-alpha scaffold:
+The repository now has a working beta implementation:
 
 - Rust workspace with `legion-common`, `legion-probe`, `legion-daemon`, `legion-ui`, and `ratvantage-test-support`.
 - Read-only probe that builds hardware summary, capability, telemetry, and raw report JSON.
@@ -28,8 +28,12 @@ RatVantage/
 ├── Cargo.toml
 ├── Cargo.lock
 ├── README.md
-├── BRAND.md
 ├── AGENTS.md
+├── CONTRIBUTING.md
+├── SECURITY.md
+├── SUPPORT.md
+├── CHANGELOG.md
+├── CODE_OF_CONDUCT.md
 ├── rust-toolchain.toml
 ├── docs/
 │   ├── architecture.md
@@ -41,11 +45,9 @@ RatVantage/
 │   ├── research-summary.md
 │   ├── safety-model.md
 │   ├── session-handoff.md
-│   ├── session-handoff-archive.md
 │   └── write-contracts.md
-├── prompts/
-│   └── codex-build-kickoff.md
 ├── scripts/
+│   ├── audit-public-release.sh
 │   ├── capture-compat-report.sh
 │   ├── capture-sysfs-fixture.sh
 │   ├── ci-local.sh
@@ -81,8 +83,12 @@ Target layout:
 RatVantage/
 ├── Cargo.toml
 ├── README.md
-├── BRAND.md
 ├── AGENTS.md
+├── CONTRIBUTING.md
+├── SECURITY.md
+├── SUPPORT.md
+├── CHANGELOG.md
+├── CODE_OF_CONDUCT.md
 ├── docs/
 │   ├── architecture.md
 │   ├── fedora-packaging.md
@@ -91,11 +97,9 @@ RatVantage/
 │   ├── implementation-plan.md
 │   ├── research-summary.md
 │   ├── safety-model.md
-│   ├── session-handoff.md
-│   └── session-handoff-archive.md
-├── prompts/
-│   └── codex-build-kickoff.md
+│   └── session-handoff.md
 ├── scripts/
+│   ├── audit-public-release.sh
 │   ├── capture-compat-report.sh
 │   ├── capture-sysfs-fixture.sh
 │   ├── ci-local.sh

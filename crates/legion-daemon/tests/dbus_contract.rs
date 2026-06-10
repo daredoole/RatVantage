@@ -2414,13 +2414,15 @@ fn set_keyboard_rgb_falls_back_to_openrgb_sdk_when_native_backend_is_absent() {
 fn apply_hardware_profile_openrgb_sdk_uses_command_helper_boundary() {
     let fixture = openrgb_keyboard_rgb_fixture_root("hardware-profile-openrgb-sdk-command");
     let state_path = unique_state_path("hardware-profile-openrgb-sdk-command");
-    let helper_root = unique_temp_dir("openrgb-sdk-command-helper");
-    let helper_path = openrgb_sdk_command_helper(&helper_root, false);
+    let helper = FakeOpenRgbSdkCommandHelper::new("openrgb-sdk-command-helper", false);
     let service = openrgb_keyboard_rgb_service_with_writer(
         fixture.clone(),
         &state_path,
-        Arc::new(CommandOpenRgbKeyboardRgbSdkWriter::new(helper_path)),
+        Arc::new(CommandOpenRgbKeyboardRgbSdkWriter::new(
+            helper.executable_path(),
+        )),
     );
+    helper.clear_calls();
 
     service
         .set_hardware_profile("openrgb_breathing", &openrgb_keyboard_rgb_profile_json())
@@ -2440,15 +2442,10 @@ fn apply_hardware_profile_openrgb_sdk_uses_command_helper_boundary() {
         run.results[0].result.readback_value.as_deref(),
         Some("active_mode=Breathing;colors=left_center:#00FF00,left_side:#FF0000,right_center:#0000FF,right_side:#FFFFFF")
     );
-    let calls = fs::read_to_string(helper_root.join("calls.log")).unwrap();
-    assert_eq!(
-        calls.lines().collect::<Vec<_>>(),
-        ["snapshot", "snapshot", "write", "snapshot"]
-    );
+    helper.assert_calls_exact(&["snapshot", "write", "snapshot"]);
 
     let _ = fs::remove_file(state_path);
     let _ = fs::remove_dir_all(fixture);
-    let _ = fs::remove_dir_all(helper_root);
 }
 
 #[test]
@@ -4454,6 +4451,59 @@ else:
     permissions.set_mode(0o755);
     fs::set_permissions(&helper_path, permissions).unwrap();
     helper_path
+}
+
+struct FakeOpenRgbSdkCommandHelper {
+    root: std::path::PathBuf,
+    executable_path: std::path::PathBuf,
+    calls_log: std::path::PathBuf,
+}
+
+impl FakeOpenRgbSdkCommandHelper {
+    fn new(label: &str, force_mismatch: bool) -> Self {
+        let root = unique_temp_dir(label);
+        let executable_path = openrgb_sdk_command_helper(&root, force_mismatch);
+        let calls_log = root.join("calls.log");
+        Self {
+            root,
+            executable_path,
+            calls_log,
+        }
+    }
+
+    fn executable_path(&self) -> std::path::PathBuf {
+        self.executable_path.clone()
+    }
+
+    fn clear_calls(&self) {
+        fs::write(&self.calls_log, "").unwrap();
+    }
+
+    fn read_calls(&self) -> Vec<String> {
+        fs::read_to_string(&self.calls_log)
+            .unwrap_or_default()
+            .lines()
+            .map(str::to_owned)
+            .collect()
+    }
+
+    fn assert_calls_exact(&self, expected: &[&str]) {
+        let actual = self.read_calls();
+        let expected = expected
+            .iter()
+            .map(|call| (*call).to_owned())
+            .collect::<Vec<_>>();
+        assert_eq!(
+            actual, expected,
+            "OpenRGB SDK command helper calls did not match expected boundary"
+        );
+    }
+}
+
+impl Drop for FakeOpenRgbSdkCommandHelper {
+    fn drop(&mut self) {
+        let _ = fs::remove_dir_all(&self.root);
+    }
 }
 
 struct AllowAllAuthorizer;

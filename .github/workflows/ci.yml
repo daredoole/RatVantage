@@ -31,6 +31,9 @@ jobs:
             libadwaita-1-dev \
             libgtk-4-dev \
             pkg-config \
+            python3-gi \
+            python3-pil \
+            python3-pyatspi \
             xvfb
 
       - name: Check formatting
@@ -63,5 +66,35 @@ jobs:
       - name: GTK screenshot smoke test
         run: scripts/capture-gtk-smoke-report.sh --sysfs-root tests/fixtures/sysfs-82wm-confirmed --pages status,battery,gpu,fans --output /tmp/ratvantage-gtk-smoke
 
+      - name: GUI QA evidence bundle
+        run: scripts/qa-gui.sh
+
+      - name: Print GUI QA review summary
+        if: always()
+        run: |
+          if [ -f target/qa-report/review.md ]; then
+            echo "RatVantage QA Review Summary"
+            echo "================================"
+            sed -n '1,180p' target/qa-report/review.md
+            if [ -n "${GITHUB_STEP_SUMMARY:-}" ]; then
+              {
+                echo "## RatVantage QA Review Summary"
+                echo
+                sed -n '1,180p' target/qa-report/review.md
+              } >> "$GITHUB_STEP_SUMMARY"
+            fi
+          else
+            echo "RatVantage QA Review Summary"
+            echo "target/qa-report/review.md was not produced; full artifact upload will still run if files exist."
+          fi
+
       - name: Daemon dry-run smoke test
         run: cargo run -p legion-control-daemon -- --dry-run
+
+      - name: Upload GUI QA report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ratvantage-gui-qa-report
+          path: target/qa-report
+          if-no-files-found: warn

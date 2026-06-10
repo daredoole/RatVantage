@@ -1,7 +1,9 @@
 use std::collections::BTreeMap;
 use std::fs;
 use std::path::{Path, PathBuf};
-use std::process::Command;
+use std::process::{Command, Stdio};
+use std::thread;
+use std::time::{Duration, Instant};
 
 use legion_common::{
     AcAdapterTelemetry, AmdGpuPowerDpmCapability, BatteryChargeTypeCapability, BatteryTelemetry,
@@ -47,6 +49,7 @@ pub fn probe(options: &ProbeOptions) -> CapabilityRegistry {
     let thermal_zones = detect_thermal_zones(&options.sysfs_root);
     let ac_adapters = detect_ac_adapters(&options.sysfs_root);
     let power_profiles = power_profiles::detect_power_profiles(&options.sysfs_root);
+    let wmi_sensors = detect_wmi_sensors(&options.sysfs_root);
 
     let mut capabilities = Vec::new();
     push_capability(
@@ -66,6 +69,12 @@ pub fn probe(options: &ProbeOptions) -> CapabilityRegistry {
         "hwmon",
         "Hardware monitor sensors",
         !hwmon_sensors.is_empty(),
+    );
+    push_capability(
+        &mut capabilities,
+        "wmi_sensors",
+        "WMI EC sensors (fan RPM, CPU/GPU temp)",
+        !wmi_sensors.is_empty(),
     );
     push_capability(
         &mut capabilities,
@@ -127,17 +136,20 @@ pub fn probe(options: &ProbeOptions) -> CapabilityRegistry {
             .is_some(),
     );
 
+    let mut all_sensors = hwmon_sensors;
+    all_sensors.extend(wmi_sensors);
+
     CapabilityRegistry {
         hardware: detect_hardware(&options.sysfs_root),
         capabilities,
         platform_profile,
         battery_charge_type,
         telemetry: TelemetrySnapshot {
-            sensors: hwmon_sensors.clone(),
+            sensors: all_sensors.clone(),
             battery: battery_telemetry,
             ac_adapters,
         },
-        hwmon_sensors,
+        hwmon_sensors: all_sensors,
         fan_curves,
         leds,
         keyboard_rgb,
@@ -821,8 +833,7 @@ fn detect_keyboard_rgb_openrgb(root: &Path) -> Option<KeyboardRgbOpenRgbStatus> 
     let sdk_helper_path = command_path("ratvantage-openrgb-keyboard-rgb-sdk-helper");
     let devices = openrgb_path
         .as_ref()
-        .and_then(|path| Command::new(path).arg("--list-devices").output().ok())
-        .map(|output| String::from_utf8_lossy(&output.stdout).into_owned())
+        .and_then(|path| openrgb_list_devices_output(path))
         .map(|stdout| parse_openrgb_keyboard_devices(&stdout))
         .unwrap_or_default();
     let sdk_snapshot = openrgb_path
@@ -861,6 +872,41 @@ fn detect_keyboard_rgb_openrgb(root: &Path) -> Option<KeyboardRgbOpenRgbStatus> 
         sdk_color_zones,
         sdk_colors,
     })
+}
+
+fn openrgb_list_devices_output(path: &str) -> Option<String> {
+    openrgb_list_devices_output_with_timeout(path, Duration::from_secs(2))
+}
+
+fn openrgb_list_devices_output_with_timeout(path: &str, timeout: Duration) -> Option<String> {
+    let mut child = Command::new(path)
+        .arg("--list-devices")
+        .stdout(Stdio::piped())
+        .stderr(Stdio::null())
+        .spawn()
+        .ok()?;
+    let deadline = Instant::now() + timeout;
+    loop {
+        match child.try_wait() {
+            Ok(Some(status)) => {
+                let output = child.wait_with_output().ok()?;
+                return status
+                    .success()
+                    .then(|| String::from_utf8_lossy(&output.stdout).into_owned());
+            }
+            Ok(None) if Instant::now() >= deadline => {
+                let _ = child.kill();
+                let _ = child.wait();
+                return None;
+            }
+            Ok(None) => thread::sleep(Duration::from_millis(25)),
+            Err(_) => {
+                let _ = child.kill();
+                let _ = child.wait();
+                return None;
+            }
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -1317,8 +1363,58 @@ fn read_trim(path: impl AsRef<Path>) -> Option<String> {
         .filter(|value| !value.is_empty())
 }
 
+/// Write an acpi_call string to /proc/acpi/call and parse the hex integer result.
+/// Returns None if acpi_call module is not loaded or the call fails.
+fn read_acpi_call(call: &str) -> Option<i64> {
+    let proc_call = Path::new("/proc/acpi/call");
+    if !proc_call.exists() {
+        return None;
+    }
+    fs::write(proc_call, call.as_bytes()).ok()?;
+    let result = read_trim(proc_call)?;
+    // acpi_call result format: "0x1a4" or "0x1a4called" (partial overwrite of "not called")
+    let hex = result
+        .strip_prefix("0x")
+        .or_else(|| result.strip_prefix("0X"))?;
+    let hex_digits: String = hex.chars().take_while(|c| c.is_ascii_hexdigit()).collect();
+    i64::from_str_radix(&hex_digits, 16).ok()
+}
+
+/// Read WMI fan RPM and EC temperatures via acpi_call → \_SB.GZFD.WMB5.
+/// Confirmed on 82WM (ITE IT5507, ACCESS_METHOD_WMI3) at idle:
+///   fan1=1700 RPM, fan2=1500 RPM, cpu=48°C, gpu=0°C (power-gated).
+/// Returns empty vec if acpi_call module is not loaded.
+fn detect_wmi_sensors(_root: &Path) -> Vec<HwmonSensor> {
+    type WmiSensorEntry = (&'static str, &'static str, &'static str, fn(i64) -> i64);
+
+    // (feature_id, kind, label, value_transform)
+    // Fan RPM is returned directly (FANS*100). Temps are °C; multiply by 1000 for hwmon m°C units.
+    let entries: &[WmiSensorEntry] = &[
+        ("0x04030001", "fan", "Legion fan 1 (WMI)", |v| v),
+        ("0x04030002", "fan", "Legion fan 2 (WMI)", |v| v),
+        ("0x05040000", "temp", "Legion CPU EC (WMI)", |v| v * 1000),
+        ("0x05050000", "temp", "Legion GPU EC (WMI)", |v| v * 1000),
+    ];
+
+    let mut sensors = Vec::new();
+    for &(feature_id, kind, label, transform) in entries {
+        let call = format!("\\_SB.GZFD.WMB5 0x00 0x11 {feature_id}");
+        if let Some(raw) = read_acpi_call(&call) {
+            sensors.push(HwmonSensor {
+                hwmon_name: Some("legion_wmi".to_owned()),
+                label: Some(label.to_owned()),
+                kind: kind.to_owned(),
+                input_path: format!("wmi:{feature_id}"),
+                value: Some(transform(raw)),
+            });
+        }
+    }
+    sensors
+}
+
 #[cfg(test)]
 mod tests {
+    use std::os::unix::fs::PermissionsExt;
     use std::time::{SystemTime, UNIX_EPOCH};
 
     use super::*;
@@ -1396,6 +1492,31 @@ mod tests {
             device.leds,
             ["Left side", "Left center", "Right center", "Right side"]
         );
+    }
+
+    #[test]
+    fn openrgb_list_devices_probe_times_out() {
+        let root = std::env::temp_dir().join(format!(
+            "legion-probe-openrgb-timeout-{}",
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        fs::create_dir_all(&root).unwrap();
+        let script = root.join("openrgb-hang");
+        fs::write(&script, "#!/bin/sh\nsleep 5\n").unwrap();
+        let mut permissions = fs::metadata(&script).unwrap().permissions();
+        permissions.set_mode(0o755);
+        fs::set_permissions(&script, permissions).unwrap();
+
+        let output = openrgb_list_devices_output_with_timeout(
+            script.to_str().unwrap(),
+            Duration::from_millis(100),
+        );
+
+        assert_eq!(output, None);
+        fs::remove_dir_all(root).unwrap();
     }
 
     #[test]

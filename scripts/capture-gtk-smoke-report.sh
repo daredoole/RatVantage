@@ -11,10 +11,10 @@ page screenshots plus supporting text diagnostics.
 Options:
   --output <dir>          Required output directory.
   --sysfs-root <root>     Sysfs root for the private daemon. Default: /
-  --pages <csv>           Pages to capture. Default: status,profiles,battery,gpu,fans,appearance,diagnostics
+  --pages <csv>           Pages to capture. Default: status,profiles,battery,gpu,fans,appearance,automations,settings,diagnostics
   --gsk-renderer <name>   GTK renderer override. Default: cairo
-  --capture-delay-ms <n>  Delay before screenshot capture. Default: 1500
-  --auto-quit-ms <n>      Auto-close the GTK window after N ms. Default: 3500
+  --capture-delay-ms <n>  Delay before screenshot capture. Default: 3000
+  --auto-quit-ms <n>      Auto-close the GTK window after N ms. Default: 5500
   -h, --help              Show this help.
 EOF
 }
@@ -22,10 +22,10 @@ EOF
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 output_dir=""
 sysfs_root="/"
-pages_csv="status,profiles,battery,gpu,fans,appearance,diagnostics"
+pages_csv="status,profiles,battery,gpu,fans,appearance,automations,settings,diagnostics"
 gsk_renderer="cairo"
-capture_delay_ms=1500
-auto_quit_ms=3500
+capture_delay_ms=3000
+auto_quit_ms=5500
 
 while (($#)); do
   case "$1" in
@@ -133,7 +133,7 @@ wait_for_file_line() {
 IFS=',' read -r -a pages <<<"$pages_csv"
 for page in "${pages[@]}"; do
   case "$page" in
-    status|profiles|battery|gpu|fans|appearance|diagnostics) ;;
+    status|profiles|battery|gpu|fans|appearance|automations|settings|diagnostics) ;;
     *)
       echo "unsupported GTK page: $page" >&2
       exit 2
@@ -194,15 +194,20 @@ cargo run -q -p legion-control-ui -- --diagnostics --bus-address "$bus_address" 
 for page in "${pages[@]}"; do
   page_png="$output_dir/screenshots/$page.png"
   page_log="$output_dir/$page-ui.log"
-  log_command xvfb-run -a bash --noprofile --norc -lc "DBUS_SESSION_BUS_ADDRESS='$bus_address' GSK_RENDERER='$gsk_renderer' cargo run -q -p legion-control-ui --features gtk-ui -- --bus-address '$bus_address' --gtk-page '$page' --gtk-auto-quit-ms '$auto_quit_ms'"
-  xvfb-run -a bash --noprofile --norc -lc "
+  log_command xvfb-run -a -s "-screen 0 1280x900x24" bash --noprofile --norc -lc "DBUS_SESSION_BUS_ADDRESS='$bus_address' GSK_RENDERER='$gsk_renderer' GTK_A11Y=none GDK_BACKEND=x11 GDK_DISABLE=dmabuf cargo run -q -p legion-control-ui --features gtk-ui -- --bus-address '$bus_address' --gtk-page '$page' --gtk-auto-quit-ms '$auto_quit_ms'"
+  xvfb-run -a -s "-screen 0 1280x900x24" bash --noprofile --norc -lc "
     set -euo pipefail
     export DBUS_SESSION_BUS_ADDRESS='$bus_address'
     export GSK_RENDERER='$gsk_renderer'
+    export GTK_A11Y=none
+    export GDK_BACKEND=x11
+    export GDK_DISABLE=dmabuf
+    export RATVANTAGE_GTK_DEFAULT_WIDTH=1200
+    export RATVANTAGE_GTK_DEFAULT_HEIGHT=820
     cargo run -q -p legion-control-ui --features gtk-ui -- --bus-address '$bus_address' --gtk-page '$page' --gtk-auto-quit-ms '$auto_quit_ms' >'$page_log' 2>&1 &
     ui_pid=\$!
     sleep '$capture_delay_seconds'
-    import -window root '$page_png'
+    import -window 'RatVantage' '$page_png' || import -window root '$page_png'
     wait \$ui_pid
   "
 done
