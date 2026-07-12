@@ -76,7 +76,7 @@ command -v cargo >/dev/null 2>&1 || {
   exit 1
 }
 
-for tool in dbus-daemon xvfb-run import; do
+for tool in dbus-daemon xvfb-run import identify; do
   command -v "$tool" >/dev/null 2>&1 || {
     echo "missing $tool; run: scripts/install-dev-deps-fedora.sh" >&2
     exit 1
@@ -217,8 +217,23 @@ for page in "${pages[@]}"; do
     cargo run -q -p legion-control-ui --features gtk-ui -- --bus-address '$bus_address' --gtk-page '$page' --gtk-auto-quit-ms '$auto_quit_ms' >'$page_log' 2>&1 &
     ui_pid=\$!
     sleep '$capture_delay_seconds'
-    import -window 'RatVantage' '$page_png' || import -window root '$page_png'
-    wait \$ui_pid
+    for capture_attempt in {1..9}; do
+      if ! kill -0 \$ui_pid 2>/dev/null; then
+        break
+      fi
+      if ! import -window 'RatVantage' '$page_png'; then
+        rm -f '$page_png'
+        sleep 0.25
+        continue
+      fi
+      screenshot_mean=\$(identify -quiet -format '%[fx:mean]' '$page_png' 2>/dev/null || echo 0)
+      if awk \"BEGIN { exit !(\$screenshot_mean > 0.01) }\"; then
+        break
+      fi
+      sleep 0.25
+    done
+    kill \$ui_pid 2>/dev/null || true
+    wait \$ui_pid 2>/dev/null || true
   "
 done
 

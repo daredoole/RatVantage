@@ -192,6 +192,9 @@ def main() -> int:
             failures.append(name)
         if status in {"missing_baseline", "missing_expected", "missing", "tree_unavailable"}:
             skipped.append(f"{name}: {status}")
+    for stage in stages.get("stages", []):
+        if stage.get("status") == "failed":
+            failures.append(f"Stage: {stage.get('stage', 'unknown')}")
 
     results = {
         "commit": git_commit(),

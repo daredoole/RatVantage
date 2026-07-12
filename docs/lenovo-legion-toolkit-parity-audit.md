@@ -8,6 +8,23 @@ surfaces. Treat LLT as a behavior map, not as a directly portable backend: LLT i
 Windows-first and uses Lenovo Energy driver IOCTLs, WMI classes, NVAPI, registry,
 and UEFI variables. RatVantage must keep the daemon/polkit/sysfs safety model.
 
+## Public release parity contract
+
+RatVantage 0.1.0 claims parity only for behavior backed by a stable Linux surface on the
+running machine. A feature is release-supported when it is discovered dynamically, validated,
+policy-gated, read back after writes, recoverable, and covered by fixture or live evidence.
+Windows-only vendor methods are not parity gaps that may be filled with raw EC/WMI calls.
+
+- **Supported:** platform and desktop power profiles, battery modes, CPU governor/EPP/boost and
+  scaling caps, detected firmware attributes and device toggles, AMD GPU DPM, telemetry,
+  evidence-backed OpenRGB keyboard lighting, profiles, automations, diagnostics, and tray actions.
+- **Guided or plan-only:** reboot-based GPU switching, unpromoted runtime GPU switching, and fan
+  curve planning. The UI must state the evidence or reboot requirement and never imply execution.
+- **Unsupported by design:** firmware flashing, arbitrary sysfs/WMI/EC writes, CPU/GPU
+  overclocking, and Windows display features without a stable Linux API.
+
+This is safe Linux behavioral parity, not byte-for-byte parity with a Windows vendor utility.
+
 ## Backend map
 
 | LLT backend | LLT examples | RatVantage equivalent | Status |

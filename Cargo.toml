@@ -15,7 +15,7 @@ license = "MIT"
 repository = "https://github.com/daredoole/RatVantage"
 
 [workspace.dependencies]
-anyhow = "1"
+anyhow = "1.0.103"
 clap = { version = "4", features = ["derive"] }
 legion-common = { path = "crates/legion-common" }
 legion-probe = { path = "crates/legion-probe" }

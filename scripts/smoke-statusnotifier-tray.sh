@@ -74,13 +74,13 @@ if ! "${tray_cmd[@]}" --status "${bus_args[@]}" >/dev/null; then
   exit 1
 fi
 
-if ! grep -q '^Hidden=true$' data/desktop/org.ratvantage.LegionControl.Tray.desktop; then
-  echo "tray autostart desktop file is not hidden; do not enable autostart before desktop smoke passes." >&2
+if ! grep -q '^Hidden=false$' data/desktop/org.ratvantage.LegionControl.Tray.desktop; then
+  echo "tray autostart desktop file must be enabled for the packaged session experience." >&2
   exit 1
 fi
 
-if ! grep -q '^X-GNOME-Autostart-enabled=false$' data/desktop/org.ratvantage.LegionControl.Tray.desktop; then
-  echo "GNOME tray autostart is enabled; keep it disabled before desktop smoke passes." >&2
+if ! grep -q '^X-GNOME-Autostart-enabled=true$' data/desktop/org.ratvantage.LegionControl.Tray.desktop; then
+  echo "GNOME tray autostart flag must be enabled; icon visibility still depends on shell support." >&2
   exit 1
 fi
 
@@ -161,7 +161,7 @@ write_report() {
 - Registered item: ${item:-unknown}
 - Service: ${service:-unknown}
 - Path: ${path:-unknown}
-- Autostart desktop file remains disabled: yes
+- Autostart desktop file enabled: yes
 
 ## Included files
 
@@ -214,8 +214,8 @@ fi
 
 echo "StatusNotifier registration smoke passed."
 echo "before=$before_count after=$after_count"
-echo "Autostart remains disabled."
-echo "Visually confirm the Legion Control tray icon, tooltip, read-only menu, refresh, and quit behavior."
+echo "Autostart desktop entry is enabled."
+echo "Visually confirm the RatVantage tray icon, tooltip, guarded menu, refresh, and quit behavior."
 
 new_item="$(
   comm -13 \

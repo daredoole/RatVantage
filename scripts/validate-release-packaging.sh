@@ -77,10 +77,12 @@ EXPECTED_POLKIT = {
     f"{DBUS_NAME}.set-gpu-mode",
     f"{DBUS_NAME}.set-cpu-governor",
     f"{DBUS_NAME}.set-cpu-epp",
+    f"{DBUS_NAME}.set-cpu-max-frequency",
     f"{DBUS_NAME}.set-firmware-attribute",
     f"{DBUS_NAME}.set-cpu-boost",
     f"{DBUS_NAME}.set-conservation-mode",
     f"{DBUS_NAME}.set-amd-gpu-dpm-force-level",
+    f"{DBUS_NAME}.set-wifi-power-save",
     f"{DBUS_NAME}.set-curve-optimizer",
     f"{DBUS_NAME}.setup-openrgb-access",
     f"{DBUS_NAME}.apply-hardware-profile",
@@ -180,6 +182,10 @@ for desktop_path in sorted((ROOT / "data/desktop").glob("*.desktop")):
     if desktop_path.name.endswith("Tray.desktop"):
         if "legion-control-tray" not in exec_value:
             die(f"{desktop_path}: tray desktop Exec mismatch")
+        if entry.get("Hidden", "").lower() != "false":
+            die(f"{desktop_path}: packaged tray autostart must not be hidden")
+        if entry.get("X-GNOME-Autostart-enabled", "").lower() != "true":
+            die(f"{desktop_path}: packaged tray autostart must be enabled")
     elif "legion-control-ui" not in exec_value:
         die(f"{desktop_path}: UI desktop Exec mismatch")
     if not entry.get("Categories"):
@@ -228,6 +234,7 @@ if seen != expected_presets:
 
 spec = (ROOT / "packaging/rpm/legion-control.spec").read_text()
 for required in [
+    "Requires:       %{name}-tray%{?_isa} = %{version}-%{release}",
     "%systemd_post legion-control-daemon.service",
     "%systemd_preun legion-control-daemon.service",
     "%systemd_postun_with_restart legion-control-daemon.service",

@@ -51,18 +51,19 @@ Manual checks during the hold window:
 - menu reflects current profile, charge type, battery telemetry, packaged preset labels, capability summary, and pending app state;
 - menu exposes dashboard, refresh, and quit;
 - quit removes the tray item;
-- autostart remains disabled.
+- packaged session autostart is enabled.
 
 ## Matrix
 
 | Desktop | Expected result | Gate |
 |---|---|---|
-| KDE Plasma | StatusNotifier item appears natively and menu diagnostics match the runtime-derived state. | Must pass before autostart. |
-| GNOME with AppIndicator/KStatusNotifier extension | StatusNotifier item may appear through the extension. | Untested; do not rely on it for release readiness yet. |
-| GNOME without extension or unsupported shell | Script fails because no watcher is available, or no tray item is visible. | Do not enable autostart. |
+| KDE Plasma | StatusNotifier item appears natively and menu diagnostics match the runtime-derived state. | Confirmed path. |
+| GNOME with AppIndicator/KStatusNotifier extension | StatusNotifier item appears through the extension when it is enabled for the active session. | Requires desktop-specific smoke. |
+| GNOME without extension or unsupported shell | No tray icon is available; dashboard launch remains available and `--desktop-check` explains the missing watcher. | Supported fallback, not an icon guarantee. |
 
-Do not flip `Hidden=true` or `X-GNOME-Autostart-enabled=false` yet. KDE smoke has
-passed, but the GNOME AppIndicator extension path is explicitly untested.
+The packaged desktop entry uses `Hidden=false` and
+`X-GNOME-Autostart-enabled=true`. KDE smoke has passed. GNOME icon visibility
+still depends on an enabled AppIndicator/KStatusNotifier extension.
 
 ## GNOME Availability Check
 

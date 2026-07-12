@@ -16,17 +16,17 @@ fn status_cli_prints_tray_summary_over_private_bus() {
 
     assert!(output.status.success());
     let stdout = String::from_utf8(output.stdout).unwrap();
-    assert!(stdout.contains("Legion Control tray status"));
+    assert!(stdout.contains("RatVantage tray status"));
     assert!(stdout.contains(
-        "tooltip=82WM Legion Pro 5 16ARX8: Platform: balanced, Fans: 2410 RPM, 11 available capabilities, 4 missing"
+        "tooltip=82WM Legion Pro 5 16ARX8: Platform: balanced, Fans: 2410 RPM, 11 available capabilities, 5 missing"
     ));
-    assert!(stdout.contains("capability_count=15"));
+    assert!(stdout.contains("capability_count=16"));
     assert!(stdout.contains("available_capability_count=11"));
-    assert!(stdout.contains("missing_capability_count=4"));
+    assert!(stdout.contains("missing_capability_count=5"));
     assert!(stdout.contains("platform_profile=balanced"));
     assert!(stdout.contains("fan_rpm=2410 RPM"));
     assert!(stdout.contains(
-        "capabilities=amd_gpu_power_dpm,battery_charge_type,cpu_power,fan_curves,firmware_attributes,gpu,gpu_runtime,hwmon,ideapad_toggles,keyboard_rgb_candidates,leds,platform_profile,power_profiles,thermal_zones,wmi_sensors"
+        "capabilities=amd_gpu_power_dpm,battery_charge_type,cpu_power,fan_curves,firmware_attributes,gpu,gpu_runtime,hwmon,ideapad_toggles,keyboard_rgb_candidates,leds,platform_profile,power_profiles,thermal_zones,wireless_power,wmi_sensors"
     ));
 }
 
@@ -41,7 +41,7 @@ fn tooltip_cli_prints_single_line_over_private_bus() {
     assert!(output.status.success());
     assert_eq!(
         String::from_utf8(output.stdout).unwrap(),
-        "82WM Legion Pro 5 16ARX8: Platform: balanced, Fans: 2410 RPM, 11 available capabilities, 4 missing\n"
+        "82WM Legion Pro 5 16ARX8: Platform: balanced, Fans: 2410 RPM, 11 available capabilities, 5 missing\n"
     );
 }
 
@@ -105,7 +105,7 @@ steps = []
 
     assert!(output.status.success());
     let stdout = String::from_utf8(output.stdout).unwrap();
-    assert!(stdout.contains("Legion Control tray menu"));
+    assert!(stdout.contains("RatVantage tray menu"));
     assert!(stdout.contains("label=82WM Legion Pro 5 16ARX8"));
     assert!(stdout.contains("label=Platform profile: Balanced"));
     assert!(stdout.contains("label=Charge type: Standard"));
@@ -189,7 +189,7 @@ fn desktop_check_cli_reports_kde_env_without_session_bus() {
 
     assert!(output.status.success());
     let stdout = String::from_utf8(output.stdout).unwrap();
-    assert!(stdout.contains("Legion Control tray desktop check"));
+    assert!(stdout.contains("RatVantage tray desktop check"));
     assert!(stdout.contains("current_desktop=KDE"));
     assert!(stdout.contains("session_type=wayland"));
     assert!(stdout.contains("wayland_display=wayland-0"));

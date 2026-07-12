@@ -14,6 +14,7 @@ use legion_common::{
     plan_battery_charge_type_write as plan_battery_charge_type,
     plan_conservation_mode_write as plan_conservation_mode, plan_cpu_boost_write as plan_cpu_boost,
     plan_cpu_epp_write as plan_cpu_epp, plan_cpu_governor_write as plan_cpu_governor,
+    plan_cpu_max_frequency_write as plan_cpu_max_frequency,
     plan_curve_optimizer_all_core_write as plan_curve_optimizer_all_core,
     plan_fan_preset_write_with_platform_profile as plan_fan_preset,
     plan_firmware_attribute_reset_write_with_platform_profile as plan_firmware_attribute_reset,
@@ -26,19 +27,20 @@ use legion_common::{
     plan_openrgb_keyboard_rgb_sdk_write as plan_openrgb_keyboard_rgb_sdk,
     plan_platform_profile_write as plan_platform_profile, plan_prepare_custom_thermal_mode,
     plan_restore_auto_fan_write_with_platform_profile as plan_restore_auto_fan,
-    validate_automation_rule, validate_automation_rule_id,
-    validate_curve_optimizer_all_core_offset, validate_fan_preset_platform_profile_entry,
-    validate_gpu_mode_choice, validate_hardware_profile_id, validate_hardware_profile_trigger_id,
-    AutomationRule, AutomationRuleApplyRun, AutomationRuleEvaluation, AutomationRuleKind,
-    CapabilityRegistry, CurveOptimizerReadbackStatus, CurveOptimizerWriteState,
-    CustomThermalPlanPreview, DaemonState, DesktopPowerProfileChangeEvent, FanCurveSnapshot,
-    FanPreset, GpuModePending, HardwareProfile, HardwareProfileActions,
-    HardwareProfileApplyActionResult, HardwareProfileApplyPreview, HardwareProfileApplyRun,
-    IdeapadToggleCapability, KeyboardRgbCapability, KeyboardRgbWriteRequest, LedCapability,
-    PlatformProfileChangeEvent, RyzenAdjBackendStatus, RyzenBackendStatus, RyzenSmuBackendStatus,
-    RyzenSmuSetupAssistant, ValidationError, WriteDryRunPlan, WriteExecutionResult, WritePlanStep,
+    plan_wifi_power_save_write as plan_wifi_power_save, validate_automation_rule,
+    validate_automation_rule_id, validate_curve_optimizer_all_core_offset,
+    validate_fan_preset_platform_profile_entry, validate_gpu_mode_choice,
+    validate_hardware_profile_id, validate_hardware_profile_trigger_id, AutomationRule,
+    AutomationRuleApplyRun, AutomationRuleEvaluation, AutomationRuleKind, CapabilityRegistry,
+    CurveOptimizerReadbackStatus, CurveOptimizerWriteState, CustomThermalPlanPreview, DaemonState,
+    DesktopPowerProfileChangeEvent, FanCurveSnapshot, FanPreset, GpuModePending, HardwareProfile,
+    HardwareProfileActions, HardwareProfileApplyActionResult, HardwareProfileApplyPreview,
+    HardwareProfileApplyRun, IdeapadToggleCapability, KeyboardRgbCapability,
+    KeyboardRgbWriteRequest, LedCapability, PlatformProfileChangeEvent, RyzenAdjBackendStatus,
+    RyzenBackendStatus, RyzenSmuBackendStatus, RyzenSmuSetupAssistant, ValidationError,
+    WifiPowerSaveRequest, WriteDryRunPlan, WriteExecutionResult, WritePlanStep,
 };
-use legion_probe::{probe, ProbeOptions};
+use legion_probe::{probe, probe_with_openrgb_details, ProbeOptions};
 use serde::{Deserialize, Serialize};
 
 use zbus::{
@@ -50,9 +52,9 @@ use zbus::{
 
 pub const DBUS_INTERFACE: &str = "org.ratvantage.LegionControl1";
 pub const DBUS_PATH: &str = "/org/ratvantage/LegionControl1";
-pub const READ_ONLY_METHODS: &str = "CaptureLastKnownGoodFanCurve,ClearAutomationRules,ClearFanPresetProfileMap,ClearGpuModePending,ClearHardwareProfileTriggers,ClearHardwareProfiles,GetAutomationRulePreview,GetAutomationRules,GetCapabilities,GetFanPresetProfileMap,GetFanPresetReapplyAfterResume,GetGpuModePending,GetHardwareProfileApplyPreview,GetHardwareProfileTriggerApplyPreview,GetHardwareProfileTriggers,GetHardwareProfiles,GetHardwareSummary,GetLastAutomationRuleApply,GetLastCurveOptimizerAllCore,GetLastHardwareProfileApply,GetLastKnownGoodFanCurve,GetLiveFanCurveReadings,GetRawProbeReport,GetRecentDesktopPowerProfileChanges,GetRecentPlatformProfileChanges,GetRyzenBackendStatus,GetTelemetry,PlanAmdGpuDpmForceLevelWrite,PlanBatteryChargeTypeWrite,PlanConservationModeWrite,PlanCpuBoostWrite,PlanCpuEppWrite,PlanCpuGovernorWrite,PlanCurveOptimizerAllCoreWrite,PlanCustomThermalFanPresetWrite,PlanCustomThermalFirmwareAttributeWrite,PlanCustomThermalFirmwarePptPresetWrite,PlanCustomThermalRestoreAutoFanWrite,PlanFanPresetWrite,PlanFirmwareAttributeResetWrite,PlanFirmwareAttributeWrite,PlanGpuModeRuntimeWrite,PlanGpuModeWrite,PlanIdeapadToggleWrite,PlanKeyboardRgbWrite,PlanLedStateWrite,PlanOpenRgbAccessSetup,PlanOpenRgbKeyboardRgbBridge,PlanOpenRgbKeyboardRgbSdkWrite,PlanPlatformProfileWrite,PlanPrepareCustomThermalMode,PlanRestoreAutoFanWrite,RefreshCapabilities,RemoveAutomationRule,RemoveFanPresetProfileMapEntry,RemoveHardwareProfile,RemoveHardwareProfileTrigger,SetAutomationRule,SetFanPresetProfileMapEntry,SetFanPresetReapplyAfterResume,SetGpuModePending,SetHardwareProfile,SetHardwareProfileTrigger";
+pub const READ_ONLY_METHODS: &str = "CaptureLastKnownGoodFanCurve,ClearAutomationRules,ClearFanPresetProfileMap,ClearGpuModePending,ClearHardwareProfileTriggers,ClearHardwareProfiles,GetAutomationRulePreview,GetAutomationRules,GetCapabilities,GetFanPresetProfileMap,GetFanPresetReapplyAfterResume,GetGpuModePending,GetHardwareProfileApplyPreview,GetHardwareProfileTriggerApplyPreview,GetHardwareProfileTriggers,GetHardwareProfiles,GetHardwareSummary,GetLastAutomationRuleApply,GetLastCurveOptimizerAllCore,GetLastHardwareProfileApply,GetLastKnownGoodFanCurve,GetLiveFanCurveReadings,GetRawProbeReport,GetRecentDesktopPowerProfileChanges,GetRecentPlatformProfileChanges,GetRyzenBackendStatus,GetTelemetry,PlanAmdGpuDpmForceLevelWrite,PlanBatteryChargeTypeWrite,PlanConservationModeWrite,PlanCpuBoostWrite,PlanCpuEppWrite,PlanCpuGovernorWrite,PlanCpuMaxFrequencyWrite,PlanCurveOptimizerAllCoreWrite,PlanCustomThermalFanPresetWrite,PlanCustomThermalFirmwareAttributeWrite,PlanCustomThermalFirmwarePptPresetWrite,PlanCustomThermalRestoreAutoFanWrite,PlanFanPresetWrite,PlanFirmwareAttributeResetWrite,PlanFirmwareAttributeWrite,PlanGpuModeRuntimeWrite,PlanGpuModeWrite,PlanIdeapadToggleWrite,PlanKeyboardRgbWrite,PlanLedStateWrite,PlanOpenRgbAccessSetup,PlanOpenRgbKeyboardRgbBridge,PlanOpenRgbKeyboardRgbSdkWrite,PlanPlatformProfileWrite,PlanPrepareCustomThermalMode,PlanRestoreAutoFanWrite,PlanWifiPowerSaveWrite,RefreshCapabilities,RemoveAutomationRule,RemoveFanPresetProfileMapEntry,RemoveHardwareProfile,RemoveHardwareProfileTrigger,SetAutomationRule,SetFanPresetProfileMapEntry,SetFanPresetReapplyAfterResume,SetGpuModePending,SetHardwareProfile,SetHardwareProfileTrigger";
 pub const GATED_WRITE_METHODS: &str =
-    "SetPlatformProfile,SetBatteryChargeType,SetLedState,SetKeyboardRgb,SetIdeapadToggle,SetGpuMode,SetCpuGovernor,SetCpuEpp,SetFirmwareAttribute,SetCpuBoost,SetConservationMode,SetAmdGpuDpmForceLevel,SetCurveOptimizerAllCore,SetupOpenRgbAccess,ApplyHardwareProfile,ApplyHardwareProfileTrigger,ApplyAutomationRule";
+    "SetPlatformProfile,SetBatteryChargeType,SetLedState,SetKeyboardRgb,SetIdeapadToggle,SetGpuMode,SetCpuGovernor,SetCpuEpp,SetCpuMaxFrequency,SetFirmwareAttribute,SetCpuBoost,SetConservationMode,SetAmdGpuDpmForceLevel,SetWifiPowerSave,SetCurveOptimizerAllCore,SetupOpenRgbAccess,ApplyHardwareProfile,ApplyHardwareProfileTrigger,ApplyAutomationRule";
 pub const DEFAULT_STATE_PATH: &str = "/var/lib/legion-control/state.toml";
 const AMD_GPU_POWER_PROFILE_SYNC_INTERVAL: std::time::Duration = std::time::Duration::from_secs(5);
 const RECENT_PLATFORM_PROFILE_CHANGE_LIMIT: usize = 20;
@@ -73,10 +75,12 @@ const IDEAPAD_TOGGLE_WRITE_METHOD: &str = "SetIdeapadToggle";
 const GPU_MODE_WRITE_METHOD: &str = "SetGpuMode";
 const CPU_GOVERNOR_WRITE_METHOD: &str = "SetCpuGovernor";
 const CPU_EPP_WRITE_METHOD: &str = "SetCpuEpp";
+const CPU_MAX_FREQUENCY_WRITE_METHOD: &str = "SetCpuMaxFrequency";
 const FIRMWARE_ATTRIBUTE_WRITE_METHOD: &str = "SetFirmwareAttribute";
 const CPU_BOOST_WRITE_METHOD: &str = "SetCpuBoost";
 const CONSERVATION_MODE_WRITE_METHOD: &str = "SetConservationMode";
 const AMD_GPU_DPM_FORCE_LEVEL_WRITE_METHOD: &str = "SetAmdGpuDpmForceLevel";
+const WIFI_POWER_SAVE_WRITE_METHOD: &str = "SetWifiPowerSave";
 const CURVE_OPTIMIZER_ALL_CORE_WRITE_METHOD: &str = "SetCurveOptimizerAllCore";
 const OPENRGB_ACCESS_SETUP_METHOD: &str = "SetupOpenRgbAccess";
 const HARDWARE_PROFILE_APPLY_METHOD: &str = "ApplyHardwareProfile";
@@ -100,10 +104,12 @@ pub struct WriteAccessPolicy {
     pub gpu_mode_enabled: bool,
     pub cpu_governor_enabled: bool,
     pub cpu_epp_enabled: bool,
+    pub cpu_max_frequency_enabled: bool,
     pub firmware_attribute_enabled: bool,
     pub cpu_boost_enabled: bool,
     pub conservation_mode_enabled: bool,
     pub amd_gpu_dpm_enabled: bool,
+    pub wifi_power_save_enabled: bool,
     pub curve_optimizer_enabled: bool,
     pub openrgb_access_setup_enabled: bool,
     pub hardware_profile_apply_enabled: bool,
@@ -140,6 +146,9 @@ impl WriteAccessPolicy {
         if self.cpu_epp_enabled {
             methods.push(CPU_EPP_WRITE_METHOD);
         }
+        if self.cpu_max_frequency_enabled {
+            methods.push(CPU_MAX_FREQUENCY_WRITE_METHOD);
+        }
         if self.firmware_attribute_enabled {
             methods.push(FIRMWARE_ATTRIBUTE_WRITE_METHOD);
         }
@@ -151,6 +160,9 @@ impl WriteAccessPolicy {
         }
         if self.amd_gpu_dpm_enabled {
             methods.push(AMD_GPU_DPM_FORCE_LEVEL_WRITE_METHOD);
+        }
+        if self.wifi_power_save_enabled {
+            methods.push(WIFI_POWER_SAVE_WRITE_METHOD);
         }
         if self.curve_optimizer_enabled {
             methods.push(CURVE_OPTIMIZER_ALL_CORE_WRITE_METHOD);
@@ -513,6 +525,14 @@ pub trait CpuEppWriter: Send + Sync {
     fn write_cpu_epp(&self, path: &str, requested: &str) -> std::result::Result<(), String>;
 }
 
+pub trait CpuMaxFrequencyWriter: Send + Sync {
+    fn write_cpu_max_frequency(
+        &self,
+        paths: &[String],
+        requested_khz: i64,
+    ) -> std::result::Result<(), String>;
+}
+
 pub trait FirmwareAttributeWriter: Send + Sync {
     fn write_firmware_attribute(
         &self,
@@ -523,6 +543,14 @@ pub trait FirmwareAttributeWriter: Send + Sync {
 
 pub trait CpuBoostWriter: Send + Sync {
     fn write_cpu_boost(&self, path: &str, requested: &str) -> std::result::Result<(), String>;
+}
+
+pub trait WifiPowerSaveWriter: Send + Sync {
+    fn write_wifi_power_save(
+        &self,
+        interface: &str,
+        enabled: bool,
+    ) -> std::result::Result<(), String>;
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -553,6 +581,49 @@ pub struct SysfsCpuEppWriter;
 impl CpuEppWriter for SysfsCpuEppWriter {
     fn write_cpu_epp(&self, path: &str, requested: &str) -> std::result::Result<(), String> {
         fs::write(path, requested).map_err(|error| error.to_string())
+    }
+}
+
+#[derive(Debug, Default)]
+pub struct SysfsCpuMaxFrequencyWriter;
+
+impl CpuMaxFrequencyWriter for SysfsCpuMaxFrequencyWriter {
+    fn write_cpu_max_frequency(
+        &self,
+        paths: &[String],
+        requested_khz: i64,
+    ) -> std::result::Result<(), String> {
+        let requested = requested_khz.to_string();
+        for path in paths {
+            fs::write(path, &requested).map_err(|error| format!("{path}: {error}"))?;
+        }
+        Ok(())
+    }
+}
+
+#[derive(Debug, Default)]
+pub struct IwWifiPowerSaveWriter;
+
+impl WifiPowerSaveWriter for IwWifiPowerSaveWriter {
+    fn write_wifi_power_save(
+        &self,
+        interface: &str,
+        enabled: bool,
+    ) -> std::result::Result<(), String> {
+        let requested = if enabled { "on" } else { "off" };
+        let output = Command::new("iw")
+            .args(["dev", interface, "set", "power_save", requested])
+            .output()
+            .map_err(|error| format!("failed to run iw: {error}"))?;
+        if output.status.success() {
+            return Ok(());
+        }
+        let stderr = String::from_utf8_lossy(&output.stderr).trim().to_owned();
+        if stderr.is_empty() {
+            Err(format!("iw exited with status {}", output.status))
+        } else {
+            Err(stderr)
+        }
     }
 }
 
@@ -730,8 +801,10 @@ pub struct LegionControl {
     gpu_mode_writer: Arc<dyn GpuModeWriter>,
     cpu_governor_writer: Arc<dyn CpuGovernorWriter>,
     cpu_epp_writer: Arc<dyn CpuEppWriter>,
+    cpu_max_frequency_writer: Arc<dyn CpuMaxFrequencyWriter>,
     firmware_attribute_writer: Arc<dyn FirmwareAttributeWriter>,
     cpu_boost_writer: Arc<dyn CpuBoostWriter>,
+    wifi_power_save_writer: Arc<dyn WifiPowerSaveWriter>,
     curve_optimizer_writer: Arc<dyn CurveOptimizerAllCoreWriter>,
 }
 
@@ -795,8 +868,10 @@ impl LegionControl {
             gpu_mode_writer: Arc::new(CommandGpuModeWriter),
             cpu_governor_writer,
             cpu_epp_writer,
+            cpu_max_frequency_writer: Arc::new(SysfsCpuMaxFrequencyWriter),
             firmware_attribute_writer: Arc::new(SysfsFirmwareAttributeWriter),
             cpu_boost_writer: Arc::new(SysfsCpuBoostWriter),
+            wifi_power_save_writer: Arc::new(IwWifiPowerSaveWriter),
             curve_optimizer_writer: Arc::new(RyzenAdjCurveOptimizerWriter),
         }
     }
@@ -835,6 +910,16 @@ impl LegionControl {
         writer: Arc<dyn CurveOptimizerAllCoreWriter>,
     ) -> Self {
         self.curve_optimizer_writer = writer;
+        self
+    }
+
+    pub fn with_cpu_max_frequency_writer(mut self, writer: Arc<dyn CpuMaxFrequencyWriter>) -> Self {
+        self.cpu_max_frequency_writer = writer;
+        self
+    }
+
+    pub fn with_wifi_power_save_writer(mut self, writer: Arc<dyn WifiPowerSaveWriter>) -> Self {
+        self.wifi_power_save_writer = writer;
         self
     }
 
@@ -891,7 +976,7 @@ impl LegionControl {
         &self,
         request: &KeyboardRgbWriteRequest,
     ) -> Result<WriteDryRunPlan, PlanningError> {
-        let registry = self.planning_snapshot()?;
+        let registry = self.planning_snapshot_with_openrgb_details()?;
         plan_openrgb_keyboard_rgb_bridge(registry.keyboard_rgb_openrgb.as_ref(), request)
             .map_err(PlanningError::Validation)
     }
@@ -900,7 +985,7 @@ impl LegionControl {
         &self,
         request: &KeyboardRgbWriteRequest,
     ) -> Result<WriteDryRunPlan, PlanningError> {
-        let registry = self.planning_snapshot()?;
+        let registry = self.planning_snapshot_with_openrgb_details()?;
         plan_openrgb_keyboard_rgb_sdk(registry.keyboard_rgb_openrgb.as_ref(), request)
             .map_err(PlanningError::Validation)
     }
@@ -1044,6 +1129,15 @@ impl LegionControl {
         plan_cpu_epp(registry.cpu_power.as_ref(), requested).map_err(PlanningError::Validation)
     }
 
+    pub fn plan_cpu_max_frequency_write(
+        &self,
+        requested_khz: i64,
+    ) -> Result<WriteDryRunPlan, PlanningError> {
+        let registry = self.planning_snapshot()?;
+        plan_cpu_max_frequency(registry.cpu_power.as_ref(), requested_khz)
+            .map_err(PlanningError::Validation)
+    }
+
     pub fn plan_cpu_boost_write(&self, requested: &str) -> Result<WriteDryRunPlan, PlanningError> {
         let registry = self.planning_snapshot()?;
         plan_cpu_boost(registry.cpu_power.as_ref(), requested).map_err(PlanningError::Validation)
@@ -1169,7 +1263,11 @@ impl LegionControl {
 
         if completed {
             if let Some(value) = &profile.actions.platform_profile {
-                run_action!("platform_profile", self.set_platform_profile(value, sender));
+                if value == "custom" && !profile.actions.firmware_attributes.is_empty() {
+                    run_action!("platform_profile", self.prepare_custom_thermal_mode(sender));
+                } else {
+                    run_action!("platform_profile", self.set_platform_profile(value, sender));
+                }
             }
         }
         if completed {
@@ -1204,6 +1302,24 @@ impl LegionControl {
             }
         }
         if completed {
+            if let Some(value) = profile.actions.cpu_max_khz {
+                run_action!("cpu_max_khz", self.set_cpu_max_frequency(value, sender));
+            }
+        }
+        if completed && profile.actions.cpu_max_restore {
+            let value = self
+                .refresh()?
+                .cpu_power
+                .and_then(|cpu| cpu.cpuinfo_max_khz)
+                .ok_or_else(|| {
+                    fdo::Error::Failed(
+                        "CPU platform maximum is unavailable after changing platform profile"
+                            .to_owned(),
+                    )
+                })?;
+            run_action!("cpu_max_restore", self.set_cpu_max_frequency(value, sender));
+        }
+        if completed {
             if let Some(value) = &profile.actions.cpu_boost {
                 run_action!("cpu_boost", self.set_cpu_boost(value, sender));
             }
@@ -1222,6 +1338,11 @@ impl LegionControl {
                     "amd_gpu_dpm_force_level",
                     self.set_amd_gpu_dpm_force_level(value, sender)
                 );
+            }
+        }
+        if completed {
+            if let Some(request) = &profile.actions.wifi_power_save {
+                run_action!("wifi_power_save", self.set_wifi_power_save(request, sender));
             }
         }
         if completed {
@@ -1275,6 +1396,14 @@ impl LegionControl {
         let registry = self.planning_snapshot()?;
         plan_amd_gpu_dpm_force_level(registry.amd_gpu_power_dpm.as_ref(), requested)
             .map_err(PlanningError::Validation)
+    }
+
+    pub fn plan_wifi_power_save_write(
+        &self,
+        request: &WifiPowerSaveRequest,
+    ) -> Result<WriteDryRunPlan, PlanningError> {
+        let registry = self.planning_snapshot()?;
+        plan_wifi_power_save(&registry.wireless_power, request).map_err(PlanningError::Validation)
     }
 
     pub fn plan_firmware_attribute_write(
@@ -1380,12 +1509,29 @@ impl LegionControl {
                 },
             ));
         }
+        if actions.cpu_max_khz.is_some() && actions.cpu_max_restore {
+            return Err(PlanningError::Validation(
+                legion_common::ValidationError::BlockedChoice {
+                    capability_id: "hardware_profiles".to_owned(),
+                    requested: "cpu_max_khz+cpu_max_restore".to_owned(),
+                    reason: "choose either a fixed CPU scaling cap or restore the platform maximum"
+                        .to_owned(),
+                },
+            ));
+        }
         let mut plans = Vec::new();
         if let Some(value) = &actions.platform_profile {
-            plans.push(
-                plan_platform_profile(registry.platform_profile.as_ref(), value)
-                    .map_err(PlanningError::Validation)?,
-            );
+            if value == "custom" && !actions.firmware_attributes.is_empty() {
+                plans.push(
+                    plan_prepare_custom_thermal_mode(registry.platform_profile.as_ref())
+                        .map_err(PlanningError::Validation)?,
+                );
+            } else {
+                plans.push(
+                    plan_platform_profile(registry.platform_profile.as_ref(), value)
+                        .map_err(PlanningError::Validation)?,
+                );
+            }
         }
         if let Some(value) = &actions.battery_charge_type {
             plans.push(
@@ -1420,6 +1566,27 @@ impl LegionControl {
                     .map_err(PlanningError::Validation)?,
             );
         }
+        if let Some(value) = actions.cpu_max_khz {
+            plans.push(
+                plan_cpu_max_frequency(registry.cpu_power.as_ref(), value)
+                    .map_err(PlanningError::Validation)?,
+            );
+        }
+        if actions.cpu_max_restore {
+            let value = registry
+                .cpu_power
+                .as_ref()
+                .and_then(|cpu| cpu.cpuinfo_max_khz)
+                .ok_or_else(|| {
+                    PlanningError::Validation(legion_common::ValidationError::MissingCurrentValue {
+                        capability_id: "cpu_max_frequency".to_owned(),
+                    })
+                })?;
+            plans.push(
+                plan_cpu_max_frequency(registry.cpu_power.as_ref(), value)
+                    .map_err(PlanningError::Validation)?,
+            );
+        }
         if let Some(value) = &actions.cpu_boost {
             plans.push(
                 plan_cpu_boost(registry.cpu_power.as_ref(), value)
@@ -1435,6 +1602,12 @@ impl LegionControl {
         if let Some(value) = &actions.amd_gpu_dpm_force_level {
             plans.push(
                 plan_amd_gpu_dpm_force_level(registry.amd_gpu_power_dpm.as_ref(), value)
+                    .map_err(PlanningError::Validation)?,
+            );
+        }
+        if let Some(request) = &actions.wifi_power_save {
+            plans.push(
+                plan_wifi_power_save(&registry.wireless_power, request)
                     .map_err(PlanningError::Validation)?,
             );
         }
@@ -1767,6 +1940,80 @@ impl LegionControl {
         }
     }
 
+    pub fn set_wifi_power_save(
+        &self,
+        request: &WifiPowerSaveRequest,
+        sender: &str,
+    ) -> fdo::Result<WriteExecutionResult> {
+        let plan = self
+            .plan_wifi_power_save_write(request)
+            .map_err(planning_to_fdo)?;
+        if !self.write_policy.wifi_power_save_enabled {
+            return Ok(WriteExecutionResult::blocked_by_policy(
+                plan,
+                "Wi-Fi power-save writes are disabled by daemon policy",
+            ));
+        }
+        let plan = enabled_write_plan(plan);
+        if let Err(reason) = self.authorizer.authorize(&plan.polkit_action, sender) {
+            return Ok(WriteExecutionResult::blocked_by_authorization(plan, reason));
+        }
+
+        let requested = if request.enabled { "on" } else { "off" };
+        if plan.previous_value == requested {
+            return Ok(WriteExecutionResult::applied(
+                plan,
+                "Wi-Fi power save already matches the requested state; no write needed",
+                Some(requested.to_owned()),
+            ));
+        }
+
+        let previous_enabled = plan.previous_value == "on";
+        if let Err(error) = self
+            .wifi_power_save_writer
+            .write_wifi_power_save(&request.interface, request.enabled)
+        {
+            return Ok(WriteExecutionResult::failed(
+                plan,
+                format!("failed to write Wi-Fi power save: {error}"),
+                None,
+            ));
+        }
+
+        let readback = self.refresh_wifi_power_save(&request.interface)?;
+        if readback == requested {
+            return Ok(WriteExecutionResult::applied(
+                plan,
+                "Wi-Fi power save write applied and read back successfully",
+                Some(readback),
+            ));
+        }
+
+        match self
+            .wifi_power_save_writer
+            .write_wifi_power_save(&request.interface, previous_enabled)
+        {
+            Ok(()) => {
+                let rollback_readback = self.refresh_wifi_power_save(&request.interface)?;
+                Ok(WriteExecutionResult::failed(
+                    plan,
+                    format!(
+                        "Wi-Fi power save read-back mismatch after write; restored previous value `{}`",
+                        if previous_enabled { "on" } else { "off" }
+                    ),
+                    Some(rollback_readback),
+                ))
+            }
+            Err(rollback_error) => Ok(WriteExecutionResult::failed(
+                plan,
+                format!(
+                    "Wi-Fi power save read-back mismatch after write and rollback failed: expected `{requested}` got `{readback}`; rollback error: {rollback_error}"
+                ),
+                Some(readback),
+            )),
+        }
+    }
+
     pub fn set_cpu_governor(
         &self,
         requested: &str,
@@ -1878,6 +2125,149 @@ impl LegionControl {
                 plan,
                 format!(
                     "CPU EPP read-back mismatch after write and rollback failed: expected `{requested}` got `{readback}`; rollback error: {rollback_error}"
+                ),
+                Some(readback),
+            )),
+        }
+    }
+
+    pub fn set_cpu_max_frequency(
+        &self,
+        requested_khz: i64,
+        sender: &str,
+    ) -> fdo::Result<WriteExecutionResult> {
+        let plan = self
+            .plan_cpu_max_frequency_write(requested_khz)
+            .map_err(planning_to_fdo)?;
+        if !self.write_policy.cpu_max_frequency_enabled {
+            return Ok(WriteExecutionResult::blocked_by_policy(
+                plan,
+                "CPU max-frequency writes are disabled by daemon policy",
+            ));
+        }
+        let plan = enabled_write_plan(plan);
+        if let Err(reason) = self.authorizer.authorize(&plan.polkit_action, sender) {
+            return Ok(WriteExecutionResult::blocked_by_authorization(plan, reason));
+        }
+
+        let registry = self.planning_snapshot().map_err(planning_to_fdo)?;
+        let paths = registry
+            .cpu_power
+            .as_ref()
+            .map(|cpu| cpu.scaling_max_paths.clone())
+            .unwrap_or_default();
+        let previous_value = plan.previous_value.parse::<i64>().map_err(|error| {
+            fdo::Error::Failed(format!("invalid CPU max rollback value: {error}"))
+        })?;
+        if let Err(error) = self
+            .cpu_max_frequency_writer
+            .write_cpu_max_frequency(&paths, requested_khz)
+        {
+            return Ok(WriteExecutionResult::failed(
+                plan,
+                format!("failed to write CPU max frequency: {error}"),
+                None,
+            ));
+        }
+
+        let readback = self.refresh_cpu_max_frequency()?;
+        let requested = requested_khz.to_string();
+        if readback == requested {
+            return Ok(WriteExecutionResult::applied(
+                plan,
+                "CPU max-frequency write applied and read back successfully",
+                Some(readback),
+            ));
+        }
+
+        match self
+            .cpu_max_frequency_writer
+            .write_cpu_max_frequency(&paths, previous_value)
+        {
+            Ok(()) => {
+                let rollback_readback = self.refresh_cpu_max_frequency()?;
+                Ok(WriteExecutionResult::failed(
+                    plan,
+                    format!(
+                        "CPU max-frequency read-back mismatch after write; restored previous value `{previous_value}`"
+                    ),
+                    Some(rollback_readback),
+                ))
+            }
+            Err(rollback_error) => Ok(WriteExecutionResult::failed(
+                plan,
+                format!(
+                    "CPU max-frequency read-back mismatch after write and rollback failed: expected `{requested}` got `{readback}`; rollback error: {rollback_error}"
+                ),
+                Some(readback),
+            )),
+        }
+    }
+
+    fn prepare_custom_thermal_mode(&self, sender: &str) -> fdo::Result<WriteExecutionResult> {
+        let plan = self
+            .plan_prepare_custom_thermal_mode()
+            .map_err(planning_to_fdo)?;
+        if !self.write_policy.platform_profile_enabled {
+            return Ok(WriteExecutionResult::blocked_by_policy(
+                plan,
+                "platform profile writes are disabled by daemon policy",
+            ));
+        }
+        let plan = enabled_write_plan(plan);
+        if let Err(reason) = self.authorizer.authorize(&plan.polkit_action, sender) {
+            return Ok(WriteExecutionResult::blocked_by_authorization(plan, reason));
+        }
+
+        let path = plan.path.clone();
+        let previous_value = plan.previous_value.clone();
+        let requested = plan.requested_value.clone();
+        if previous_value == requested {
+            return Ok(WriteExecutionResult::applied(
+                plan,
+                "custom thermal mode is already active",
+                Some(requested),
+            ));
+        }
+
+        if let Err(error) = self
+            .platform_profile_writer
+            .write_platform_profile(&path, &requested)
+        {
+            return Ok(WriteExecutionResult::failed(
+                plan,
+                format!("failed to prepare custom thermal mode: {error}"),
+                None,
+            ));
+        }
+
+        let readback = self.refresh_platform_profile_path(&path)?;
+        if readback == requested {
+            return Ok(WriteExecutionResult::applied(
+                plan,
+                "custom thermal mode prepared and read back successfully",
+                Some(readback),
+            ));
+        }
+
+        match self
+            .platform_profile_writer
+            .write_platform_profile(&path, &previous_value)
+        {
+            Ok(()) => {
+                let rollback_readback = self.refresh_platform_profile_path(&path)?;
+                Ok(WriteExecutionResult::failed(
+                    plan,
+                    format!(
+                        "custom thermal mode read-back mismatch after write; restored previous value `{previous_value}`"
+                    ),
+                    Some(rollback_readback),
+                ))
+            }
+            Err(rollback_error) => Ok(WriteExecutionResult::failed(
+                plan,
+                format!(
+                    "custom thermal mode read-back mismatch after write and rollback failed: expected `{requested}` got `{readback}`; rollback error: {rollback_error}"
                 ),
                 Some(readback),
             )),
@@ -2167,7 +2557,9 @@ impl LegionControl {
         request: &KeyboardRgbWriteRequest,
         sender: &str,
     ) -> fdo::Result<WriteExecutionResult> {
-        let registry = self.planning_snapshot().map_err(planning_to_fdo)?;
+        let registry = self
+            .planning_snapshot_with_openrgb_details()
+            .map_err(planning_to_fdo)?;
         let plan = plan_openrgb_keyboard_rgb_sdk(registry.keyboard_rgb_openrgb.as_ref(), request)
             .map_err(validation_to_fdo)?;
         if !self.write_policy.keyboard_rgb_enabled {
@@ -2819,6 +3211,15 @@ impl LegionControl {
                     }
                 }
             }
+            AutomationRuleKind::PlatformProfileRouter { mappings, .. } => {
+                for profile_id in mappings.values() {
+                    if !state.hardware_profiles.contains_key(profile_id) {
+                        return Err(fdo::Error::InvalidArgs(format!(
+                            "hardware profile `{profile_id}` is not stored"
+                        )));
+                    }
+                }
+            }
             AutomationRuleKind::BatteryProfileThreshold { profile_id, .. } => {
                 if !state.hardware_profiles.contains_key(profile_id) {
                     return Err(fdo::Error::InvalidArgs(format!(
@@ -2827,6 +3228,13 @@ impl LegionControl {
                 }
             }
             AutomationRuleKind::PeriodicIdle { profile_id, .. } => {
+                if !state.hardware_profiles.contains_key(profile_id) {
+                    return Err(fdo::Error::InvalidArgs(format!(
+                        "hardware profile `{profile_id}` is not stored"
+                    )));
+                }
+            }
+            AutomationRuleKind::DesktopPowerProfile { profile_id, .. } => {
                 if !state.hardware_profiles.contains_key(profile_id) {
                     return Err(fdo::Error::InvalidArgs(format!(
                         "hardware profile `{profile_id}` is not stored"
@@ -2885,7 +3293,7 @@ impl LegionControl {
         rule_id: &str,
         sender: &str,
     ) -> fdo::Result<AutomationRuleApplyRun> {
-        self.apply_automation_rule_with_cooldown(rule_id, sender, None)
+        self.apply_automation_rule_with_cooldown(rule_id, sender, None, false)
     }
 
     fn apply_automation_rule_with_cooldown(
@@ -2893,6 +3301,7 @@ impl LegionControl {
         rule_id: &str,
         sender: &str,
         cooldown_secs: Option<u64>,
+        reapply_while_selected: bool,
     ) -> fdo::Result<AutomationRuleApplyRun> {
         let evaluation = self.automation_rule_preview(rule_id)?;
         let now = unix_timestamp_secs();
@@ -2908,14 +3317,27 @@ impl LegionControl {
                 if let Some(last) = last {
                     let same_profile = last.evaluation.selected_profile_id.as_deref()
                         == Some(selected_profile_id.as_str());
+                    let previous_apply_failed = last
+                        .profile_run
+                        .as_ref()
+                        .is_some_and(|profile_run| !profile_run.completed);
                     let within_cooldown =
                         now.saturating_sub(last.timestamp_unix_secs) < cooldown_secs;
-                    if same_profile && within_cooldown {
+                    if same_profile
+                        && !previous_apply_failed
+                        && (!reapply_while_selected || within_cooldown)
+                    {
                         let mut skipped = evaluation;
                         skipped.matched = false;
-                        skipped.reason = format!(
-                            "selected profile `{selected_profile_id}` is still inside automation cooldown"
-                        );
+                        skipped.reason = if reapply_while_selected {
+                            format!(
+                                "selected profile `{selected_profile_id}` is still inside automation cooldown"
+                            )
+                        } else {
+                            format!(
+                                "selected profile `{selected_profile_id}` is already applied; waiting for a matching-state change"
+                            )
+                        };
                         let run = AutomationRuleApplyRun {
                             timestamp_unix_secs: now,
                             evaluation: skipped,
@@ -3057,6 +3479,33 @@ impl LegionControl {
                 evaluation.selected_profile_id = Some(selected.clone());
                 evaluation.profile_preview = Some(self.hardware_profile_apply_preview(selected)?);
             }
+            AutomationRuleKind::PlatformProfileRouter { mappings, .. } => {
+                let active_profile = registry
+                    .platform_profile
+                    .as_ref()
+                    .and_then(|profile| profile.current.clone())
+                    .or_else(|| {
+                        self.state
+                            .lock()
+                            .ok()
+                            .and_then(|state| state.last_observed_platform_profile.clone())
+                    });
+                let Some(active_profile) = active_profile else {
+                    evaluation.reason = "platform profile telemetry is unavailable".to_owned();
+                    return Ok(evaluation);
+                };
+                let Some(profile_id) = mappings.get(&active_profile) else {
+                    evaluation.reason = format!(
+                        "platform profile is `{active_profile}`; no routed hardware profile is configured"
+                    );
+                    return Ok(evaluation);
+                };
+                evaluation.matched = true;
+                evaluation.reason =
+                    format!("platform profile is `{active_profile}`; selecting routed profile");
+                evaluation.selected_profile_id = Some(profile_id.clone());
+                evaluation.profile_preview = Some(self.hardware_profile_apply_preview(profile_id)?);
+            }
             AutomationRuleKind::BatteryProfileThreshold {
                 threshold_percent,
                 profile_id,
@@ -3113,6 +3562,38 @@ impl LegionControl {
                 evaluation.matched = true;
                 evaluation.reason =
                     "periodic idle correction selected the configured profile".to_owned();
+                evaluation.selected_profile_id = Some(profile_id.clone());
+                evaluation.profile_preview = Some(self.hardware_profile_apply_preview(profile_id)?);
+            }
+            AutomationRuleKind::DesktopPowerProfile {
+                desktop_profile,
+                profile_id,
+                ..
+            } => {
+                let active_profile = registry
+                    .power_profiles
+                    .as_ref()
+                    .and_then(|profiles| profiles.active_profile.clone())
+                    .or_else(|| {
+                        self.state
+                            .lock()
+                            .ok()
+                            .and_then(|state| state.last_observed_desktop_power_profile.clone())
+                    });
+                let Some(active_profile) = active_profile else {
+                    evaluation.reason = "desktop power profile telemetry is unavailable".to_owned();
+                    return Ok(evaluation);
+                };
+                if active_profile != *desktop_profile {
+                    evaluation.reason = format!(
+                        "desktop power profile is `{active_profile}`; waiting for `{desktop_profile}`"
+                    );
+                    return Ok(evaluation);
+                }
+                evaluation.matched = true;
+                evaluation.reason = format!(
+                    "desktop power profile is `{desktop_profile}`; selecting configured profile"
+                );
                 evaluation.selected_profile_id = Some(profile_id.clone());
                 evaluation.profile_preview = Some(self.hardware_profile_apply_preview(profile_id)?);
             }
@@ -3248,6 +3729,22 @@ impl LegionControl {
             .map_err(|_| PlanningError::RegistryUnavailable)
     }
 
+    fn planning_snapshot_with_openrgb_details(&self) -> Result<CapabilityRegistry, PlanningError> {
+        let cached = self.planning_snapshot()?;
+        if cached
+            .keyboard_rgb_openrgb
+            .as_ref()
+            .map(|openrgb| !openrgb.devices.is_empty())
+            .unwrap_or(false)
+        {
+            return Ok(cached);
+        }
+
+        let mut registry = probe_with_openrgb_details(&self.options);
+        self.annotate_openrgb_keyboard_rgb_sdk_backend(&mut registry);
+        Ok(registry)
+    }
+
     fn annotate_openrgb_keyboard_rgb_sdk_backend(&self, registry: &mut CapabilityRegistry) {
         let Some(openrgb) = registry.keyboard_rgb_openrgb.as_mut() else {
             return;
@@ -3301,6 +3798,16 @@ impl LegionControl {
             })
     }
 
+    fn refresh_platform_profile_path(&self, path: &str) -> fdo::Result<String> {
+        fs::read_to_string(path)
+            .map(|value| value.trim().to_owned())
+            .map_err(|error| {
+                fdo::Error::Failed(format!(
+                    "platform_profile read-back failed for `{path}`: {error}"
+                ))
+            })
+    }
+
     fn refresh_battery_charge_type(&self) -> fdo::Result<String> {
         let refreshed = self.refresh()?;
         refreshed
@@ -3328,6 +3835,19 @@ impl LegionControl {
         refreshed.cpu_power.and_then(|cpu| cpu.epp).ok_or_else(|| {
             fdo::Error::Failed("cpu_power epp missing after write/read-back".to_owned())
         })
+    }
+
+    fn refresh_cpu_max_frequency(&self) -> fdo::Result<String> {
+        let refreshed = self.refresh()?;
+        refreshed
+            .cpu_power
+            .and_then(|cpu| cpu.scaling_max_khz)
+            .map(|value| value.to_string())
+            .ok_or_else(|| {
+                fdo::Error::Failed(
+                    "cpu_power scaling_max_freq missing after write/read-back".to_owned(),
+                )
+            })
     }
 
     fn refresh_cpu_boost(&self) -> fdo::Result<String> {
@@ -3364,6 +3884,20 @@ impl LegionControl {
                 fdo::Error::Failed(
                     "AMD GPU DPM force level missing after write/read-back".to_owned(),
                 )
+            })
+    }
+
+    fn refresh_wifi_power_save(&self, interface: &str) -> fdo::Result<String> {
+        let refreshed = self.refresh()?;
+        refreshed
+            .wireless_power
+            .into_iter()
+            .find(|capability| capability.interface == interface)
+            .and_then(|capability| capability.current_power_save)
+            .ok_or_else(|| {
+                fdo::Error::Failed(format!(
+                    "Wi-Fi power-save state missing after write/read-back for {interface}"
+                ))
             })
     }
 
@@ -3623,6 +4157,10 @@ impl LegionControl {
         to_plan_json(self.plan_cpu_epp_write(requested))
     }
 
+    fn PlanCpuMaxFrequencyWrite(&self, requested_khz: i64) -> fdo::Result<String> {
+        to_plan_json(self.plan_cpu_max_frequency_write(requested_khz))
+    }
+
     fn PlanCpuBoostWrite(&self, requested: &str) -> fdo::Result<String> {
         to_plan_json(self.plan_cpu_boost_write(requested))
     }
@@ -3637,6 +4175,14 @@ impl LegionControl {
 
     fn PlanAmdGpuDpmForceLevelWrite(&self, requested: &str) -> fdo::Result<String> {
         to_plan_json(self.plan_amd_gpu_dpm_force_level_write(requested))
+    }
+
+    fn PlanWifiPowerSaveWrite(&self, request_json: &str) -> fdo::Result<String> {
+        let request: WifiPowerSaveRequest =
+            serde_json::from_str(request_json).map_err(|error| {
+                fdo::Error::InvalidArgs(format!("invalid Wi-Fi power-save request JSON: {error}"))
+            })?;
+        to_plan_json(self.plan_wifi_power_save_write(&request))
     }
 
     fn PlanFirmwareAttributeWrite(
@@ -3685,6 +4231,15 @@ impl LegionControl {
         to_json(&self.set_cpu_epp(requested, &sender)?)
     }
 
+    fn SetCpuMaxFrequency(
+        &self,
+        requested_khz: i64,
+        #[zbus(header)] header: Header<'_>,
+    ) -> fdo::Result<String> {
+        let sender = sender_from_header(&header)?;
+        to_json(&self.set_cpu_max_frequency(requested_khz, &sender)?)
+    }
+
     fn SetCpuBoost(
         &self,
         requested: &str,
@@ -3719,6 +4274,19 @@ impl LegionControl {
     ) -> fdo::Result<String> {
         let sender = sender_from_header(&header)?;
         to_json(&self.set_amd_gpu_dpm_force_level(requested, &sender)?)
+    }
+
+    fn SetWifiPowerSave(
+        &self,
+        request_json: &str,
+        #[zbus(header)] header: Header<'_>,
+    ) -> fdo::Result<String> {
+        let sender = sender_from_header(&header)?;
+        let request: WifiPowerSaveRequest =
+            serde_json::from_str(request_json).map_err(|error| {
+                fdo::Error::InvalidArgs(format!("invalid Wi-Fi power-save request JSON: {error}"))
+            })?;
+        to_json(&self.set_wifi_power_save(&request, &sender)?)
     }
 
     fn SetGpuMode(
@@ -4047,19 +4615,72 @@ pub fn handle_automation_observer_tick(
         .map_err(|e| format!("automation rules unavailable: {e}"))?;
     let mut runs = Vec::new();
     for (rule_id, rule) in &rules {
-        let rule_cooldown_secs = match &rule.kind {
-            AutomationRuleKind::FastChargeUntilThreshold { cooldown_secs, .. } => *cooldown_secs,
-            AutomationRuleKind::AcProfileRouter { cooldown_secs, .. } => *cooldown_secs,
-            AutomationRuleKind::BatteryProfileThreshold { cooldown_secs, .. } => *cooldown_secs,
-            AutomationRuleKind::PeriodicIdle { cooldown_secs, .. } => *cooldown_secs,
+        let (rule_cooldown_secs, reapply_while_selected) = match &rule.kind {
+            AutomationRuleKind::FastChargeUntilThreshold { cooldown_secs, .. }
+            | AutomationRuleKind::AcProfileRouter { cooldown_secs, .. }
+            | AutomationRuleKind::PlatformProfileRouter { cooldown_secs, .. }
+            | AutomationRuleKind::BatteryProfileThreshold { cooldown_secs, .. }
+            | AutomationRuleKind::DesktopPowerProfile { cooldown_secs, .. } => {
+                (*cooldown_secs, false)
+            }
+            AutomationRuleKind::PeriodicIdle { cooldown_secs, .. } => (*cooldown_secs, true),
         };
         let run = ctl
             .apply_automation_rule_with_cooldown(
                 rule_id,
                 AUTOMATION_OBSERVER_SENDER,
                 Some(rule_cooldown_secs),
+                reapply_while_selected,
             )
             .map_err(|e| format!("automation rule `{rule_id}` failed: {e}"))?;
+        runs.push(run);
+    }
+    Ok(runs)
+}
+
+fn apply_desktop_power_profile_automation_rules(
+    ctl: &LegionControl,
+) -> Result<Vec<AutomationRuleApplyRun>, String> {
+    let rules = ctl
+        .automation_rules()
+        .map_err(|e| format!("automation rules unavailable: {e}"))?;
+    let mut runs = Vec::new();
+    for (rule_id, rule) in &rules {
+        let AutomationRuleKind::DesktopPowerProfile { cooldown_secs, .. } = rule.kind else {
+            continue;
+        };
+        let run = ctl
+            .apply_automation_rule_with_cooldown(
+                rule_id,
+                AUTOMATION_OBSERVER_SENDER,
+                Some(cooldown_secs),
+                false,
+            )
+            .map_err(|e| format!("desktop power automation rule `{rule_id}` failed: {e}"))?;
+        runs.push(run);
+    }
+    Ok(runs)
+}
+
+fn apply_platform_profile_automation_rules(
+    ctl: &LegionControl,
+) -> Result<Vec<AutomationRuleApplyRun>, String> {
+    let rules = ctl
+        .automation_rules()
+        .map_err(|e| format!("automation rules unavailable: {e}"))?;
+    let mut runs = Vec::new();
+    for (rule_id, rule) in &rules {
+        let AutomationRuleKind::PlatformProfileRouter { cooldown_secs, .. } = rule.kind else {
+            continue;
+        };
+        let run = ctl
+            .apply_automation_rule_with_cooldown(
+                rule_id,
+                AUTOMATION_OBSERVER_SENDER,
+                Some(cooldown_secs),
+                false,
+            )
+            .map_err(|e| format!("platform profile automation rule `{rule_id}` failed: {e}"))?;
         runs.push(run);
     }
     Ok(runs)
@@ -4092,6 +4713,7 @@ pub fn handle_platform_profile_change_observer_tick(
         .hardware_profile_triggers()
         .map_err(|e| format!("hardware profile triggers unavailable: {e}"))?;
     if !triggers.contains_key("platform_profile_changed") {
+        let _runs = apply_platform_profile_automation_rules(&ctl)?;
         return Ok(None);
     }
 
@@ -4155,6 +4777,7 @@ pub fn handle_desktop_power_profile_change_observer_tick_with_current(
         .hardware_profile_triggers()
         .map_err(|e| format!("hardware profile triggers unavailable: {e}"))?;
     if !triggers.contains_key("desktop_power_profile_changed") {
+        let _runs = apply_desktop_power_profile_automation_rules(&ctl)?;
         return Ok(None);
     }
 
@@ -4801,10 +5424,12 @@ mod tests {
                 gpu_mode_enabled: false,
                 cpu_governor_enabled: true,
                 cpu_epp_enabled: true,
+                cpu_max_frequency_enabled: true,
                 firmware_attribute_enabled: true,
                 cpu_boost_enabled: true,
                 conservation_mode_enabled: true,
                 amd_gpu_dpm_enabled: true,
+                wifi_power_save_enabled: true,
                 curve_optimizer_enabled: true,
                 openrgb_access_setup_enabled: true,
                 hardware_profile_apply_enabled: true,
@@ -4818,10 +5443,12 @@ mod tests {
                 "SetIdeapadToggle",
                 "SetCpuGovernor",
                 "SetCpuEpp",
+                "SetCpuMaxFrequency",
                 "SetFirmwareAttribute",
                 "SetCpuBoost",
                 "SetConservationMode",
                 "SetAmdGpuDpmForceLevel",
+                "SetWifiPowerSave",
                 "SetCurveOptimizerAllCore",
                 "SetupOpenRgbAccess",
                 "ApplyHardwareProfile",

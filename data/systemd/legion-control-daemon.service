@@ -1,5 +1,5 @@
 [Unit]
-Description=Legion Control hardware daemon
+Description=RatVantage hardware daemon
 Documentation=https://github.com/daredoole/RatVantage
 After=dbus.service multi-user.target
 

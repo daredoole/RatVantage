@@ -46,7 +46,7 @@ impl TraySummary {
         let available_capability_count = status.capability_count() - missing_capability_count;
 
         Self {
-            title: "Legion Control".to_owned(),
+            title: "RatVantage".to_owned(),
             tooltip: capability_tooltip(
                 &status.hardware.product_name,
                 &status.hardware.product_version,
@@ -121,7 +121,7 @@ impl TraySummary {
 
     pub fn render_lines(&self) -> Vec<String> {
         let mut lines = vec![
-            "Legion Control tray status".to_owned(),
+            "RatVantage tray status".to_owned(),
             format!("title={}", self.title),
             format!("tooltip={}", self.tooltip),
             format!("capability_count={}", self.capability_count),
@@ -287,7 +287,7 @@ mod tests {
 
         let summary = TraySummary::from_status(&status);
 
-        assert_eq!(summary.title, "Legion Control");
+        assert_eq!(summary.title, "RatVantage");
         assert_eq!(summary.capability_count, 2);
         assert_eq!(summary.available_capability_count, 2);
         assert_eq!(summary.missing_capability_count, 0);
@@ -298,8 +298,8 @@ mod tests {
         assert_eq!(
             summary.render_lines(),
             [
-                "Legion Control tray status",
-                "title=Legion Control",
+                "RatVantage tray status",
+                "title=RatVantage",
                 "tooltip=82WM Legion Pro 5 16ARX8: 2 available capabilities",
                 "capability_count=2",
                 "available_capability_count=2",
@@ -359,6 +359,8 @@ mod tests {
                 choices: vec!["balanced".to_owned(), "performance".to_owned()],
                 path: "/sys/firmware/acpi/platform_profile".to_owned(),
                 choices_path: "/sys/firmware/acpi/platform_profile_choices".to_owned(),
+                custom_profile_path: None,
+                custom_profile_driver: None,
             }),
             power_profiles: Some(PowerProfilesCapability {
                 bus: "system".to_owned(),
@@ -424,6 +426,8 @@ mod tests {
                 choices: vec!["balanced".to_owned()],
                 path: "/sys/firmware/acpi/platform_profile".to_owned(),
                 choices_path: "/sys/firmware/acpi/platform_profile_choices".to_owned(),
+                custom_profile_path: None,
+                custom_profile_driver: None,
             }),
             ..Default::default()
         };

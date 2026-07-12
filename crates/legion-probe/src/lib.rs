@@ -12,7 +12,7 @@ use legion_common::{
     HardwareSummary, HwmonSensor, IdeapadToggleCapability, KeyboardRgbCandidate,
     KeyboardRgbCapability, KeyboardRgbHidReport, KeyboardRgbOpenRgbDevice,
     KeyboardRgbOpenRgbStatus, LedCapability, PlatformProfileCapability, RiskLevel,
-    TelemetrySnapshot, ThermalZone,
+    TelemetrySnapshot, ThermalZone, WirelessPowerCapability,
 };
 
 mod power_profiles;
@@ -31,6 +31,14 @@ impl Default for ProbeOptions {
 }
 
 pub fn probe(options: &ProbeOptions) -> CapabilityRegistry {
+    probe_inner(options, false)
+}
+
+pub fn probe_with_openrgb_details(options: &ProbeOptions) -> CapabilityRegistry {
+    probe_inner(options, true)
+}
+
+fn probe_inner(options: &ProbeOptions, include_openrgb_details: bool) -> CapabilityRegistry {
     let platform_profile = detect_platform_profile(&options.sysfs_root);
     let battery_charge_type = detect_battery_charge_type(&options.sysfs_root);
     let battery_telemetry = detect_battery_telemetry(&options.sysfs_root);
@@ -39,13 +47,15 @@ pub fn probe(options: &ProbeOptions) -> CapabilityRegistry {
     let leds = detect_leds(&options.sysfs_root);
     let keyboard_rgb_candidates = detect_keyboard_rgb_candidates(&options.sysfs_root);
     let keyboard_rgb = detect_keyboard_rgb_capability(&keyboard_rgb_candidates);
-    let keyboard_rgb_openrgb = detect_keyboard_rgb_openrgb(&options.sysfs_root);
+    let keyboard_rgb_openrgb =
+        detect_keyboard_rgb_openrgb(&options.sysfs_root, include_openrgb_details);
     let firmware_attributes = detect_firmware_attributes(&options.sysfs_root);
     let ideapad_toggles = detect_ideapad_toggles(&options.sysfs_root);
     let gpu = detect_envycontrol_gpu(&options.sysfs_root);
     let gpu_runtime = detect_gpu_runtime_capability(&options.sysfs_root, gpu.as_ref());
     let amd_gpu_power_dpm = detect_amd_gpu_power_dpm(&options.sysfs_root);
     let cpu_power = detect_cpu_power(&options.sysfs_root);
+    let wireless_power = detect_wireless_power(&options.sysfs_root);
     let thermal_zones = detect_thermal_zones(&options.sysfs_root);
     let ac_adapters = detect_ac_adapters(&options.sysfs_root);
     let power_profiles = power_profiles::detect_power_profiles(&options.sysfs_root);
@@ -135,6 +145,12 @@ pub fn probe(options: &ProbeOptions) -> CapabilityRegistry {
             .and_then(|probe| probe.unique_owner.as_ref())
             .is_some(),
     );
+    push_capability(
+        &mut capabilities,
+        "wireless_power",
+        "Wireless power save",
+        !wireless_power.is_empty(),
+    );
 
     let mut all_sensors = hwmon_sensors;
     all_sensors.extend(wmi_sensors);
@@ -161,6 +177,7 @@ pub fn probe(options: &ProbeOptions) -> CapabilityRegistry {
         gpu_runtime,
         amd_gpu_power_dpm,
         cpu_power,
+        wireless_power,
         thermal_zones,
         power_profiles,
     }
@@ -219,6 +236,7 @@ fn detect_platform_profile(root: &Path) -> Option<PlatformProfileCapability> {
     let choices_path = root.join("sys/firmware/acpi/platform_profile_choices");
     let current = read_trim(&path);
     let choices = read_trim(&choices_path).map_or_else(Vec::new, |value| parse_choices(&value));
+    let custom_profile = detect_custom_platform_profile_handler(root);
 
     if current.is_none() && choices.is_empty() {
         return None;
@@ -229,7 +247,43 @@ fn detect_platform_profile(root: &Path) -> Option<PlatformProfileCapability> {
         choices,
         path: path.display().to_string(),
         choices_path: choices_path.display().to_string(),
+        custom_profile_path: custom_profile
+            .as_ref()
+            .map(|profile| profile.path.display().to_string()),
+        custom_profile_driver: custom_profile.map(|profile| profile.driver),
     })
+}
+
+#[derive(Debug, Clone)]
+struct CustomPlatformProfileHandler {
+    driver: String,
+    path: PathBuf,
+}
+
+fn detect_custom_platform_profile_handler(root: &Path) -> Option<CustomPlatformProfileHandler> {
+    let class_root = root.join("sys/class/platform-profile");
+    let entries = std::fs::read_dir(class_root).ok()?;
+    let mut fallback = None;
+    for entry in entries.flatten() {
+        let profile_root = entry.path();
+        let driver = read_trim(profile_root.join("name"))?;
+        let profile_path = profile_root.join("profile");
+        let choices = read_trim(profile_root.join("choices"))
+            .map(|value| parse_choices(&value))
+            .unwrap_or_default();
+        if !choices.iter().any(|choice| choice == "custom") || !profile_path.exists() {
+            continue;
+        }
+        let handler = CustomPlatformProfileHandler {
+            driver: driver.clone(),
+            path: profile_path,
+        };
+        if driver == "lenovo-wmi-gamezone" {
+            return Some(handler);
+        }
+        fallback.get_or_insert(handler);
+    }
+    fallback
 }
 
 fn detect_battery_charge_type(root: &Path) -> Option<BatteryChargeTypeCapability> {
@@ -369,6 +423,21 @@ fn detect_cpu_power(root: &Path) -> Option<CpuPowerCapability> {
     let epp_path = policy.join("energy_performance_preference");
     let boost_path = cpufreq.join("boost");
     let amd_status_path = root.join("sys/devices/system/cpu/amd_pstate/status");
+    let mut scaling_max_paths = fs::read_dir(&cpufreq)
+        .ok()
+        .into_iter()
+        .flat_map(|entries| entries.flatten())
+        .map(|entry| entry.path())
+        .filter(|path| {
+            path.file_name()
+                .and_then(|name| name.to_str())
+                .is_some_and(|name| name.starts_with("policy"))
+        })
+        .map(|path| path.join("scaling_max_freq"))
+        .filter(|path| path.exists())
+        .map(|path| path.display().to_string())
+        .collect::<Vec<_>>();
+    scaling_max_paths.sort();
 
     let governor = read_trim(&governor_path);
     let available_governors = read_trim(policy.join("scaling_available_governors"))
@@ -399,7 +468,68 @@ fn detect_cpu_power(root: &Path) -> Option<CpuPowerCapability> {
         governor_path: path_if_exists(&governor_path),
         epp_path: path_if_exists(&epp_path),
         boost_path: path_if_exists(&boost_path),
+        scaling_max_paths,
     })
+}
+
+fn detect_wireless_power(root: &Path) -> Vec<WirelessPowerCapability> {
+    let net_root = root.join("sys/class/net");
+    let Ok(entries) = fs::read_dir(net_root) else {
+        return Vec::new();
+    };
+
+    let mut interfaces = Vec::new();
+    for entry in entries.flatten() {
+        let iface_path = entry.path();
+        if !iface_path.join("wireless").is_dir() {
+            continue;
+        }
+        let Some(interface) = iface_path
+            .file_name()
+            .and_then(|name| name.to_str())
+            .map(str::to_owned)
+        else {
+            continue;
+        };
+        let current_power_save = if root == Path::new("/") {
+            read_iw_power_save(&interface)
+        } else {
+            read_trim(iface_path.join("wireless/power_save"))
+        };
+        interfaces.push(WirelessPowerCapability {
+            interface,
+            status: CapabilityStatus::ProbeOnly,
+            driver: iface_path
+                .join("device/driver")
+                .read_link()
+                .ok()
+                .and_then(|path| {
+                    path.file_name()
+                        .map(|name| name.to_string_lossy().to_string())
+                }),
+            current_power_save,
+            choices: vec!["off".to_owned(), "on".to_owned()],
+            command: "iw".to_owned(),
+        });
+    }
+    interfaces.sort_by(|left, right| left.interface.cmp(&right.interface));
+    interfaces
+}
+
+fn read_iw_power_save(interface: &str) -> Option<String> {
+    let output = Command::new("iw")
+        .args(["dev", interface, "get", "power_save"])
+        .output()
+        .ok()?;
+    if !output.status.success() {
+        return None;
+    }
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let value = stdout.split(':').nth(1)?.trim().to_ascii_lowercase();
+    match value.as_str() {
+        "on" | "off" => Some(value),
+        _ => None,
+    }
 }
 
 fn path_if_exists(path: &Path) -> String {
@@ -821,7 +951,10 @@ fn detect_keyboard_rgb_capability(
     })
 }
 
-fn detect_keyboard_rgb_openrgb(root: &Path) -> Option<KeyboardRgbOpenRgbStatus> {
+fn detect_keyboard_rgb_openrgb(
+    root: &Path,
+    include_details: bool,
+) -> Option<KeyboardRgbOpenRgbStatus> {
     if root != Path::new("/") {
         let fixture_path = root.join("ratvantage-keyboard-rgb-openrgb.json");
         return fs::read_to_string(fixture_path)
@@ -831,15 +964,23 @@ fn detect_keyboard_rgb_openrgb(root: &Path) -> Option<KeyboardRgbOpenRgbStatus> 
 
     let openrgb_path = command_path("openrgb");
     let sdk_helper_path = command_path("ratvantage-openrgb-keyboard-rgb-sdk-helper");
-    let devices = openrgb_path
-        .as_ref()
-        .and_then(|path| openrgb_list_devices_output(path))
-        .map(|stdout| parse_openrgb_keyboard_devices(&stdout))
-        .unwrap_or_default();
-    let sdk_snapshot = openrgb_path
-        .as_ref()
-        .zip(sdk_helper_path.as_ref())
-        .and_then(|(openrgb, helper)| read_openrgb_sdk_snapshot(helper, openrgb));
+    let devices = if include_details {
+        openrgb_path
+            .as_ref()
+            .and_then(|path| openrgb_list_devices_output(path))
+            .map(|stdout| parse_openrgb_keyboard_devices(&stdout))
+            .unwrap_or_default()
+    } else {
+        Vec::new()
+    };
+    let sdk_snapshot = if include_details {
+        openrgb_path
+            .as_ref()
+            .zip(sdk_helper_path.as_ref())
+            .and_then(|(openrgb, helper)| read_openrgb_sdk_snapshot(helper, openrgb))
+    } else {
+        None
+    };
     let sdk_snapshot_supported = sdk_snapshot.is_some();
     let sdk_active_mode = sdk_snapshot
         .as_ref()
@@ -1425,6 +1566,50 @@ mod tests {
             parse_choices("low-power balanced performance\n"),
             ["low-power", "balanced", "performance"]
         );
+    }
+
+    #[test]
+    fn detects_lenovo_gamezone_custom_platform_profile_handler() {
+        let root = std::env::temp_dir().join(format!(
+            "legion-probe-gamezone-platform-profile-{}",
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        let firmware = root.join("sys/firmware/acpi");
+        let gamezone = root.join("sys/class/platform-profile/platform-profile-0");
+        fs::create_dir_all(&firmware).unwrap();
+        fs::create_dir_all(&gamezone).unwrap();
+        fs::write(firmware.join("platform_profile"), "low-power\n").unwrap();
+        fs::write(
+            firmware.join("platform_profile_choices"),
+            "low-power balanced performance max-power custom\n",
+        )
+        .unwrap();
+        fs::write(gamezone.join("name"), "lenovo-wmi-gamezone\n").unwrap();
+        fs::write(gamezone.join("profile"), "low-power\n").unwrap();
+        fs::write(
+            gamezone.join("choices"),
+            "low-power balanced performance max-power custom\n",
+        )
+        .unwrap();
+
+        let registry = probe(&ProbeOptions {
+            sysfs_root: root.clone(),
+        });
+        let capability = registry.platform_profile.as_ref().unwrap();
+        assert_eq!(
+            capability.custom_profile_driver.as_deref(),
+            Some("lenovo-wmi-gamezone")
+        );
+        assert!(capability
+            .custom_profile_path
+            .as_deref()
+            .unwrap()
+            .ends_with("sys/class/platform-profile/platform-profile-0/profile"));
+
+        fs::remove_dir_all(root).unwrap();
     }
 
     #[test]

@@ -13,6 +13,8 @@ grep -q -- "--enable-openrgb-access-setup" <<<"$args"
 grep -q -- "--enable-hardware-profile-apply" <<<"$args"
 grep -q -- "--enable-automation-observer" <<<"$args"
 grep -q -- "--enable-keyboard-rgb-write" <<<"$args"
+grep -q -- "--enable-wifi-power-save-write" <<<"$args"
+grep -q -- "--enable-cpu-max-frequency-write" <<<"$args"
 grep -q -- "--openrgb-sdk-helper" <<<"$args"
 grep -q -- "$HOME/.local/bin/ratvantage-openrgb-keyboard-rgb-sdk-helper" <<<"$args"
 

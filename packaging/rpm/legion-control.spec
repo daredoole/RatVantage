@@ -1,7 +1,7 @@
 Name:           legion-control
 Version:        0.1.0
-Release:        0%{?dist}
-Summary:        Fedora-native Lenovo Legion hardware capability probe
+Release:        1%{?dist}
+Summary:        Safe laptop hardware control for Fedora
 License:        MIT
 URL:            https://github.com/daredoole/RatVantage
 Source0:        %{name}-%{version}.tar.gz
@@ -17,28 +17,31 @@ BuildRequires:  systemd-rpm-macros
 
 Requires:       %{name}-daemon%{?_isa} = %{version}-%{release}
 Requires:       %{name}-ui%{?_isa} = %{version}-%{release}
+Requires:       %{name}-tray%{?_isa} = %{version}-%{release}
 
 %description
-Legion Control is an experimental, probe-first hardware control project for Fedora.
+RatVantage is a probe-first laptop hardware control project for Fedora.
 It is not affiliated with or endorsed by Lenovo.
 
 %package daemon
-Summary:        Privileged D-Bus daemon for Legion Control
+Summary:        Privileged D-Bus daemon for RatVantage
 Requires(post): systemd
 Requires(preun): systemd
 Requires(postun): systemd
 
 %description daemon
-The Legion Control daemon exposes the read-only hardware capability API over
-system D-Bus. Hardware write methods are intentionally not packaged yet.
+The RatVantage daemon exposes hardware capabilities and guarded control methods
+over system D-Bus. Write methods remain disabled until an administrator enables
+the matching service flags; polkit, validation, and readback still apply.
 
 %package ui
-Summary:        GTK dashboard for Legion Control
+Summary:        GTK dashboard for RatVantage
 Requires:       %{name}-daemon%{?_isa} = %{version}-%{release}
 Requires:       %{name}-helpers = %{version}-%{release}
 
 %description ui
-The Legion Control UI is a GTK4/libadwaita dashboard for the read-only daemon.
+The RatVantage UI is a GTK4/libadwaita dashboard for status, diagnostics, and
+guarded hardware controls.
 
 %package helpers
 Summary:        RatVantage support and evidence helper scripts
@@ -52,18 +55,19 @@ The access setup fallback must still be run explicitly with administrator
 authorization; no setuid helper is packaged.
 
 %package tray
-Summary:        Read-only tray/status helper for Legion Control
+Summary:        Tray status and quick-control helper for RatVantage
 Requires:       %{name}-daemon%{?_isa} = %{version}-%{release}
 
 %description tray
-The Legion Control tray helper provides a read-only StatusNotifier tray item
-plus status and tooltip CLI output. Autostart remains packaged disabled.
+The RatVantage tray helper provides a StatusNotifier tray item, guarded quick
+controls, status, and tooltip output. It starts with the desktop session; GNOME
+requires an AppIndicator/KStatusNotifier extension to display tray icons.
 
 %prep
 %autosetup
 
 %build
-%{__cargo} build --release --locked \
+cargo build --release --locked \
     -p legion-probe \
     -p legion-control-daemon \
     -p legion-control-tray \

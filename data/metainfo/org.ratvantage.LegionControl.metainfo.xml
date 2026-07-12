@@ -1,15 +1,15 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <component type="desktop-application">
   <id>org.ratvantage.LegionControl</id>
-  <name>Legion Control</name>
-  <summary>Fedora-native Lenovo Legion hardware capability probe</summary>
+  <name>RatVantage</name>
+  <summary>Safe laptop power, battery, thermal, and device control</summary>
   <metadata_license>MIT</metadata_license>
   <project_license>MIT</project_license>
   <developer id="org.ratvantage">
     <name>RatVantage contributors</name>
   </developer>
   <description>
-    <p>Legion Control is an experimental, probe-first hardware control project. This project is not affiliated with or endorsed by Lenovo.</p>
+    <p>RatVantage is a probe-first hardware control app for supported laptops on Fedora. It keeps privileged changes behind a policy-gated system service and verifies hardware read-back before reporting success.</p>
   </description>
   <url type="homepage">https://github.com/daredoole/RatVantage</url>
   <icon type="stock">org.ratvantage.LegionControl</icon>
@@ -19,4 +19,7 @@
     <category>HardwareSettings</category>
   </categories>
   <content_rating type="oars-1.1"/>
+  <releases>
+    <release version="0.1.0" date="2026-07-12"/>
+  </releases>
 </component>

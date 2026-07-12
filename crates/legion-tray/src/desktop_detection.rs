@@ -113,7 +113,7 @@ impl TrayDesktopCheck {
 
     pub fn render_lines(&self) -> Vec<String> {
         let mut lines = vec![
-            "Legion Control tray desktop check".to_owned(),
+            "RatVantage tray desktop check".to_owned(),
             format!(
                 "current_desktop={}",
                 render_optional(&self.session.current_desktop)
@@ -260,7 +260,7 @@ mod tests {
         assert_eq!(
             check.render_lines(),
             [
-                "Legion Control tray desktop check",
+                "RatVantage tray desktop check",
                 "current_desktop=KDE",
                 "session_type=wayland",
                 "wayland_display=wayland-0",

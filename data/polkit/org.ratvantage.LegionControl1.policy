@@ -5,8 +5,8 @@
   <vendor>RatVantage</vendor>
   <vendor_url>https://github.com/daredoole/RatVantage</vendor_url>
   <action id="org.ratvantage.LegionControl1.read">
-    <description>Read Legion hardware capabilities</description>
-    <message>Authentication is required to read Legion hardware capabilities.</message>
+    <description>Read RatVantage hardware capabilities</description>
+    <message>Authentication is required to read RatVantage hardware capabilities.</message>
     <defaults>
       <allow_any>yes</allow_any>
       <allow_inactive>yes</allow_inactive>
@@ -14,8 +14,8 @@
     </defaults>
   </action>
   <action id="org.ratvantage.LegionControl1.set-platform-profile">
-    <description>Set Legion platform profile</description>
-    <message>Authentication is required to change the Legion platform profile.</message>
+    <description>Set the RatVantage platform profile</description>
+    <message>Authentication is required to change the RatVantage platform profile.</message>
     <defaults>
       <allow_any>no</allow_any>
       <allow_inactive>no</allow_inactive>
@@ -23,8 +23,8 @@
     </defaults>
   </action>
   <action id="org.ratvantage.LegionControl1.set-battery-charge-type">
-    <description>Set Legion battery charge type</description>
-    <message>Authentication is required to change the Legion battery charge type.</message>
+    <description>Set the RatVantage battery charge type</description>
+    <message>Authentication is required to change the RatVantage battery charge type.</message>
     <defaults>
       <allow_any>no</allow_any>
       <allow_inactive>no</allow_inactive>
@@ -32,8 +32,8 @@
     </defaults>
   </action>
   <action id="org.ratvantage.LegionControl1.set-led-state">
-    <description>Set Legion LED state</description>
-    <message>Authentication is required to change the Legion LED state.</message>
+    <description>Set a RatVantage LED state</description>
+    <message>Authentication is required to change a RatVantage LED state.</message>
     <defaults>
       <allow_any>no</allow_any>
       <allow_inactive>no</allow_inactive>
@@ -41,8 +41,8 @@
     </defaults>
   </action>
   <action id="org.ratvantage.LegionControl1.set-keyboard-rgb">
-    <description>Set Legion keyboard RGB</description>
-    <message>Authentication is required to change the Legion keyboard RGB state.</message>
+    <description>Set RatVantage keyboard lighting</description>
+    <message>Authentication is required to change the RatVantage keyboard lighting.</message>
     <defaults>
       <allow_any>no</allow_any>
       <allow_inactive>no</allow_inactive>
@@ -50,8 +50,8 @@
     </defaults>
   </action>
   <action id="org.ratvantage.LegionControl1.set-ideapad-toggle">
-    <description>Set Legion ideapad toggle state</description>
-    <message>Authentication is required to change the Legion ideapad toggle state.</message>
+    <description>Set a RatVantage device toggle</description>
+    <message>Authentication is required to change a RatVantage device toggle.</message>
     <defaults>
       <allow_any>no</allow_any>
       <allow_inactive>no</allow_inactive>
@@ -68,8 +68,8 @@
     </defaults>
   </action>
   <action id="org.ratvantage.LegionControl1.set-cpu-governor">
-    <description>Set Legion CPU governor</description>
-    <message>Authentication is required to change the Legion CPU governor.</message>
+    <description>Set the RatVantage CPU governor</description>
+    <message>Authentication is required to change the RatVantage CPU governor.</message>
     <defaults>
       <allow_any>no</allow_any>
       <allow_inactive>no</allow_inactive>
@@ -77,8 +77,17 @@
     </defaults>
   </action>
   <action id="org.ratvantage.LegionControl1.set-cpu-epp">
-    <description>Set Legion CPU energy performance preference</description>
-    <message>Authentication is required to change the Legion CPU energy performance preference.</message>
+    <description>Set the RatVantage CPU energy preference</description>
+    <message>Authentication is required to change the RatVantage CPU energy preference.</message>
+    <defaults>
+      <allow_any>no</allow_any>
+      <allow_inactive>no</allow_inactive>
+      <allow_active>auth_admin_keep</allow_active>
+    </defaults>
+  </action>
+  <action id="org.ratvantage.LegionControl1.set-cpu-max-frequency">
+    <description>Set the RatVantage CPU frequency cap</description>
+    <message>Authentication is required to change the RatVantage CPU frequency cap.</message>
     <defaults>
       <allow_any>no</allow_any>
       <allow_inactive>no</allow_inactive>
@@ -86,8 +95,8 @@
     </defaults>
   </action>
   <action id="org.ratvantage.LegionControl1.set-firmware-attribute">
-    <description>Set Legion firmware power limit</description>
-    <message>Authentication is required to change a Legion firmware power limit.</message>
+    <description>Set a RatVantage firmware power limit</description>
+    <message>Authentication is required to change a RatVantage firmware power limit.</message>
     <defaults>
       <allow_any>no</allow_any>
       <allow_inactive>no</allow_inactive>
@@ -95,8 +104,8 @@
     </defaults>
   </action>
   <action id="org.ratvantage.LegionControl1.set-cpu-boost">
-    <description>Set Legion CPU boost</description>
-    <message>Authentication is required to change Legion CPU boost.</message>
+    <description>Set RatVantage CPU boost</description>
+    <message>Authentication is required to change RatVantage CPU boost.</message>
     <defaults>
       <allow_any>no</allow_any>
       <allow_inactive>no</allow_inactive>
@@ -104,8 +113,8 @@
     </defaults>
   </action>
   <action id="org.ratvantage.LegionControl1.set-conservation-mode">
-    <description>Set Legion battery conservation mode</description>
-    <message>Authentication is required to change Legion battery conservation mode.</message>
+    <description>Set RatVantage battery conservation mode</description>
+    <message>Authentication is required to change RatVantage battery conservation mode.</message>
     <defaults>
       <allow_any>no</allow_any>
       <allow_inactive>no</allow_inactive>
@@ -115,6 +124,15 @@
   <action id="org.ratvantage.LegionControl1.set-amd-gpu-dpm-force-level">
     <description>Set AMD GPU DPM force level</description>
     <message>Authentication is required to change the AMD GPU DPM force level.</message>
+    <defaults>
+      <allow_any>no</allow_any>
+      <allow_inactive>no</allow_inactive>
+      <allow_active>auth_admin_keep</allow_active>
+    </defaults>
+  </action>
+  <action id="org.ratvantage.LegionControl1.set-wifi-power-save">
+    <description>Set Wi-Fi power save</description>
+    <message>Authentication is required to change Wi-Fi power save.</message>
     <defaults>
       <allow_any>no</allow_any>
       <allow_inactive>no</allow_inactive>

@@ -6,6 +6,7 @@ from __future__ import annotations
 import json
 import os
 import platform
+import signal
 import shutil
 import subprocess
 import tempfile
@@ -59,18 +60,32 @@ def run_logged(cmd: list[str], log_path: Path, env: dict[str, str] | None = None
     merged_env = os.environ.copy()
     if env:
         merged_env.update(env)
-    proc = subprocess.run(
+    proc = subprocess.Popen(
         cmd,
         cwd=REPO_ROOT,
         env=merged_env,
         text=True,
         stdout=subprocess.PIPE,
         stderr=subprocess.STDOUT,
-        timeout=timeout,
-        check=False,
+        start_new_session=True,
     )
-    log_path.write_text(proc.stdout, encoding="utf-8")
-    return proc
+    try:
+        stdout, _ = proc.communicate(timeout=timeout)
+        returncode = proc.returncode
+    except subprocess.TimeoutExpired as error:
+        os.killpg(proc.pid, signal.SIGTERM)
+        try:
+            stdout, _ = proc.communicate(timeout=5)
+        except subprocess.TimeoutExpired:
+            os.killpg(proc.pid, signal.SIGKILL)
+            stdout, _ = proc.communicate()
+        partial = error.output or ""
+        if isinstance(partial, bytes):
+            partial = partial.decode(errors="replace")
+        stdout = f"{partial}{stdout or ''}\nTimed out after {timeout} seconds.\n"
+        returncode = 124
+    log_path.write_text(stdout or "", encoding="utf-8")
+    return subprocess.CompletedProcess(cmd, returncode, stdout=stdout, stderr=None)
 
 
 @dataclass

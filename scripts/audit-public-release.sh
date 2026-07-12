@@ -49,10 +49,17 @@ allowed_paths = {
     "Cargo.toml",
 }
 
+personal_home_pattern = re.compile(
+    r"(?<!/github)/home/(?!test\b|user\b|runner\b|ratvantage\b|[^/\s]+>\b)[A-Za-z0-9._-]+"
+)
+assert personal_home_pattern.search("/home/developer/project")
+assert not personal_home_pattern.search("HOME=/home/ratvantage")
+assert not personal_home_pattern.search("CARGO_HOME=/github/home/.cargo")
+
 patterns = [
     (
         "absolute personal home path",
-        re.compile(r"/home/(?!test\b|user\b|runner\b|[^/\s]+>\b)[A-Za-z0-9._-]+"),
+        personal_home_pattern,
     ),
     (
         "private repository wording",

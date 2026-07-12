@@ -64,7 +64,7 @@ Start with one source package and split binary subpackages:
 | `legion-control` | Common files, README, icons, metainfo, presets |
 | `legion-control-daemon` | Root system daemon, systemd unit, D-Bus service config, polkit policy |
 | `legion-control-ui` | GTK4/libadwaita dashboard, desktop file |
-| `legion-control-tray` | Optional read-only StatusNotifier tray/status helper and disabled autostart placeholder |
+| `legion-control-tray` | StatusNotifier tray/status helper and enabled desktop-session autostart entry |
 | `legion-control-devel` | Optional D-Bus XML/spec files for integrations |
 
 Recommended first distribution path:
@@ -322,24 +322,25 @@ Optional tray autostart placeholder:
 /etc/xdg/autostart/org.ratvantage.LegionControl.Tray.desktop
 ```
 
-Current disabled placeholder:
+Current session autostart entry:
 
 ```ini
 [Desktop Entry]
 Type=Application
-Name=Legion Control Tray
-Comment=Read-only Legion Control tray/status helper
+Name=RatVantage Tray
+Comment=Hardware status and quick controls
 Exec=legion-control-tray
 Icon=org.ratvantage.LegionControl
 Terminal=false
-NoDisplay=true
-Hidden=true
-X-GNOME-Autostart-enabled=false
+NoDisplay=false
+Hidden=false
+X-GNOME-Autostart-enabled=true
 ```
 
-Do not enable tray autostart until the StatusNotifier backend is manually tested
-on target desktops. The helper also keeps read-only `--status` and `--tooltip`
-CLI output for diagnostics.
+The tray starts with the desktop session. KDE Plasma provides StatusNotifier
+support natively. GNOME requires an AppIndicator/KStatusNotifier extension for
+icon visibility; the helper retains `--status`, `--tooltip`, and
+`--desktop-check` diagnostics when no watcher is available.
 
 Use [statusnotifier-smoke-testing.md](statusnotifier-smoke-testing.md) as the
 manual desktop gate before enabling this autostart file.
