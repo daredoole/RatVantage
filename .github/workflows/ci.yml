@@ -6,11 +6,14 @@ on:
   pull_request:
     branches: ["main"]
 
+permissions:
+  contents: read
+
 jobs:
   rust:
     name: Rust
     runs-on: ubuntu-latest
-    container: fedora:latest
+    container: fedora:44@sha256:5ccaa26fd655e39c390c2a3c840884e13621fe46b40c6341f2c6a89f2acccb4b
 
     steps:
       - name: Install system test dependencies
@@ -27,6 +30,7 @@ jobs:
             findutils \
             gcc \
             git \
+            gitleaks \
             glib2-devel \
             gtk4-devel \
             ImageMagick \
@@ -46,12 +50,21 @@ jobs:
             xorg-x11-server-Xvfb
 
       - name: Checkout
-        uses: actions/checkout@v6
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.2
+
+      - name: Scan Git history for secrets
+        run: gitleaks git --no-banner --redact
 
       - name: Install Rust
-        uses: dtolnay/rust-toolchain@stable
+        uses: dtolnay/rust-toolchain@4be7066ada62dd38de10e7b70166bc74ed198c30 # stable
         with:
           components: rustfmt, clippy
+
+      - name: Install RustSec audit tool
+        run: cargo install cargo-audit --locked --version 0.22.2
+
+      - name: Audit Rust dependencies
+        run: cargo audit --deny warnings
 
       - name: Prepare unprivileged QA user
         run: |
@@ -121,7 +134,7 @@ jobs:
 
       - name: Upload GUI QA report
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: ratvantage-gui-qa-report
           path: target/qa-report

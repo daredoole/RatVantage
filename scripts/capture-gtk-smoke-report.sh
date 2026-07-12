@@ -19,7 +19,6 @@ Options:
 EOF
 }
 
-repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 output_dir=""
 sysfs_root="/"
 pages_csv="status,profiles,battery,gpu,fans,appearance,automations,settings,diagnostics"

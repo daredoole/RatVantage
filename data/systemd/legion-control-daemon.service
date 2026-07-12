@@ -8,12 +8,24 @@ Type=dbus
 BusName=org.ratvantage.LegionControl1
 ExecStart=/usr/libexec/legion-control/legion-control-daemon
 Restart=on-failure
+UMask=0077
 ProtectSystem=strict
 ProtectHome=true
 PrivateTmp=true
 NoNewPrivileges=true
 MemoryDenyWriteExecute=true
+LockPersonality=true
+ProtectClock=true
+ProtectControlGroups=true
+ProtectHostname=true
+ProtectKernelLogs=true
+ProtectKernelModules=true
+RestrictNamespaces=true
 RestrictAddressFamilies=AF_UNIX
+RestrictRealtime=true
+RestrictSUIDSGID=true
+SystemCallFilter=~@debug @mount @obsolete @reboot @swap
+SystemCallErrorNumber=EPERM
 SystemCallArchitectures=native
 
 [Install]

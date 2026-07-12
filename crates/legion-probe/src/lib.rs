@@ -59,7 +59,10 @@ fn probe_inner(options: &ProbeOptions, include_openrgb_details: bool) -> Capabil
     let thermal_zones = detect_thermal_zones(&options.sysfs_root);
     let ac_adapters = detect_ac_adapters(&options.sysfs_root);
     let power_profiles = power_profiles::detect_power_profiles(&options.sysfs_root);
-    let wmi_sensors = detect_wmi_sensors(&options.sysfs_root);
+    // Raw ACPI/WMI method invocation is intentionally unsupported. Keep the
+    // capability visible as unavailable until a safe kernel telemetry interface
+    // is discovered.
+    let wmi_sensors: Vec<HwmonSensor> = Vec::new();
 
     let mut capabilities = Vec::new();
     push_capability(
@@ -1504,61 +1507,22 @@ fn read_trim(path: impl AsRef<Path>) -> Option<String> {
         .filter(|value| !value.is_empty())
 }
 
-/// Write an acpi_call string to /proc/acpi/call and parse the hex integer result.
-/// Returns None if acpi_call module is not loaded or the call fails.
-fn read_acpi_call(call: &str) -> Option<i64> {
-    let proc_call = Path::new("/proc/acpi/call");
-    if !proc_call.exists() {
-        return None;
-    }
-    fs::write(proc_call, call.as_bytes()).ok()?;
-    let result = read_trim(proc_call)?;
-    // acpi_call result format: "0x1a4" or "0x1a4called" (partial overwrite of "not called")
-    let hex = result
-        .strip_prefix("0x")
-        .or_else(|| result.strip_prefix("0X"))?;
-    let hex_digits: String = hex.chars().take_while(|c| c.is_ascii_hexdigit()).collect();
-    i64::from_str_radix(&hex_digits, 16).ok()
-}
-
-/// Read WMI fan RPM and EC temperatures via acpi_call → \_SB.GZFD.WMB5.
-/// Confirmed on 82WM (ITE IT5507, ACCESS_METHOD_WMI3) at idle:
-///   fan1=1700 RPM, fan2=1500 RPM, cpu=48°C, gpu=0°C (power-gated).
-/// Returns empty vec if acpi_call module is not loaded.
-fn detect_wmi_sensors(_root: &Path) -> Vec<HwmonSensor> {
-    type WmiSensorEntry = (&'static str, &'static str, &'static str, fn(i64) -> i64);
-
-    // (feature_id, kind, label, value_transform)
-    // Fan RPM is returned directly (FANS*100). Temps are °C; multiply by 1000 for hwmon m°C units.
-    let entries: &[WmiSensorEntry] = &[
-        ("0x04030001", "fan", "Legion fan 1 (WMI)", |v| v),
-        ("0x04030002", "fan", "Legion fan 2 (WMI)", |v| v),
-        ("0x05040000", "temp", "Legion CPU EC (WMI)", |v| v * 1000),
-        ("0x05050000", "temp", "Legion GPU EC (WMI)", |v| v * 1000),
-    ];
-
-    let mut sensors = Vec::new();
-    for &(feature_id, kind, label, transform) in entries {
-        let call = format!("\\_SB.GZFD.WMB5 0x00 0x11 {feature_id}");
-        if let Some(raw) = read_acpi_call(&call) {
-            sensors.push(HwmonSensor {
-                hwmon_name: Some("legion_wmi".to_owned()),
-                label: Some(label.to_owned()),
-                kind: kind.to_owned(),
-                input_path: format!("wmi:{feature_id}"),
-                value: Some(transform(raw)),
-            });
-        }
-    }
-    sensors
-}
-
 #[cfg(test)]
 mod tests {
     use std::os::unix::fs::PermissionsExt;
     use std::time::{SystemTime, UNIX_EPOCH};
 
     use super::*;
+
+    #[test]
+    fn production_probe_does_not_invoke_raw_acpi_methods() {
+        let source = include_str!("lib.rs");
+        let proc_path = ["/proc/acpi/", "call"].concat();
+        let raw_write = ["fs::", "write(proc_call"].concat();
+
+        assert!(!source.contains(&proc_path));
+        assert!(!source.contains(&raw_write));
+    }
 
     #[test]
     fn parses_platform_profile_choices() {

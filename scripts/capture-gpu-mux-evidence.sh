@@ -34,7 +34,6 @@ It does not write sysfs, WMI, EC, or any hardware path.
 EOF
 }
 
-repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 phase=""
 output=""
 pre_dir=""
@@ -64,7 +63,7 @@ esac
 log() { echo "[gpu-mux-evidence] $*"; }
 
 capture_file() {
-  local label="$1" path="$2" dest="$3"
+  local _label="$1" path="$2" dest="$3"
   if [[ -r "$path" ]]; then
     cat "$path" > "$dest" 2>/dev/null || echo "(read error)" > "$dest"
   else
@@ -388,7 +387,6 @@ log "  hardware MUX indicators"
   echo "=== ACPI _PR3 (D3cold) GPU nodes ==="
   find /sys/bus/acpi/devices -name 'power_state' 2>/dev/null | while read -r f; do
     node="$(dirname "$f")"
-    hid="$(cat "$node/hid" 2>/dev/null || true)"
     # GPU ACPI nodes typically have HID PNP0C09 (EC) or specific GPU HID
     if grep -qi 'VGA\|GPU\|NVID\|ATI\|AMD' "$node/path" 2>/dev/null || \
        [[ "$(cat "$node/path" 2>/dev/null)" == *"GPU"* ]]; then
