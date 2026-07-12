@@ -7,6 +7,7 @@ on:
     branches: ["main"]
 
 permissions:
+  checks: write
   contents: read
 
 jobs:
@@ -60,11 +61,10 @@ jobs:
         with:
           components: rustfmt, clippy
 
-      - name: Install RustSec audit tool
-        run: cargo install cargo-audit --locked --version 0.22.2
-
       - name: Audit Rust dependencies
-        run: cargo audit --deny warnings
+        uses: rustsec/audit-check@69366f33c96575abad1ee0dba8212993eecbe998 # v2.0.0
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Prepare unprivileged QA user
         run: |
