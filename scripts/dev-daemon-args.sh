@@ -26,10 +26,12 @@ cat <<'EOF'
 --enable-gpu-mode-write
 --enable-cpu-governor-write
 --enable-cpu-epp-write
+--enable-cpu-max-frequency-write
 --enable-firmware-attribute-write
 --enable-cpu-boost-write
 --enable-conservation-mode-write
 --enable-amd-gpu-dpm-write
+--enable-wifi-power-save-write
 --enable-curve-optimizer-write
 --enable-openrgb-access-setup
 --enable-hardware-profile-apply

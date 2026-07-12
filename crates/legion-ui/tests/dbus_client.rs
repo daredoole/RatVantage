@@ -46,6 +46,7 @@ fn client_reads_daemon_contract_over_private_bus() {
             "platform_profile",
             "power_profiles",
             "thermal_zones",
+            "wireless_power",
             "wmi_sensors"
         ]
     );
@@ -57,6 +58,7 @@ fn client_reads_daemon_contract_over_private_bus() {
                 || capability.id == "gpu_runtime"
                 || capability.id == "keyboard_rgb_candidates"
                 || capability.id == "power_profiles"
+                || capability.id == "wireless_power"
                 || capability.id == "wmi_sensors")
             && capability.details.is_null()
     }));
@@ -99,7 +101,7 @@ fn client_reads_daemon_contract_over_private_bus() {
     assert_eq!(
         render_overview_lines(&raw),
         [
-            "Legion Control overview",
+            "RatVantage overview",
             "platform_profile=balanced",
             "battery_charge_type=Standard",
             "fan_rpm=CPU Fan:2410",
@@ -166,14 +168,14 @@ fn client_reads_daemon_contract_over_private_bus() {
     assert_eq!(json["fan_preset_reapply_after_resume"], false);
     assert_eq!(json["recent_daemon_logs"], serde_json::json!([]));
     assert_eq!(json["hardware"]["product_name"], "82WM");
-    assert_eq!(json["summary"]["capability_count"], 15);
+    assert_eq!(json["summary"]["capability_count"], 16);
     assert_eq!(json["summary"]["available_capability_count"], 11);
-    assert_eq!(json["summary"]["missing_capability_count"], 4);
+    assert_eq!(json["summary"]["missing_capability_count"], 5);
     assert_eq!(
         json["summary"]["capability_status_counts"]["probe_only"],
         11
     );
-    assert_eq!(json["summary"]["capability_status_counts"]["missing"], 4);
+    assert_eq!(json["summary"]["capability_status_counts"]["missing"], 5);
     assert_eq!(json["summary"]["sensor_count"], 2);
     assert_eq!(json["summary"]["fan_curve_count"], 1);
     assert_eq!(
@@ -410,7 +412,7 @@ fn status_model_normalizes_daemon_data_for_ui() {
         status.hardware.product_sku.as_deref(),
         Some("LENOVO_MT_82WM_BU_idea_FM_Legion Pro 5 16ARX8")
     );
-    assert_eq!(status.capability_count(), 15);
+    assert_eq!(status.capability_count(), 16);
     assert_eq!(
         status.capability_ids(),
         [
@@ -428,6 +430,7 @@ fn status_model_normalizes_daemon_data_for_ui() {
             "platform_profile",
             "power_profiles",
             "thermal_zones",
+            "wireless_power",
             "wmi_sensors"
         ]
     );
@@ -440,6 +443,7 @@ fn status_model_normalizes_daemon_data_for_ui() {
                 || capability.id == "gpu_runtime"
                 || capability.id == "keyboard_rgb_candidates"
                 || capability.id == "power_profiles"
+                || capability.id == "wireless_power"
                 || capability.id == "wmi_sensors")
     }));
     assert!(
@@ -457,13 +461,13 @@ fn status_model_normalizes_daemon_data_for_ui() {
     assert_eq!(
         status.render_lines(),
         [
-                "Legion Control status",
+                "RatVantage status",
                 "vendor=LENOVO",
                 "product_name=82WM",
                 "product_version=Legion Pro 5 16ARX8",
-                "capability_count=15",
-                "capabilities=amd_gpu_power_dpm,battery_charge_type,cpu_power,fan_curves,firmware_attributes,gpu,gpu_runtime,hwmon,ideapad_toggles,keyboard_rgb_candidates,leds,platform_profile,power_profiles,thermal_zones,wmi_sensors",
-                "capability_statuses=amd_gpu_power_dpm:probe_only:read_only,battery_charge_type:probe_only:read_only,cpu_power:probe_only:read_only,fan_curves:probe_only:read_only,firmware_attributes:probe_only:read_only,gpu:missing:read_only,gpu_runtime:missing:read_only,hwmon:probe_only:read_only,ideapad_toggles:probe_only:read_only,keyboard_rgb_candidates:probe_only:read_only,leds:probe_only:read_only,platform_profile:probe_only:read_only,power_profiles:missing:read_only,thermal_zones:probe_only:read_only,wmi_sensors:missing:read_only",
+                "capability_count=16",
+                "capabilities=amd_gpu_power_dpm,battery_charge_type,cpu_power,fan_curves,firmware_attributes,gpu,gpu_runtime,hwmon,ideapad_toggles,keyboard_rgb_candidates,leds,platform_profile,power_profiles,thermal_zones,wireless_power,wmi_sensors",
+                "capability_statuses=amd_gpu_power_dpm:probe_only:read_only,battery_charge_type:probe_only:read_only,cpu_power:probe_only:read_only,fan_curves:probe_only:read_only,firmware_attributes:probe_only:read_only,gpu:missing:read_only,gpu_runtime:missing:read_only,hwmon:probe_only:read_only,ideapad_toggles:probe_only:read_only,keyboard_rgb_candidates:probe_only:read_only,leds:probe_only:read_only,platform_profile:probe_only:read_only,power_profiles:missing:read_only,thermal_zones:probe_only:read_only,wireless_power:missing:read_only,wmi_sensors:missing:read_only",
             ]
     );
 }
@@ -482,13 +486,13 @@ fn status_cli_prints_hardware_and_capability_summary() {
     assert_eq!(
         stdout,
         concat!(
-            "Legion Control status\n",
+            "RatVantage status\n",
             "vendor=LENOVO\n",
             "product_name=82WM\n",
             "product_version=Legion Pro 5 16ARX8\n",
-            "capability_count=15\n",
-            "capabilities=amd_gpu_power_dpm,battery_charge_type,cpu_power,fan_curves,firmware_attributes,gpu,gpu_runtime,hwmon,ideapad_toggles,keyboard_rgb_candidates,leds,platform_profile,power_profiles,thermal_zones,wmi_sensors\n",
-            "capability_statuses=amd_gpu_power_dpm:probe_only:read_only,battery_charge_type:probe_only:read_only,cpu_power:probe_only:read_only,fan_curves:probe_only:read_only,firmware_attributes:probe_only:read_only,gpu:missing:read_only,gpu_runtime:missing:read_only,hwmon:probe_only:read_only,ideapad_toggles:probe_only:read_only,keyboard_rgb_candidates:probe_only:read_only,leds:probe_only:read_only,platform_profile:probe_only:read_only,power_profiles:missing:read_only,thermal_zones:probe_only:read_only,wmi_sensors:missing:read_only\n",
+            "capability_count=16\n",
+            "capabilities=amd_gpu_power_dpm,battery_charge_type,cpu_power,fan_curves,firmware_attributes,gpu,gpu_runtime,hwmon,ideapad_toggles,keyboard_rgb_candidates,leds,platform_profile,power_profiles,thermal_zones,wireless_power,wmi_sensors\n",
+            "capability_statuses=amd_gpu_power_dpm:probe_only:read_only,battery_charge_type:probe_only:read_only,cpu_power:probe_only:read_only,fan_curves:probe_only:read_only,firmware_attributes:probe_only:read_only,gpu:missing:read_only,gpu_runtime:missing:read_only,hwmon:probe_only:read_only,ideapad_toggles:probe_only:read_only,keyboard_rgb_candidates:probe_only:read_only,leds:probe_only:read_only,platform_profile:probe_only:read_only,power_profiles:missing:read_only,thermal_zones:probe_only:read_only,wireless_power:missing:read_only,wmi_sensors:missing:read_only\n",
         )
     );
 }
@@ -506,7 +510,7 @@ fn overview_cli_prints_read_only_mvp_summary() {
     assert_eq!(
         String::from_utf8(output.stdout).unwrap(),
         concat!(
-            "Legion Control overview\n",
+            "RatVantage overview\n",
             "platform_profile=balanced\n",
             "battery_charge_type=Standard\n",
             "fan_rpm=CPU Fan:2410\n",
@@ -1182,10 +1186,12 @@ fn set_platform_profile_cli_executes_gated_write_and_prints_result() {
                 gpu_mode_enabled: false,
                 cpu_governor_enabled: false,
                 cpu_epp_enabled: false,
+                cpu_max_frequency_enabled: false,
                 firmware_attribute_enabled: false,
                 cpu_boost_enabled: false,
                 conservation_mode_enabled: false,
                 amd_gpu_dpm_enabled: false,
+                wifi_power_save_enabled: false,
                 curve_optimizer_enabled: false,
                 openrgb_access_setup_enabled: false,
                 hardware_profile_apply_enabled: false,
@@ -1293,10 +1299,12 @@ fn set_firmware_attribute_cli_executes_gated_write_and_prints_result() {
                 gpu_mode_enabled: false,
                 cpu_governor_enabled: false,
                 cpu_epp_enabled: false,
+                cpu_max_frequency_enabled: false,
                 firmware_attribute_enabled: true,
                 cpu_boost_enabled: false,
                 conservation_mode_enabled: false,
                 amd_gpu_dpm_enabled: false,
+                wifi_power_save_enabled: false,
                 curve_optimizer_enabled: false,
                 openrgb_access_setup_enabled: false,
                 hardware_profile_apply_enabled: false,
@@ -1364,10 +1372,12 @@ fn set_battery_charge_type_cli_executes_gated_write_and_prints_result() {
                 gpu_mode_enabled: false,
                 cpu_governor_enabled: false,
                 cpu_epp_enabled: false,
+                cpu_max_frequency_enabled: false,
                 firmware_attribute_enabled: false,
                 cpu_boost_enabled: false,
                 conservation_mode_enabled: false,
                 amd_gpu_dpm_enabled: false,
+                wifi_power_save_enabled: false,
                 curve_optimizer_enabled: false,
                 openrgb_access_setup_enabled: false,
                 hardware_profile_apply_enabled: false,
@@ -1453,10 +1463,12 @@ fn set_led_state_cli_executes_gated_write_and_prints_result() {
                 gpu_mode_enabled: false,
                 cpu_governor_enabled: false,
                 cpu_epp_enabled: false,
+                cpu_max_frequency_enabled: false,
                 firmware_attribute_enabled: false,
                 cpu_boost_enabled: false,
                 conservation_mode_enabled: false,
                 amd_gpu_dpm_enabled: false,
+                wifi_power_save_enabled: false,
                 curve_optimizer_enabled: false,
                 openrgb_access_setup_enabled: false,
                 hardware_profile_apply_enabled: false,
@@ -1541,10 +1553,12 @@ fn set_ideapad_toggle_cli_executes_gated_write_and_prints_result() {
                 gpu_mode_enabled: false,
                 cpu_governor_enabled: false,
                 cpu_epp_enabled: false,
+                cpu_max_frequency_enabled: false,
                 firmware_attribute_enabled: false,
                 cpu_boost_enabled: false,
                 conservation_mode_enabled: false,
                 amd_gpu_dpm_enabled: false,
+                wifi_power_save_enabled: false,
                 curve_optimizer_enabled: false,
                 openrgb_access_setup_enabled: false,
                 hardware_profile_apply_enabled: false,
@@ -1637,10 +1651,12 @@ fn set_cpu_governor_cli_executes_gated_write_and_prints_result() {
                 gpu_mode_enabled: false,
                 cpu_governor_enabled: true,
                 cpu_epp_enabled: false,
+                cpu_max_frequency_enabled: false,
                 firmware_attribute_enabled: false,
                 cpu_boost_enabled: false,
                 conservation_mode_enabled: false,
                 amd_gpu_dpm_enabled: false,
+                wifi_power_save_enabled: false,
                 curve_optimizer_enabled: false,
                 openrgb_access_setup_enabled: false,
                 hardware_profile_apply_enabled: false,
@@ -1725,10 +1741,12 @@ fn set_cpu_epp_cli_executes_gated_write_and_prints_result() {
                 gpu_mode_enabled: false,
                 cpu_governor_enabled: false,
                 cpu_epp_enabled: true,
+                cpu_max_frequency_enabled: false,
                 firmware_attribute_enabled: false,
                 cpu_boost_enabled: false,
                 conservation_mode_enabled: false,
                 amd_gpu_dpm_enabled: false,
+                wifi_power_save_enabled: false,
                 curve_optimizer_enabled: false,
                 openrgb_access_setup_enabled: false,
                 hardware_profile_apply_enabled: false,
@@ -1815,10 +1833,12 @@ fn set_camera_power_cli_executes_gated_write_and_prints_result() {
                 gpu_mode_enabled: false,
                 cpu_governor_enabled: false,
                 cpu_epp_enabled: false,
+                cpu_max_frequency_enabled: false,
                 firmware_attribute_enabled: false,
                 cpu_boost_enabled: false,
                 conservation_mode_enabled: false,
                 amd_gpu_dpm_enabled: false,
+                wifi_power_save_enabled: false,
                 curve_optimizer_enabled: false,
                 openrgb_access_setup_enabled: false,
                 hardware_profile_apply_enabled: false,
@@ -1884,10 +1904,12 @@ fn set_usb_charging_cli_reports_policy_block_when_write_is_disabled() {
                 gpu_mode_enabled: false,
                 cpu_governor_enabled: false,
                 cpu_epp_enabled: false,
+                cpu_max_frequency_enabled: false,
                 firmware_attribute_enabled: false,
                 cpu_boost_enabled: false,
                 conservation_mode_enabled: false,
                 amd_gpu_dpm_enabled: false,
+                wifi_power_save_enabled: false,
                 curve_optimizer_enabled: false,
                 openrgb_access_setup_enabled: false,
                 hardware_profile_apply_enabled: false,
@@ -1945,10 +1967,12 @@ fn set_usb_charging_cli_executes_gated_write_and_prints_result() {
                 gpu_mode_enabled: false,
                 cpu_governor_enabled: false,
                 cpu_epp_enabled: false,
+                cpu_max_frequency_enabled: false,
                 firmware_attribute_enabled: false,
                 cpu_boost_enabled: false,
                 conservation_mode_enabled: false,
                 amd_gpu_dpm_enabled: false,
+                wifi_power_save_enabled: false,
                 curve_optimizer_enabled: false,
                 openrgb_access_setup_enabled: false,
                 hardware_profile_apply_enabled: false,

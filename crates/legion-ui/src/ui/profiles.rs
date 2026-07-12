@@ -298,7 +298,9 @@ fn build_platform_profile_controls(
         "Requested profile",
         "Apply profile",
         "Platform profile",
-        |requested| make_client().and_then(|client| client.set_platform_profile(requested)),
+        |requested| {
+            make_client().and_then(|client| client.set_platform_and_desktop_profile(requested))
+        },
         move |_| {
             if !request_dashboard_refresh() {
                 if let Some(row) = &current_row {
@@ -602,6 +604,44 @@ fn build_advanced_cpu_profile_builder(bundle: &DiagnosticsBundle) -> adw::Prefer
     epp_row.add_suffix(&include_epp);
     group.add(&epp_row);
 
+    let min_cpu_max_khz = cpu
+        .and_then(|cpu| cpu.scaling_min_khz.or(cpu.cpuinfo_min_khz))
+        .unwrap_or(0);
+    let current_cpu_max_khz = cpu.and_then(|cpu| cpu.scaling_max_khz);
+    let absolute_cpu_max_khz = cpu.and_then(|cpu| cpu.cpuinfo_max_khz.or(cpu.scaling_max_khz));
+    let mut max_freq_values = [1_600_000, 2_000_000, 2_200_000]
+        .into_iter()
+        .filter(|value| {
+            absolute_cpu_max_khz
+                .map(|max| *value >= min_cpu_max_khz && *value <= max)
+                .unwrap_or(false)
+        })
+        .map(|value| value.to_string())
+        .collect::<Vec<_>>();
+    if let Some(value) = absolute_cpu_max_khz {
+        let value = value.to_string();
+        if !max_freq_values.contains(&value) {
+            max_freq_values.push(value);
+        }
+    }
+    let selected_cpu_max = current_cpu_max_khz
+        .map(|value| value.to_string())
+        .or_else(|| max_freq_values.first().cloned());
+    let cpu_max = string_dropdown(&max_freq_values, selected_cpu_max.as_deref());
+    cpu_max.set_sensitive(!max_freq_values.is_empty());
+    let include_cpu_max = gtk4::Switch::new();
+    include_cpu_max.set_active(false);
+    include_cpu_max.set_sensitive(!max_freq_values.is_empty());
+    include_cpu_max.set_valign(gtk4::Align::Center);
+    let cpu_max_row = adw::ActionRow::builder()
+        .title("CPU max frequency")
+        .subtitle("Optional cpufreq scaling_max_freq cap in kHz")
+        .selectable(false)
+        .build();
+    cpu_max_row.add_suffix(&cpu_max);
+    cpu_max_row.add_suffix(&include_cpu_max);
+    group.add(&cpu_max_row);
+
     let boost_values = vec!["0".to_owned(), "1".to_owned()];
     let boost_current = cpu
         .and_then(|cpu| cpu.boost)
@@ -686,6 +726,11 @@ fn build_advanced_cpu_profile_builder(bundle: &DiagnosticsBundle) -> adw::Prefer
             .is_active()
             .then(|| selected_dropdown_value(&boost))
             .flatten();
+        let cpu_max_value = include_cpu_max
+            .is_active()
+            .then(|| selected_dropdown_value(&cpu_max))
+            .flatten()
+            .and_then(|value| value.parse::<i64>().ok());
         let co_value = include_co
             .is_active()
             .then(|| selected_dropdown_value(&co))
@@ -699,7 +744,12 @@ fn build_advanced_cpu_profile_builder(bundle: &DiagnosticsBundle) -> adw::Prefer
             );
             return;
         }
-        if governor_value.is_none() && epp_value.is_none() && boost_value.is_none() && co_value.is_none() {
+        if governor_value.is_none()
+            && epp_value.is_none()
+            && boost_value.is_none()
+            && cpu_max_value.is_none()
+            && co_value.is_none()
+        {
             store_write_feedback_state(
                 "Advanced CPU profile",
                 "Save error",
@@ -721,6 +771,9 @@ fn build_advanced_cpu_profile_builder(bundle: &DiagnosticsBundle) -> adw::Prefer
                 }
                 if let Some(value) = boost_value {
                     actions.insert("cpu_boost".to_owned(), serde_json::Value::String(value));
+                }
+                if let Some(value) = cpu_max_value {
+                    actions.insert("cpu_max_khz".to_owned(), serde_json::json!(value));
                 }
                 if let Some(value) = co_value {
                     actions.insert(
@@ -792,9 +845,12 @@ fn build_hardware_profile_apply_controls(bundle: &DiagnosticsBundle) -> adw::Pre
                 + profile.actions.gpu_mode.is_some() as usize
                 + profile.actions.cpu_governor.is_some() as usize
                 + profile.actions.cpu_epp.is_some() as usize
+                + profile.actions.cpu_max_khz.is_some() as usize
+                + profile.actions.cpu_max_restore as usize
                 + profile.actions.cpu_boost.is_some() as usize
                 + profile.actions.conservation_mode.is_some() as usize
                 + profile.actions.amd_gpu_dpm_force_level.is_some() as usize
+                + profile.actions.wifi_power_save.is_some() as usize
                 + profile.actions.curve_optimizer_all_core.is_some() as usize;
             let action_summary = hardware_profile_action_summary(&profile.actions);
             let row = adw::ActionRow::builder()
@@ -977,6 +1033,12 @@ fn hardware_profile_action_summary(actions: &HardwareProfileActions) -> String {
     if let Some(value) = &actions.cpu_epp {
         parts.push(format!("EPP={value}"));
     }
+    if let Some(value) = actions.cpu_max_khz {
+        parts.push(format!("CPU max={} MHz", value / 1000));
+    }
+    if actions.cpu_max_restore {
+        parts.push("CPU max=platform maximum".to_owned());
+    }
     if let Some(value) = &actions.cpu_boost {
         parts.push(format!("boost={value}"));
     }
@@ -985,6 +1047,13 @@ fn hardware_profile_action_summary(actions: &HardwareProfileActions) -> String {
     }
     if let Some(value) = &actions.amd_gpu_dpm_force_level {
         parts.push(format!("AMD DPM={value}"));
+    }
+    if let Some(request) = &actions.wifi_power_save {
+        parts.push(format!(
+            "Wi-Fi {}={}",
+            request.interface,
+            if request.enabled { "on" } else { "off" }
+        ));
     }
     if let Some(value) = &actions.curve_optimizer_all_core {
         parts.push(format!("CO={value}"));

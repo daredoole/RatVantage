@@ -156,6 +156,10 @@
       <arg name="requested" type="s" direction="in" />
       <arg type="s" direction="out" />
     </method>
+    <method name="PlanCpuMaxFrequencyWrite">
+      <arg name="requested_khz" type="x" direction="in" />
+      <arg type="s" direction="out" />
+    </method>
     <method name="PlanCurveOptimizerAllCoreWrite">
       <arg name="requested" type="s" direction="in" />
       <arg type="s" direction="out" />
@@ -233,6 +237,10 @@
     <method name="PlanRestoreAutoFanWrite">
       <arg type="s" direction="out" />
     </method>
+    <method name="PlanWifiPowerSaveWrite">
+      <arg name="request_json" type="s" direction="in" />
+      <arg type="s" direction="out" />
+    </method>
     <method name="RefreshCapabilities">
       <arg type="s" direction="out" />
     </method>
@@ -279,6 +287,10 @@
     </method>
     <method name="SetCpuGovernor">
       <arg name="requested" type="s" direction="in" />
+      <arg type="s" direction="out" />
+    </method>
+    <method name="SetCpuMaxFrequency">
+      <arg name="requested_khz" type="x" direction="in" />
       <arg type="s" direction="out" />
     </method>
     <method name="SetCurveOptimizerAllCore">
@@ -333,6 +345,10 @@
     </method>
     <method name="SetPlatformProfile">
       <arg name="requested" type="s" direction="in" />
+      <arg type="s" direction="out" />
+    </method>
+    <method name="SetWifiPowerSave">
+      <arg name="request_json" type="s" direction="in" />
       <arg type="s" direction="out" />
     </method>
     <method name="SetupOpenRgbAccess">

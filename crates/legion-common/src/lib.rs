@@ -31,6 +31,9 @@ pub struct CapabilityRegistry {
     /// CPU frequency-scaling / amd-pstate parameters under `/sys/devices/system/cpu`.
     #[serde(default)]
     pub cpu_power: Option<CpuPowerCapability>,
+    /// Wireless interface power-save state exposed through `iw`.
+    #[serde(default)]
+    pub wireless_power: Vec<WirelessPowerCapability>,
     /// ACPI thermal zones under `/sys/class/thermal`.
     #[serde(default)]
     pub thermal_zones: Vec<ThermalZone>,
@@ -144,9 +147,15 @@ pub struct HardwareProfileActions {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub cpu_boost: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cpu_max_khz: Option<i64>,
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub cpu_max_restore: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub conservation_mode: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub amd_gpu_dpm_force_level: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub wifi_power_save: Option<WifiPowerSaveRequest>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub curve_optimizer_all_core: Option<String>,
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
@@ -230,6 +239,11 @@ pub enum AutomationRuleKind {
         #[serde(default = "default_automation_cooldown_secs")]
         cooldown_secs: u64,
     },
+    PlatformProfileRouter {
+        mappings: BTreeMap<String, String>,
+        #[serde(default = "default_automation_cooldown_secs")]
+        cooldown_secs: u64,
+    },
     BatteryProfileThreshold {
         threshold_percent: u8,
         profile_id: String,
@@ -241,6 +255,12 @@ pub enum AutomationRuleKind {
         cooldown_secs: u64,
     },
     PeriodicIdle {
+        profile_id: String,
+        #[serde(default = "default_automation_cooldown_secs")]
+        cooldown_secs: u64,
+    },
+    DesktopPowerProfile {
+        desktop_profile: String,
         profile_id: String,
         #[serde(default = "default_automation_cooldown_secs")]
         cooldown_secs: u64,
@@ -601,6 +621,10 @@ pub struct PlatformProfileCapability {
     pub choices: Vec<String>,
     pub path: String,
     pub choices_path: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub custom_profile_path: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub custom_profile_driver: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -703,6 +727,8 @@ pub struct CpuPowerCapability {
     pub governor_path: String,
     pub epp_path: String,
     pub boost_path: String,
+    #[serde(default)]
+    pub scaling_max_paths: Vec<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -952,6 +978,23 @@ pub struct AmdGpuPowerDpmCapability {
     pub current_sclk: Option<String>,
     pub current_mclk: Option<String>,
     pub choices: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct WirelessPowerCapability {
+    pub interface: String,
+    pub status: CapabilityStatus,
+    pub driver: Option<String>,
+    pub current_power_save: Option<String>,
+    pub choices: Vec<String>,
+    pub command: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
+pub struct WifiPowerSaveRequest {
+    pub interface: String,
+    pub enabled: bool,
 }
 
 /// Read-only snapshot of the generic desktop power profile API (power-profiles-daemon or another owner).
@@ -1325,6 +1368,32 @@ pub const WRITE_METHOD_CONTRACTS: &[WriteMethodContract] = &[
         safety_notes: &["CPU boost changes can affect peak thermals and power draw immediately"],
     },
     WriteMethodContract {
+        method: "SetCpuMaxFrequency",
+        capability_id: "cpu_power",
+        polkit_action: "org.ratvantage.LegionControl1.set-cpu-max-frequency",
+        request_type: r#"{"max_khz":"integer"}"#,
+        risk: RiskLevel::ReversibleWrite,
+        enabled: false,
+        reboot_required: false,
+        preconditions: &[
+            "cpu_power capability is detected",
+            "daemon has read scaling_min_freq, scaling_max_freq, and cpuinfo_max_freq",
+            "at least one scaling_max_freq path is detected",
+        ],
+        validators: &[
+            "requested max frequency is inside scaling_min_freq..=cpuinfo_max_freq",
+            "post-write read-back matches requested max frequency",
+        ],
+        rollback: &[
+            "store previous scaling_max_freq before write",
+            "restore previous scaling_max_freq if read-back fails",
+        ],
+        safety_notes: &[
+            "CPU max-frequency caps can reduce responsiveness under load",
+            "write method remains disabled; dry-run planning only",
+        ],
+    },
+    WriteMethodContract {
         method: "SetConservationMode",
         capability_id: "ideapad_toggles",
         polkit_action: "org.ratvantage.LegionControl1.set-conservation-mode",
@@ -1372,6 +1441,32 @@ pub const WRITE_METHOD_CONTRACTS: &[WriteMethodContract] = &[
         safety_notes: &[
             "AMD GPU DPM force-level changes can affect graphics power and thermals immediately",
             "manual GPU clock writes remain unsupported",
+        ],
+    },
+    WriteMethodContract {
+        method: "SetWifiPowerSave",
+        capability_id: "wireless_power",
+        polkit_action: "org.ratvantage.LegionControl1.set-wifi-power-save",
+        request_type: r#"{"interface":"string","enabled":"bool"}"#,
+        risk: RiskLevel::ReversibleWrite,
+        enabled: false,
+        reboot_required: false,
+        preconditions: &[
+            "wireless_power capability is detected for the requested interface",
+            "daemon has read current Wi-Fi power-save state through iw",
+        ],
+        validators: &[
+            "requested interface exactly matches a detected wireless interface",
+            "requested state is on or off",
+            "post-write read-back matches requested state",
+        ],
+        rollback: &[
+            "store previous Wi-Fi power-save state before write",
+            "restore previous state if read-back fails",
+        ],
+        safety_notes: &[
+            "Wi-Fi power save can increase network latency or affect marginal wireless links",
+            "write method remains disabled; dry-run planning only",
         ],
     },
     WriteMethodContract {
@@ -1596,6 +1691,45 @@ pub fn validate_cpu_boost_request(
     Ok(())
 }
 
+pub fn validate_cpu_max_frequency_request(
+    capability: Option<&CpuPowerCapability>,
+    requested_khz: i64,
+) -> Result<(), ValidationError> {
+    let capability = capability.ok_or_else(|| ValidationError::MissingCapability {
+        capability_id: "cpu_power".to_owned(),
+    })?;
+    let min = capability
+        .scaling_min_khz
+        .or(capability.cpuinfo_min_khz)
+        .ok_or_else(|| ValidationError::MissingCurrentValue {
+            capability_id: "cpu_power:scaling_min_freq".to_owned(),
+        })?;
+    let max = capability
+        .cpuinfo_max_khz
+        .or(capability.scaling_max_khz)
+        .ok_or_else(|| ValidationError::MissingCurrentValue {
+            capability_id: "cpu_power:cpuinfo_max_freq".to_owned(),
+        })?;
+    if capability.scaling_max_khz.is_none() {
+        return Err(ValidationError::MissingCurrentValue {
+            capability_id: "cpu_power:scaling_max_freq".to_owned(),
+        });
+    }
+    if capability.scaling_max_paths.is_empty() {
+        return Err(ValidationError::MissingCapability {
+            capability_id: "cpu_power:scaling_max_paths".to_owned(),
+        });
+    }
+    if requested_khz < min || requested_khz > max {
+        return Err(ValidationError::BlockedChoice {
+            capability_id: "cpu_power:scaling_max_freq".to_owned(),
+            requested: requested_khz.to_string(),
+            reason: format!("max frequency must be inside {min}..={max} kHz"),
+        });
+    }
+    Ok(())
+}
+
 pub fn encode_curve_optimizer_offset(offset: i32) -> Result<u32, ValidationError> {
     if !(-30..=0).contains(&offset) {
         return Err(ValidationError::UnsupportedChoice {
@@ -1682,6 +1816,47 @@ pub fn validate_amd_gpu_dpm_force_level_choice(
         "amd_gpu_power_dpm",
         "force_level",
         requested,
+        &capability.choices,
+        &[],
+    )
+}
+
+pub fn validate_wifi_power_save_request(
+    capabilities: &[WirelessPowerCapability],
+    request: &WifiPowerSaveRequest,
+) -> Result<(), ValidationError> {
+    if request.interface.trim().is_empty() {
+        return Err(ValidationError::EmptyValue {
+            field: "interface".to_owned(),
+        });
+    }
+    if request
+        .interface
+        .chars()
+        .any(|c| !(c.is_ascii_alphanumeric() || matches!(c, '-' | '_' | '.')))
+    {
+        return Err(ValidationError::BlockedChoice {
+            capability_id: "wireless_power:interface".to_owned(),
+            requested: request.interface.clone(),
+            reason: "interface may contain only ASCII letters, digits, '-', '_' and '.'".to_owned(),
+        });
+    }
+    let capability = capabilities
+        .iter()
+        .find(|capability| capability.interface == request.interface)
+        .ok_or_else(|| ValidationError::UnsupportedChoice {
+            capability_id: "wireless_power:interface".to_owned(),
+            requested: request.interface.clone(),
+            choices: capabilities
+                .iter()
+                .map(|capability| capability.interface.clone())
+                .collect(),
+        })?;
+    require_current("wireless_power", capability.current_power_save.as_deref())?;
+    validate_choice(
+        "wireless_power",
+        "power_save",
+        if request.enabled { "on" } else { "off" },
         &capability.choices,
         &[],
     )
@@ -2295,6 +2470,41 @@ pub fn validate_automation_rule(rule: &AutomationRule) -> Result<(), ValidationE
                 });
             }
         }
+        AutomationRuleKind::PlatformProfileRouter {
+            mappings,
+            cooldown_secs,
+        } => {
+            if mappings.is_empty() {
+                return Err(ValidationError::EmptyValue {
+                    field: "mappings".to_owned(),
+                });
+            }
+            for (platform_profile, profile_id) in mappings {
+                if platform_profile.trim().is_empty() {
+                    return Err(ValidationError::EmptyValue {
+                        field: "platform_profile".to_owned(),
+                    });
+                }
+                if platform_profile
+                    .chars()
+                    .any(|c| !(c.is_ascii_alphanumeric() || matches!(c, '-' | '_' | '.')))
+                {
+                    return Err(ValidationError::BlockedChoice {
+                        capability_id: "automation_rules:platform_profile".to_owned(),
+                        requested: platform_profile.clone(),
+                        reason: "platform_profile may contain only ASCII letters, digits, '-', '_' and '.'".to_owned(),
+                    });
+                }
+                validate_hardware_profile_id(profile_id)?;
+            }
+            if *cooldown_secs > 86_400 {
+                return Err(ValidationError::BlockedChoice {
+                    capability_id: "automation_rules:cooldown_secs".to_owned(),
+                    requested: cooldown_secs.to_string(),
+                    reason: "cooldown_secs must be 0..=86400".to_owned(),
+                });
+            }
+        }
         AutomationRuleKind::BatteryProfileThreshold {
             threshold_percent,
             profile_id,
@@ -2321,6 +2531,37 @@ pub fn validate_automation_rule(rule: &AutomationRule) -> Result<(), ValidationE
             profile_id,
             cooldown_secs,
         } => {
+            validate_hardware_profile_id(profile_id)?;
+            if *cooldown_secs > 86_400 {
+                return Err(ValidationError::BlockedChoice {
+                    capability_id: "automation_rules:cooldown_secs".to_owned(),
+                    requested: cooldown_secs.to_string(),
+                    reason: "cooldown_secs must be 0..=86400".to_owned(),
+                });
+            }
+        }
+        AutomationRuleKind::DesktopPowerProfile {
+            desktop_profile,
+            profile_id,
+            cooldown_secs,
+        } => {
+            if desktop_profile.trim().is_empty() {
+                return Err(ValidationError::EmptyValue {
+                    field: "desktop_profile".to_owned(),
+                });
+            }
+            if desktop_profile
+                .chars()
+                .any(|c| !(c.is_ascii_alphanumeric() || matches!(c, '-' | '_' | '.')))
+            {
+                return Err(ValidationError::BlockedChoice {
+                    capability_id: "automation_rules:desktop_profile".to_owned(),
+                    requested: desktop_profile.clone(),
+                    reason:
+                        "desktop_profile may contain only ASCII letters, digits, '-', '_' and '.'"
+                            .to_owned(),
+                });
+            }
             validate_hardware_profile_id(profile_id)?;
             if *cooldown_secs > 86_400 {
                 return Err(ValidationError::BlockedChoice {
@@ -2455,12 +2696,21 @@ pub fn plan_prepare_custom_thermal_mode(
         .current
         .as_deref()
         .expect("validated platform profile current value must exist");
+    let path = capability
+        .custom_profile_path
+        .as_deref()
+        .unwrap_or(&capability.path);
     let mut plan = plan_write(
         write_contract("PrepareCustomThermalMode"),
-        &capability.path,
+        path,
         current,
         "custom",
     )?;
+    if let Some(driver) = &capability.custom_profile_driver {
+        plan.safety_notes.push(format!(
+            "custom thermal mode will use driver-specific platform-profile handler `{driver}`"
+        ));
+    }
     if current == "custom" {
         plan.safety_notes.push(
             "custom thermal mode is already active; caller can verify read-back and skip the profile write"
@@ -2952,6 +3202,23 @@ pub fn plan_cpu_boost_write(
     )
 }
 
+pub fn plan_cpu_max_frequency_write(
+    capability: Option<&CpuPowerCapability>,
+    requested_khz: i64,
+) -> Result<WriteDryRunPlan, ValidationError> {
+    validate_cpu_max_frequency_request(capability, requested_khz)?;
+    let capability = capability.expect("validated cpu_power capability must exist");
+    plan_write(
+        write_contract("SetCpuMaxFrequency"),
+        &capability.scaling_max_paths.join(","),
+        &capability
+            .scaling_max_khz
+            .expect("validated CPU scaling max current value must exist")
+            .to_string(),
+        &requested_khz.to_string(),
+    )
+}
+
 pub fn plan_curve_optimizer_all_core_write(
     requested: &str,
 ) -> Result<WriteDryRunPlan, ValidationError> {
@@ -3018,6 +3285,27 @@ pub fn plan_amd_gpu_dpm_force_level_write(
             .current_force_performance_level
             .as_deref()
             .expect("validated AMD GPU DPM current force level must exist"),
+        requested,
+    )
+}
+
+pub fn plan_wifi_power_save_write(
+    capabilities: &[WirelessPowerCapability],
+    request: &WifiPowerSaveRequest,
+) -> Result<WriteDryRunPlan, ValidationError> {
+    validate_wifi_power_save_request(capabilities, request)?;
+    let capability = capabilities
+        .iter()
+        .find(|capability| capability.interface == request.interface)
+        .expect("validated wireless power capability must exist");
+    let requested = if request.enabled { "on" } else { "off" };
+    plan_write(
+        write_contract("SetWifiPowerSave"),
+        &format!("iw dev {} set power_save {requested}", request.interface),
+        capability
+            .current_power_save
+            .as_deref()
+            .expect("validated wireless power current state must exist"),
         requested,
     )
 }
@@ -4071,8 +4359,10 @@ mod tests {
                 "SetCpuEpp",
                 "SetFirmwareAttribute",
                 "SetCpuBoost",
+                "SetCpuMaxFrequency",
                 "SetConservationMode",
                 "SetAmdGpuDpmForceLevel",
+                "SetWifiPowerSave",
                 "SetCurveOptimizerAllCore",
                 "SetGpuModeRuntime"
             ]
@@ -4116,6 +4406,8 @@ mod tests {
             ],
             path: "/sys/firmware/acpi/platform_profile".to_owned(),
             choices_path: "/sys/firmware/acpi/platform_profile_choices".to_owned(),
+            custom_profile_path: None,
+            custom_profile_driver: None,
         };
 
         assert_eq!(
@@ -4135,18 +4427,24 @@ mod tests {
             ],
             path: "/sys/firmware/acpi/platform_profile".to_owned(),
             choices_path: "/sys/firmware/acpi/platform_profile_choices".to_owned(),
+            custom_profile_path: None,
+            custom_profile_driver: None,
         };
         let missing_current = PlatformProfileCapability {
             current: None,
             choices: vec!["balanced".to_owned()],
             path: "/sys/firmware/acpi/platform_profile".to_owned(),
             choices_path: "/sys/firmware/acpi/platform_profile_choices".to_owned(),
+            custom_profile_path: None,
+            custom_profile_driver: None,
         };
         let missing_choices = PlatformProfileCapability {
             current: Some("balanced".to_owned()),
             choices: vec![],
             path: "/sys/firmware/acpi/platform_profile".to_owned(),
             choices_path: "/sys/firmware/acpi/platform_profile_choices".to_owned(),
+            custom_profile_path: None,
+            custom_profile_driver: None,
         };
 
         assert!(matches!(
@@ -4949,6 +5247,8 @@ mod tests {
             choices: vec!["quiet".to_owned(), "balanced".to_owned()],
             path: "/sys/firmware/acpi/platform_profile".to_owned(),
             choices_path: "/sys/firmware/acpi/platform_profile_choices".to_owned(),
+            custom_profile_path: None,
+            custom_profile_driver: None,
         };
 
         let plan = plan_platform_profile_write(Some(&capability), "quiet").unwrap();
@@ -4972,7 +5272,10 @@ mod tests {
 
     #[test]
     fn prepare_custom_thermal_mode_plan_allows_listed_custom_without_unblocking_normal_write() {
-        let capability = platform_profile("balanced", &["balanced", "performance", "custom"]);
+        let mut capability = platform_profile("balanced", &["balanced", "performance", "custom"]);
+        capability.custom_profile_path =
+            Some("/sys/class/platform-profile/platform-profile-0/profile".to_owned());
+        capability.custom_profile_driver = Some("lenovo-wmi-gamezone".to_owned());
 
         assert!(matches!(
             plan_platform_profile_write(Some(&capability), "custom"),
@@ -4989,6 +5292,10 @@ mod tests {
         );
         assert_eq!(plan.previous_value, "balanced");
         assert_eq!(plan.requested_value, "custom");
+        assert_eq!(
+            plan.path,
+            "/sys/class/platform-profile/platform-profile-0/profile"
+        );
         assert_eq!(plan.rollback_value, "balanced");
         assert!(plan.readback_required);
         assert!(!plan.reboot_required);
@@ -4999,6 +5306,10 @@ mod tests {
             .safety_notes
             .iter()
             .any(|note| note.contains("custom thermal mode preparation required")));
+        assert!(plan
+            .safety_notes
+            .iter()
+            .any(|note| note.contains("lenovo-wmi-gamezone")));
     }
 
     #[test]
@@ -5230,6 +5541,8 @@ mod tests {
             choices: vec!["balanced".to_owned(), "performance".to_owned()],
             path: "/tmp/platform_profile".to_owned(),
             choices_path: "/tmp/platform_profile_choices".to_owned(),
+            custom_profile_path: None,
+            custom_profile_driver: None,
         };
         assert!(validate_fan_preset_platform_profile_entry(
             Some(&capability),
@@ -5541,6 +5854,8 @@ mod tests {
             choices: vec!["balanced".to_owned(), "custom".to_owned()],
             path: "/sys/firmware/acpi/platform_profile".to_owned(),
             choices_path: "/sys/firmware/acpi/platform_profile_choices".to_owned(),
+            custom_profile_path: None,
+            custom_profile_driver: None,
         };
         let battery = BatteryChargeTypeCapability {
             current: Some("Standard".to_owned()),
@@ -5925,6 +6240,8 @@ mod tests {
             choices: choices.iter().map(|choice| (*choice).to_owned()).collect(),
             path: "/sys/firmware/acpi/platform_profile".to_owned(),
             choices_path: "/sys/firmware/acpi/platform_profile_choices".to_owned(),
+            custom_profile_path: None,
+            custom_profile_driver: None,
         }
     }
 

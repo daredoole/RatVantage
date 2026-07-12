@@ -5,12 +5,10 @@ __pycache__/
 *.py[cod]
 /out_smoke/
 /overhaul_final/
+/graphify-out/
 
 # Local evidence zips often created at repo root after validation review
 /*.zip
 
 # OpenRGB may create this in the repo root during local RGB sessions
 /OpenRGB.json
-
-# Claude Code user-local settings (project settings.json is committed; local overrides are not)
-.claude/settings.local.json

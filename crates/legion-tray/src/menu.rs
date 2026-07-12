@@ -245,7 +245,7 @@ impl TrayMenu {
     }
 
     pub fn render_lines(&self) -> Vec<String> {
-        let mut lines = vec!["Legion Control tray menu".to_owned()];
+        let mut lines = vec!["RatVantage tray menu".to_owned()];
         for (index, entry) in self.entries.iter().enumerate() {
             match entry {
                 TrayMenuEntry::Separator => lines.push(format!("entry[{index}]=separator")),
@@ -282,7 +282,7 @@ fn machine_label(status: &UiStatus) -> String {
         status.hardware.product_name.trim(),
         status.hardware.product_version.trim(),
     ) {
-        ("", "") => "Legion Control".to_owned(),
+        ("", "") => "RatVantage".to_owned(),
         ("", version) => version.to_owned(),
         (name, "") => name.to_owned(),
         (name, version) => format!("{name} {version}"),
@@ -950,6 +950,8 @@ mod tests {
                 ],
                 path: "/tmp/platform_profile".to_owned(),
                 choices_path: "/tmp/platform_profile_choices".to_owned(),
+                custom_profile_path: None,
+                custom_profile_driver: None,
             }),
             power_profiles: Some(PowerProfilesCapability {
                 bus: "system".to_owned(),
@@ -1368,6 +1370,8 @@ mod tests {
                 choices: vec!["balanced".to_owned()],
                 path: "/tmp/platform_profile".to_owned(),
                 choices_path: "/tmp/platform_profile_choices".to_owned(),
+                custom_profile_path: None,
+                custom_profile_driver: None,
             }),
             battery_charge_type: Some(BatteryChargeTypeCapability {
                 current: Some("Standard".to_owned()),
@@ -1446,6 +1450,8 @@ mod tests {
                 ],
                 path: "/tmp/platform_profile".to_owned(),
                 choices_path: "/tmp/platform_profile_choices".to_owned(),
+                custom_profile_path: None,
+                custom_profile_driver: None,
             }),
             battery_charge_type: Some(BatteryChargeTypeCapability {
                 current: Some("Standard".to_owned()),

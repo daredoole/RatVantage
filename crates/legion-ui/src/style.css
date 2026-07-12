@@ -5,7 +5,7 @@
 /* ── Sidebar ─────────────────────────────────────────────────────────────── */
 
 .rv-sidebar {
-    min-width: 196px;
+    min-width: 208px;
     background-color: @sidebar_bg_color;
 }
 
@@ -55,41 +55,22 @@
     opacity: 1.0;
 }
 
+.rv-nav-section {
+    margin: 12px 18px 4px 18px;
+    color: alpha(@window_fg_color, 0.42);
+    font-size: 9px;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+}
+
 .rv-side-foot-label {
     font-size: 10px;
     color: alpha(@window_fg_color, 0.40);
 }
 
-/* ── Risk badges ─────────────────────────────────────────────────────────── */
-
-.rv-risk {
-    border-radius: 99px;
-    padding: 2px 8px;
-    font-size: 11px;
-    font-weight: 500;
-}
-
-.rv-risk-safe {
-    color: @success_color;
-    background-color: alpha(@success_color, 0.15);
-}
-
-.rv-risk-confirm {
-    color: @warning_color;
-    background-color: alpha(@warning_color, 0.15);
-}
-
-.rv-risk-reboot {
-    color: @error_color;
-    background-color: alpha(@error_color, 0.15);
-}
-
-.rv-risk-experimental {
-    color: #9b77d6;
-    background-color: rgba(155, 119, 214, 0.15);
-}
-
-.rv-risk-unsupported {
-    color: alpha(@window_fg_color, 0.4);
-    background-color: alpha(@window_fg_color, 0.08);
+/* The ember edge is the visual promise that overview values are verified. */
+.rv-state-tile {
+    min-height: 112px;
+    border-left: 3px solid alpha(@rv-accent, 0.72);
+    border-radius: 10px;
 }

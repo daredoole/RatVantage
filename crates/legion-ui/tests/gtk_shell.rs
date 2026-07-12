@@ -249,13 +249,12 @@ fn dashboard_pages_render_quick_apply_and_gpu_controls() {
     let status = ui::status::status_page(Ok(sample_status()), Ok(sample_diagnostics()), Ok(None));
 
     let status_text = collect_widget_text(&status.clone().upcast());
-    assert!(status_text.iter().any(|text| text == "Control Center"));
-    assert!(status_text
-        .iter()
-        .any(|text| text
-            == "Current daemon readback. Writes count only after kernel read-back agrees."));
-    assert!(status_text.iter().any(|text| text == "Fedora power"));
-    assert!(status_text.iter().any(|text| text == "Devices"));
+    assert!(status_text.iter().any(|text| text == "At a glance"));
+    assert!(status_text.iter().any(|text| text
+        == "Live hardware state. Changes are shown here only after the system confirms them."));
+    assert!(status_text.iter().any(|text| text == "Power mode"));
+    assert!(status_text.iter().any(|text| text == "Cooling"));
+    assert!(status_text.iter().any(|text| text == "Graphics"));
 
     let profile_text = collect_widget_text(&profiles.clone().upcast());
     assert!(profile_text.iter().any(|text| text == "Power Profiles"));
@@ -875,22 +874,20 @@ fn automations_page_renders_ac_profile_router_starter() {
             && value.contains("GPU reboot completion")
     }));
     assert!(find_button_by_label(&automations.clone().upcast(), "Create GPU repair").is_some());
+    assert!(text.iter().any(|value| value == "Fn+Q full router starter"));
+    assert!(text.iter().any(|value| {
+        value.contains("Creates full low-power, balanced, performance, and max-power responses")
+            && value.contains("firmware profile changes")
+    }));
+    assert!(find_button_by_label(&automations.clone().upcast(), "Create router").is_some());
     assert!(text
         .iter()
-        .any(|value| value == "Fn+Q tuning repair starter"));
+        .any(|value| value == "Power-saver magic starter"));
     assert!(text.iter().any(|value| {
-        value.contains("Creates a profile-change repair profile")
-            && value.contains("external platform-profile changes")
+        value.contains("strongest validated saver profile")
+            && value.contains("maps desktop power-saver")
     }));
-    assert!(find_button_by_label(&automations.clone().upcast(), "Create repair").is_some());
-    assert!(text
-        .iter()
-        .any(|value| value == "Desktop power repair starter"));
-    assert!(text.iter().any(|value| {
-        value.contains("Creates a balanced profile for desktop power mode changes")
-            && value.contains("PowerProfiles changes")
-    }));
-    assert!(find_button_by_label(&automations.clone().upcast(), "Create power repair").is_some());
+    assert!(find_button_by_label(&automations.clone().upcast(), "Create saver").is_some());
     assert!(text
         .iter()
         .any(|value| value == "RGB breathing profile starter"));
@@ -1454,9 +1451,8 @@ fn semantic_ui_snapshot_can_be_emitted() {
         "visual_gate": "blocking",
         "native_gtk_state_gate": "blocking",
         "pages": [
-            semantic_page("status", "Overview", &status.clone().upcast(), &["Control Center", "Machine", "Capability Health"], vec![
+            semantic_page("status", "Overview", &status.clone().upcast(), &["At a glance", "This PC"], vec![
                 semantic_control("status.product", "Product", "readout", Some("82WM / Legion Pro 5 16ARX8"), true, true, true, false, false, false, false, None, Some("/tmp/fixture DMI summary"), "read_only", "none", Some("Fixture-backed hardware identity readout.")),
-                semantic_control("status.capabilities", "Capabilities", "readout", Some("platform_profile, fan_curves"), true, true, true, false, false, false, false, None, Some("capability registry"), "read_only", "none", Some("Read-only registry summary.")),
             ]),
             semantic_page("profiles", "Power", &profiles_root, &["Power Profiles", "Platform Control", "Advanced CPU Tuning", "Firmware Power Limits (TDP)"], vec![
                 semantic_control("profiles.platform_profile.requested", "Requested profile", "expander_row", Some("balanced"), true, true, true, true, false, false, false, Some("platform_profile"), Some("platform_profile.current"), "dry_run", "medium", Some("Apply uses daemon policy and readback validation; QA daemon has writes disabled.")),
@@ -1701,6 +1697,8 @@ fn sample_diagnostics() -> DiagnosticsBundle {
         ],
         path: "/tmp/fixture/sys/firmware/acpi/platform_profile".to_owned(),
         choices_path: "/tmp/fixture/sys/firmware/acpi/platform_profile_choices".to_owned(),
+        custom_profile_path: None,
+        custom_profile_driver: None,
     });
     report.power_profiles = Some(PowerProfilesCapability {
         bus: "system".to_owned(),
@@ -1736,6 +1734,9 @@ fn sample_diagnostics() -> DiagnosticsBundle {
             "/tmp/fixture/sys/devices/system/cpu/cpufreq/policy0/energy_performance_preference"
                 .to_owned(),
         boost_path: "/tmp/fixture/sys/devices/system/cpu/cpufreq/boost".to_owned(),
+        scaling_max_paths: vec![
+            "/tmp/fixture/sys/devices/system/cpu/cpufreq/policy0/scaling_max_freq".to_owned(),
+        ],
     });
     report.firmware_attributes = vec![
         FirmwareAttributeCapability {

@@ -95,9 +95,11 @@ else:
         "conservation_mode": "org.ratvantage.LegionControl1.set-conservation-mode",
         "cpu_governor": "org.ratvantage.LegionControl1.set-cpu-governor",
         "cpu_epp": "org.ratvantage.LegionControl1.set-cpu-epp",
+        "cpu_max_khz": "org.ratvantage.LegionControl1.set-cpu-max-frequency",
         "cpu_boost": "org.ratvantage.LegionControl1.set-cpu-boost",
         "fan_mode": "org.ratvantage.LegionControl1.set-ideapad-toggle",
         "amd_gpu_dpm_force_level": "org.ratvantage.LegionControl1.set-amd-gpu-dpm-force-level",
+        "wifi_power_save": "org.ratvantage.LegionControl1.set-wifi-power-save",
         "keyboard_rgb": "org.ratvantage.LegionControl1.set-keyboard-rgb",
         "curve_optimizer_all_core": "org.ratvantage.LegionControl1.set-curve-optimizer",
         "gpu_mode": "org.ratvantage.LegionControl1.set-gpu-mode",
@@ -113,6 +115,11 @@ else:
                 {
                     "method": "SetCpuEpp",
                     "polkit_action": "org.ratvantage.LegionControl1.set-cpu-epp",
+                    "readback_required": True,
+                },
+                {
+                    "method": "SetCpuMaxFrequency",
+                    "polkit_action": "org.ratvantage.LegionControl1.set-cpu-max-frequency",
                     "readback_required": True,
                 },
                 {

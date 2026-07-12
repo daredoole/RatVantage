@@ -1,8 +1,7 @@
 # Repository Guidelines
 
-This file is read automatically by Codex CLI, Claude Code, Cursor, and other AI coding agents.
-**Single source of truth for repo rules:** keep substantive guidance here only.
-[CLAUDE.md](CLAUDE.md) and [`.cursor/rules/ratvantage.mdc`](.cursor/rules/ratvantage.mdc) are **thin stubs** that link back here so agents are not loaded with duplicate prose.
+**Single source of truth for repository automation rules:** keep substantive
+guidance here only so development tools do not load duplicate prose.
 
 ## Project Status
 

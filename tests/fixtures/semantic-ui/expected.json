@@ -22,25 +22,6 @@
           "visible": true,
           "write_capable": false,
           "write_enabled_in_tests": false
-        },
-        {
-          "danger_level": "none",
-          "displayed_value": "platform_profile, fan_curves",
-          "enabled": true,
-          "evidence_gate": null,
-          "fixture_source": "capability registry",
-          "id": "status.capabilities",
-          "label": "Capabilities",
-          "reason_disabled": null,
-          "requires_confirmation": false,
-          "requires_reboot": false,
-          "role": "readout",
-          "safety_notes": "Read-only registry summary.",
-          "safety_state": "read_only",
-          "supported": true,
-          "visible": true,
-          "write_capable": false,
-          "write_enabled_in_tests": false
         }
       ],
       "enabled": true,
@@ -49,25 +30,19 @@
       "screenshot_coverage": true,
       "sections": [
         {
-          "id": "control_center",
-          "title": "Control Center",
+          "id": "at_a_glance",
+          "title": "At a glance",
           "visible": true
         },
         {
-          "id": "machine",
-          "title": "Machine",
-          "visible": true
-        },
-        {
-          "id": "capability_health",
-          "title": "Capability Health",
+          "id": "this_pc",
+          "title": "This PC",
           "visible": true
         }
       ],
       "text_markers": [
-        "Control Center",
-        "Machine",
-        "Capability Health"
+        "At a glance",
+        "This PC"
       ],
       "title": "Overview",
       "unsupported_state_policy": "show explanatory empty/unsupported copy instead of blank UI",

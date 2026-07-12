@@ -11,8 +11,28 @@ use super::shared::{
     spawn_dbus_call, store_write_feedback_state, write_feedback_row,
 };
 
+const LOW_POWER_PPT_LIMITS: [(&str, &str); 3] = [
+    ("ppt_pl1_spl", "50"),
+    ("ppt_pl2_sppt", "60"),
+    ("ppt_pl3_fppt", "70"),
+];
+
 pub fn automations_page(diagnostics: Result<DiagnosticsBundle>) -> adw::PreferencesPage {
     let page = adw::PreferencesPage::new();
+    let power_saver_wifi_interface = diagnostics.as_ref().ok().and_then(|bundle| {
+        bundle
+            .raw_probe_report
+            .wireless_power
+            .iter()
+            .find(|capability| capability.current_power_save.is_some())
+            .map(|capability| capability.interface.clone())
+    });
+    let low_power_cpu_max_khz = diagnostics.as_ref().ok().and_then(low_power_cpu_max_khz);
+    let low_power_ppt_limits_available = diagnostics
+        .as_ref()
+        .ok()
+        .map(supports_low_power_ppt_limits)
+        .unwrap_or(false);
 
     // ── Planning banner ──────────────────────────────────────────────────────
     let info_group = adw::PreferencesGroup::new();
@@ -137,8 +157,18 @@ pub fn automations_page(diagnostics: Result<DiagnosticsBundle>) -> adw::Preferen
     append_integrated_gpu_on_battery_starter(&templates_group);
     append_resume_balanced_profile_starter(&templates_group);
     append_gpu_reboot_completion_starter(&templates_group);
-    append_profile_change_tuning_starter(&templates_group);
-    append_desktop_power_profile_change_starter(&templates_group);
+    append_profile_change_tuning_starter(
+        &templates_group,
+        power_saver_wifi_interface.clone(),
+        low_power_cpu_max_khz,
+        low_power_ppt_limits_available,
+    );
+    append_desktop_power_profile_change_starter(
+        &templates_group,
+        power_saver_wifi_interface,
+        low_power_cpu_max_khz,
+        low_power_ppt_limits_available,
+    );
     append_periodic_idle_correction_starter(&templates_group);
     append_rgb_breathing_profile_starter(&templates_group);
     append_co_experimental_profile_starter(&templates_group);
@@ -332,7 +362,7 @@ fn append_fast_charge_profile_starter(group: &adw::PreferencesGroup) {
         let button_for_recv = button.clone();
         let feedback_for_recv = feedback.clone();
         spawn_dbus_call(
-            || {
+            move || {
                 let client = make_client()?;
                 let fast_charge = serde_json::json!({
                     "schema_version": 1,
@@ -429,7 +459,7 @@ fn append_balanced_daily_mixed_profile_starter(group: &adw::PreferencesGroup) {
         let button_for_recv = button.clone();
         let feedback_for_recv = feedback.clone();
         spawn_dbus_call(
-            || {
+            move || {
                 let client = make_client()?;
                 let mixed_profile = serde_json::json!({
                     "schema_version": 1,
@@ -518,7 +548,7 @@ fn append_quiet_battery_mixed_profile_starter(group: &adw::PreferencesGroup) {
         let button_for_recv = button.clone();
         let feedback_for_recv = feedback.clone();
         spawn_dbus_call(
-            || {
+            move || {
                 let client = make_client()?;
                 let mixed_profile = serde_json::json!({
                     "schema_version": 1,
@@ -1896,67 +1926,143 @@ fn append_gpu_reboot_completion_starter(group: &adw::PreferencesGroup) {
     });
 }
 
-fn append_profile_change_tuning_starter(group: &adw::PreferencesGroup) {
+fn append_profile_change_tuning_starter(
+    group: &adw::PreferencesGroup,
+    wifi_interface: Option<String>,
+    low_power_cpu_max_khz: Option<i64>,
+    low_power_ppt_limits_available: bool,
+) {
     let row = adw::ActionRow::builder()
-        .title("Fn+Q tuning repair starter")
+        .title("Fn+Q full router starter")
         .subtitle(
-            "Creates a profile-change repair profile for balanced CPU tuning and maps external platform-profile changes to it",
+            "Creates full low-power, balanced, performance, and max-power responses for firmware profile changes",
         )
         .selectable(false)
         .build();
     let create = gtk4::Button::builder()
-        .label("Create repair")
+        .label("Create router")
         .css_classes(["suggested-action", "pill"])
         .valign(gtk4::Align::Center)
         .build();
     row.add_suffix(&create);
     group.add(&row);
 
-    let feedback = write_feedback_row("Fn+Q tuning repair starter");
+    let feedback = write_feedback_row("Fn+Q full router starter");
     group.add(&feedback);
 
     create.connect_clicked(move |button| {
+        let wifi_interface = wifi_interface.clone();
+        let low_power_cpu_max_khz = low_power_cpu_max_khz;
         button.set_sensitive(false);
-        feedback.set_title("Creating repair profile");
-        feedback.set_subtitle(
-            "Saving daemon-owned platform-profile change response profile and trigger mapping...",
-        );
+        feedback.set_title("Creating Fn+Q router");
+        feedback.set_subtitle("Saving daemon-owned profile responses and platform router rule...");
 
         let button_for_recv = button.clone();
         let feedback_for_recv = feedback.clone();
         spawn_dbus_call(
-            || {
+            move || {
                 let client = make_client()?;
-                let repair_profile = serde_json::json!({
+                let mut low_power_actions = serde_json::json!({
+                    "platform_profile": "low-power",
+                    "cpu_governor": "powersave",
+                    "cpu_epp": "power",
+                    "cpu_boost": "0",
+                    "amd_gpu_dpm_force_level": "low"
+                });
+                if low_power_ppt_limits_available {
+                    apply_low_power_ppt_limits(&mut low_power_actions);
+                }
+                if let Some(interface) = wifi_interface {
+                    low_power_actions["wifi_power_save"] = serde_json::json!({
+                        "interface": interface,
+                        "enabled": true
+                    });
+                }
+                if let Some(value) = low_power_cpu_max_khz {
+                    low_power_actions["cpu_max_khz"] = serde_json::json!(value);
+                }
+                let balanced_actions = serde_json::json!({
+                    "platform_profile": "balanced",
+                    "cpu_governor": "powersave",
+                    "cpu_epp": "balance_performance",
+                    "cpu_max_restore": true,
+                    "cpu_boost": "1",
+                    "amd_gpu_dpm_force_level": "auto"
+                });
+                let performance_actions = serde_json::json!({
+                    "platform_profile": "performance",
+                    "cpu_governor": "performance",
+                    "cpu_epp": "performance",
+                    "cpu_max_restore": true,
+                    "cpu_boost": "1",
+                    "amd_gpu_dpm_force_level": "auto"
+                });
+                let max_power_actions = serde_json::json!({
+                    "cpu_governor": "performance",
+                    "cpu_epp": "performance",
+                    "cpu_max_restore": true,
+                    "cpu_boost": "1",
+                    "amd_gpu_dpm_force_level": "auto"
+                });
+                let low_power_profile = serde_json::json!({
                     "schema_version": 1,
-                    "label": "Fn+Q balanced CPU repair",
-                    "actions": {
-                        "cpu_governor": "powersave",
-                        "cpu_epp": "balance_performance",
-                        "cpu_boost": "1"
-                    }
+                    "label": "Fn+Q low-power full response",
+                    "actions": low_power_actions
+                })
+                .to_string();
+                let balanced_profile = serde_json::json!({
+                    "schema_version": 1,
+                    "label": "Fn+Q balanced full response",
+                    "actions": balanced_actions
+                })
+                .to_string();
+                let performance_profile = serde_json::json!({
+                    "schema_version": 1,
+                    "label": "Fn+Q performance full response",
+                    "actions": performance_actions
+                })
+                .to_string();
+                let max_power_profile = serde_json::json!({
+                    "schema_version": 1,
+                    "label": "Fn+Q max-power full response",
+                    "actions": max_power_actions
+                })
+                .to_string();
+                let rule = serde_json::json!({
+                    "schema_version": 1,
+                    "label": "Fn+Q full profile router",
+                    "enabled": true,
+                    "kind": "platform_profile_router",
+                    "mappings": {
+                        "low-power": "fnq_low_power_full",
+                        "balanced": "fnq_balanced_full",
+                        "performance": "fnq_performance_full",
+                        "max-power": "fnq_max_power_full"
+                    },
+                    "cooldown_secs": 1
                 })
                 .to_string();
 
-                client.set_hardware_profile("fnq_balanced_cpu_repair", &repair_profile)?;
-                client.set_hardware_profile_trigger(
-                    "platform_profile_changed",
-                    "fnq_balanced_cpu_repair",
-                )?;
+                client.set_hardware_profile("fnq_low_power_full", &low_power_profile)?;
+                client.set_hardware_profile("fnq_balanced_full", &balanced_profile)?;
+                client.set_hardware_profile("fnq_performance_full", &performance_profile)?;
+                client.set_hardware_profile("fnq_max_power_full", &max_power_profile)?;
+                let _ = client.remove_hardware_profile_trigger("platform_profile_changed")?;
+                client.set_automation_rule("fnq_full_profile_router", &rule)?;
                 Ok(())
             },
             move |result| {
                 button_for_recv.set_sensitive(true);
                 match result {
                     Ok(()) => {
-                        feedback_for_recv.set_title("Repair profile ready");
+                        feedback_for_recv.set_title("Fn+Q router ready");
                         feedback_for_recv.set_subtitle(
-                            "Saved fnq_balanced_cpu_repair profile and platform_profile_changed trigger; execution remains policy/read-back gated.",
+                            "Saved full Fn+Q response profiles and fnq_full_profile_router rule; execution remains policy/read-back gated.",
                         );
                         store_write_feedback_state(
-                            "Fn+Q tuning repair starter",
-                            "Repair profile ready",
-                            "Saved fnq_balanced_cpu_repair profile and platform_profile_changed trigger; execution remains policy/read-back gated.",
+                            "Fn+Q full router starter",
+                            "Fn+Q router ready",
+                            "Saved full Fn+Q response profiles and fnq_full_profile_router rule; execution remains policy/read-back gated.",
                         );
                         let _ = request_dashboard_refresh();
                     }
@@ -1965,7 +2071,7 @@ fn append_profile_change_tuning_starter(group: &adw::PreferencesGroup) {
                         feedback_for_recv.set_title("Create error");
                         feedback_for_recv.set_subtitle(&subtitle);
                         store_write_feedback_state(
-                            "Fn+Q tuning repair starter",
+                            "Fn+Q full router starter",
                             "Create error",
                             &subtitle,
                         );
@@ -1976,16 +2082,21 @@ fn append_profile_change_tuning_starter(group: &adw::PreferencesGroup) {
     });
 }
 
-fn append_desktop_power_profile_change_starter(group: &adw::PreferencesGroup) {
+fn append_desktop_power_profile_change_starter(
+    group: &adw::PreferencesGroup,
+    wifi_interface: Option<String>,
+    low_power_cpu_max_khz: Option<i64>,
+    low_power_ppt_limits_available: bool,
+) {
     let row = adw::ActionRow::builder()
-        .title("Desktop power repair starter")
+        .title("Power-saver magic starter")
         .subtitle(
-            "Creates a balanced profile for desktop power mode changes and maps PowerProfiles changes to it",
+            "Creates the strongest validated saver profile available here and maps desktop power-saver to it",
         )
         .selectable(false)
         .build();
     let create = gtk4::Button::builder()
-        .label("Create power repair")
+        .label("Create saver")
         .css_classes(["suggested-action", "pill"])
         .valign(gtk4::Align::Center)
         .build();
@@ -1996,48 +2107,71 @@ fn append_desktop_power_profile_change_starter(group: &adw::PreferencesGroup) {
     group.add(&feedback);
 
     create.connect_clicked(move |button| {
+        let wifi_interface = wifi_interface.clone();
+        let low_power_cpu_max_khz = low_power_cpu_max_khz;
         button.set_sensitive(false);
-        feedback.set_title("Creating desktop power repair");
+        feedback.set_title("Creating power-saver profile");
         feedback.set_subtitle(
-            "Saving daemon-owned desktop power profile response and trigger mapping...",
+            "Saving daemon-owned power-saver response and desktop power profile rule...",
         );
 
         let button_for_recv = button.clone();
         let feedback_for_recv = feedback.clone();
         spawn_dbus_call(
-            || {
+            move || {
                 let client = make_client()?;
-                let repair_profile = serde_json::json!({
+                let mut actions = serde_json::json!({
+                    "platform_profile": "low-power",
+                    "cpu_governor": "powersave",
+                    "cpu_epp": "power",
+                    "cpu_boost": "0",
+                    "amd_gpu_dpm_force_level": "low"
+                });
+                if low_power_ppt_limits_available {
+                    apply_low_power_ppt_limits(&mut actions);
+                }
+                if let Some(interface) = wifi_interface {
+                    actions["wifi_power_save"] = serde_json::json!({
+                        "interface": interface,
+                        "enabled": true
+                    });
+                }
+                if let Some(value) = low_power_cpu_max_khz {
+                    actions["cpu_max_khz"] = serde_json::json!(value);
+                }
+                let saver_profile = serde_json::json!({
                     "schema_version": 1,
-                    "label": "Desktop power balanced repair",
-                    "actions": {
-                        "platform_profile": "balanced",
-                        "cpu_governor": "powersave",
-                        "cpu_epp": "balance_performance",
-                        "cpu_boost": "1"
-                    }
+                    "label": "Desktop power-saver max",
+                    "actions": actions
+                })
+                .to_string();
+                let rule = serde_json::json!({
+                    "schema_version": 1,
+                    "label": "Desktop power-saver max",
+                    "enabled": true,
+                    "kind": "desktop_power_profile",
+                    "desktop_profile": "power-saver",
+                    "profile_id": "desktop_power_saver_max",
+                    "cooldown_secs": 30
                 })
                 .to_string();
 
-                client.set_hardware_profile("desktop_power_balanced_repair", &repair_profile)?;
-                client.set_hardware_profile_trigger(
-                    "desktop_power_profile_changed",
-                    "desktop_power_balanced_repair",
-                )?;
+                client.set_hardware_profile("desktop_power_saver_max", &saver_profile)?;
+                client.set_automation_rule("desktop_power_saver_max", &rule)?;
                 Ok(())
             },
             move |result| {
                 button_for_recv.set_sensitive(true);
                 match result {
                     Ok(()) => {
-                        feedback_for_recv.set_title("Desktop power repair ready");
+                        feedback_for_recv.set_title("Power-saver rule ready");
                         feedback_for_recv.set_subtitle(
-                            "Saved desktop_power_balanced_repair profile and desktop_power_profile_changed trigger; execution remains policy/read-back gated.",
+                            "Saved desktop_power_saver_max profile and desktop_power_saver_max rule; execution remains policy/read-back gated.",
                         );
                         store_write_feedback_state(
-                            "Desktop power repair starter",
-                            "Desktop power repair ready",
-                            "Saved desktop_power_balanced_repair profile and desktop_power_profile_changed trigger; execution remains policy/read-back gated.",
+                            "Power-saver magic starter",
+                            "Power-saver rule ready",
+                            "Saved desktop_power_saver_max profile and desktop_power_saver_max rule; execution remains policy/read-back gated.",
                         );
                         let _ = request_dashboard_refresh();
                     }
@@ -2046,7 +2180,7 @@ fn append_desktop_power_profile_change_starter(group: &adw::PreferencesGroup) {
                         feedback_for_recv.set_title("Create error");
                         feedback_for_recv.set_subtitle(&subtitle);
                         store_write_feedback_state(
-                            "Desktop power repair starter",
+                            "Power-saver magic starter",
                             "Create error",
                             &subtitle,
                         );
@@ -3773,6 +3907,12 @@ fn automation_profile_action_summary(profile: &HardwareProfile) -> String {
     if let Some(value) = &profile.actions.cpu_epp {
         actions.push(format!("EPP={value}"));
     }
+    if let Some(value) = profile.actions.cpu_max_khz {
+        actions.push(format!("CPU max={} MHz", value / 1000));
+    }
+    if profile.actions.cpu_max_restore {
+        actions.push("CPU max=platform maximum".to_owned());
+    }
     if let Some(value) = &profile.actions.cpu_boost {
         actions.push(format!("boost={value}"));
     }
@@ -3781,6 +3921,13 @@ fn automation_profile_action_summary(profile: &HardwareProfile) -> String {
     }
     if let Some(value) = &profile.actions.amd_gpu_dpm_force_level {
         actions.push(format!("AMD DPM={value}"));
+    }
+    if let Some(request) = &profile.actions.wifi_power_save {
+        actions.push(format!(
+            "Wi-Fi {}={}",
+            request.interface,
+            if request.enabled { "on" } else { "off" }
+        ));
     }
     if let Some(value) = &profile.actions.curve_optimizer_all_core {
         actions.push(format!("CO={value}"));
@@ -3807,6 +3954,12 @@ fn advanced_cpu_profile_summary(
     if let Some(value) = &profile.actions.cpu_epp {
         actions.push(format!("EPP={value}"));
     }
+    if let Some(value) = profile.actions.cpu_max_khz {
+        actions.push(format!("max={} MHz", value / 1000));
+    }
+    if profile.actions.cpu_max_restore {
+        actions.push("max=platform maximum".to_owned());
+    }
     if let Some(value) = &profile.actions.cpu_boost {
         actions.push(format!("boost={value}"));
     }
@@ -3828,6 +3981,44 @@ fn advanced_cpu_profile_summary(
             actions.join(", ")
         ))
     }
+}
+
+fn supports_low_power_ppt_limits(bundle: &DiagnosticsBundle) -> bool {
+    let has_custom_profile_handler = bundle
+        .raw_probe_report
+        .platform_profile
+        .as_ref()
+        .map(|profile| {
+            profile.custom_profile_path.is_some()
+                && profile.choices.iter().any(|choice| choice == "custom")
+        })
+        .unwrap_or(false);
+
+    has_custom_profile_handler
+        && LOW_POWER_PPT_LIMITS.iter().all(|(attribute_id, _)| {
+            bundle
+                .raw_probe_report
+                .firmware_attributes
+                .iter()
+                .any(|attribute| attribute.name == *attribute_id)
+        })
+}
+
+fn apply_low_power_ppt_limits(actions: &mut serde_json::Value) {
+    actions["platform_profile"] = serde_json::json!("custom");
+    actions["firmware_attributes"] = serde_json::json!({
+        "ppt_pl1_spl": "50",
+        "ppt_pl2_sppt": "60",
+        "ppt_pl3_fppt": "70"
+    });
+}
+
+fn low_power_cpu_max_khz(bundle: &DiagnosticsBundle) -> Option<i64> {
+    let cpu = bundle.raw_probe_report.cpu_power.as_ref()?;
+    let max = cpu.cpuinfo_max_khz.or(cpu.scaling_max_khz)?;
+    let min = cpu.scaling_min_khz.or(cpu.cpuinfo_min_khz).unwrap_or(0);
+    let requested = 2_200_000.min(max);
+    (requested >= min && requested < max).then_some(requested)
 }
 
 fn automation_rule_subtitle(

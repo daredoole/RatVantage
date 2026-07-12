@@ -99,6 +99,12 @@ struct Args {
     #[arg(long, value_name = "EPP")]
     set_cpu_epp: Option<String>,
 
+    #[arg(long, value_name = "KHZ")]
+    plan_cpu_max_frequency: Option<i64>,
+
+    #[arg(long, value_name = "KHZ")]
+    set_cpu_max_frequency: Option<i64>,
+
     #[arg(long, value_name = "0|-1..-30")]
     plan_curve_optimizer_all_core: Option<String>,
 
@@ -268,6 +274,8 @@ fn main() -> Result<()> {
         args.set_cpu_governor.is_some(),
         args.plan_cpu_epp.is_some(),
         args.set_cpu_epp.is_some(),
+        args.plan_cpu_max_frequency.is_some(),
+        args.set_cpu_max_frequency.is_some(),
         args.plan_curve_optimizer_all_core.is_some(),
         args.set_curve_optimizer_all_core.is_some(),
         args.reset_curve_optimizer_all_core,
@@ -327,7 +335,7 @@ fn main() -> Result<()> {
         } else if args.plan_prepare_custom_thermal {
             print_write_plan(&client.plan_prepare_custom_thermal_mode()?)?;
         } else if let Some(profile) = args.set_platform_profile {
-            print_json(&client.set_platform_profile(&profile)?)?;
+            print_json(&client.set_platform_and_desktop_profile(&profile)?)?;
         } else if let Some(charge_type) = args.plan_battery_charge_type {
             print_write_plan(&client.plan_battery_charge_type_write(&charge_type)?)?;
         } else if let Some(charge_type) = args.set_battery_charge_type {
@@ -391,6 +399,10 @@ fn main() -> Result<()> {
             print_write_plan(&client.plan_cpu_epp_write(&requested)?)?;
         } else if let Some(requested) = args.set_cpu_epp {
             print_json(&client.set_cpu_epp(&requested)?)?;
+        } else if let Some(requested) = args.plan_cpu_max_frequency {
+            print_write_plan(&client.plan_cpu_max_frequency_write(requested)?)?;
+        } else if let Some(requested) = args.set_cpu_max_frequency {
+            print_json(&client.set_cpu_max_frequency(requested)?)?;
         } else if let Some(requested) = args.plan_curve_optimizer_all_core {
             print_write_plan(&client.plan_curve_optimizer_all_core_write(&requested)?)?;
         } else if let Some(requested) = args.set_curve_optimizer_all_core {
@@ -510,7 +522,7 @@ fn main() -> Result<()> {
 
     #[cfg(not(feature = "gtk-ui"))]
     {
-        println!("Legion Control UI scaffold");
+        println!("RatVantage UI");
         println!("D-Bus target: {DBUS_INTERFACE}");
         println!("Read-only client module is available for hardware summary and capabilities.");
         println!("Direct sysfs access is intentionally not implemented.");

@@ -1,10 +1,10 @@
 [Desktop Entry]
 Type=Application
-Name=Legion Control
-GenericName=RatVantage
-Comment=Probe Lenovo Legion hardware capabilities on Fedora (RatVantage)
+Name=RatVantage
+GenericName=Hardware Control
+Comment=Monitor and manage supported laptop hardware on Fedora
 Exec=env GSK_RENDERER=cairo legion-control-ui
 Icon=org.ratvantage.LegionControl
 Terminal=false
 Categories=Settings;HardwareSettings;
-Keywords=RatVantage;Legion;Lenovo;Fan;Battery;Power;Hardware;
+Keywords=RatVantage;Laptop;Fan;Battery;Power;Hardware;

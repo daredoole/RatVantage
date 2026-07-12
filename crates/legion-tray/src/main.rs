@@ -121,7 +121,7 @@ fn execute_action(
     action: &TrayAction,
 ) -> Result<WriteExecutionResult> {
     match action {
-        TrayAction::SetPlatformProfile(profile) => client.set_platform_profile(profile),
+        TrayAction::SetPlatformProfile(profile) => client.set_platform_and_desktop_profile(profile),
         TrayAction::SetBatteryChargeType(charge_type) => {
             client.set_battery_charge_type(charge_type)
         }
@@ -157,7 +157,7 @@ fn run_tray(bus_address: Option<String>) -> Result<()> {
 
 #[cfg(not(feature = "status-notifier"))]
 fn run_tray(_bus_address: Option<String>) -> Result<()> {
-    println!("Legion Control tray scaffold");
+    println!("RatVantage tray");
     println!("Read-only status summary is available with --status.");
     println!("Read-only menu diagnostics are available with --menu-check.");
     let desktop = DesktopSession::from_env();

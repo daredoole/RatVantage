@@ -42,7 +42,6 @@ RatVantage/
 │   ├── fixture-capture.md
 │   ├── hardware-control-matrix.md
 │   ├── implementation-plan.md
-│   ├── research-summary.md
 │   ├── safety-model.md
 │   ├── session-handoff.md
 │   └── write-contracts.md
@@ -95,7 +94,6 @@ RatVantage/
 │   ├── feature-roadmap.md
 │   ├── hardware-control-matrix.md
 │   ├── implementation-plan.md
-│   ├── research-summary.md
 │   ├── safety-model.md
 │   └── session-handoff.md
 ├── scripts/

@@ -1,18 +1,18 @@
-use std::{collections::BTreeMap, env, fs, os::unix::fs::PermissionsExt, sync::Arc};
+use std::{collections::BTreeMap, env, fs, os::unix::fs::PermissionsExt, path::PathBuf, sync::Arc};
 
 use legion_common::{
     AutomationRuleKind, Capability, CapabilityRegistry, CurveOptimizerWriteState,
     CustomThermalPlanPreview, DesktopPowerProfileChangeEvent, FanCurveSnapshot, GpuModePending,
     HardwareSummary, KeyboardRgbOpenRgbDevice, KeyboardRgbOpenRgbStatus, KeyboardRgbWriteRequest,
-    PlatformProfileChangeEvent, RyzenBackendStatus, TelemetrySnapshot, WriteDryRunPlan,
-    WriteExecutionResult, WriteExecutionStatus,
+    PlatformProfileChangeEvent, RyzenBackendStatus, TelemetrySnapshot, WifiPowerSaveRequest,
+    WriteDryRunPlan, WriteExecutionResult, WriteExecutionStatus,
 };
 use legion_control_daemon::{
     BatteryChargeTypeWriter, CommandOpenRgbKeyboardRgbSdkWriter, CpuEppWriter, CpuGovernorWriter,
     CurveOptimizerAllCoreWriter, CurveOptimizerCommandOutput, IdeapadToggleWriter,
     KeyboardRgbWriter, LedStateWriter, LegionControl, OpenRgbAccessSetupWriter,
     OpenRgbKeyboardRgbSdkSnapshot, OpenRgbKeyboardRgbSdkWriter, PlatformProfileWriter,
-    WriteAccessPolicy, WriteAuthorizer, DBUS_INTERFACE, DBUS_PATH,
+    WifiPowerSaveWriter, WriteAccessPolicy, WriteAuthorizer, DBUS_INTERFACE, DBUS_PATH,
 };
 use legion_probe::ProbeOptions;
 use ratvantage_test_support::{
@@ -256,6 +256,7 @@ fn introspection_exposes_gated_reversible_write_methods_only() {
             "PlanCpuBoostWrite",
             "PlanCpuEppWrite",
             "PlanCpuGovernorWrite",
+            "PlanCpuMaxFrequencyWrite",
             "PlanCurveOptimizerAllCoreWrite",
             "PlanCustomThermalFanPresetWrite",
             "PlanCustomThermalFirmwareAttributeWrite",
@@ -275,6 +276,7 @@ fn introspection_exposes_gated_reversible_write_methods_only() {
             "PlanPlatformProfileWrite",
             "PlanPrepareCustomThermalMode",
             "PlanRestoreAutoFanWrite",
+            "PlanWifiPowerSaveWrite",
             "RefreshCapabilities",
             "RemoveAutomationRule",
             "RemoveFanPresetProfileMapEntry",
@@ -287,6 +289,7 @@ fn introspection_exposes_gated_reversible_write_methods_only() {
             "SetCpuBoost",
             "SetCpuEpp",
             "SetCpuGovernor",
+            "SetCpuMaxFrequency",
             "SetCurveOptimizerAllCore",
             "SetFanPresetProfileMapEntry",
             "SetFanPresetReapplyAfterResume",
@@ -299,6 +302,7 @@ fn introspection_exposes_gated_reversible_write_methods_only() {
             "SetKeyboardRgb",
             "SetLedState",
             "SetPlatformProfile",
+            "SetWifiPowerSave",
             "SetupOpenRgbAccess",
         ]
     );
@@ -391,6 +395,11 @@ fn daemon_builds_dry_run_plans_without_other_dbus_write_methods() {
     assert_eq!(boost_plan.previous_value, "1");
     assert_eq!(boost_plan.requested_value, "0");
 
+    let cpu_max_plan = service.plan_cpu_max_frequency_write(2_200_000).unwrap();
+    assert_eq!(cpu_max_plan.method, "SetCpuMaxFrequency");
+    assert_eq!(cpu_max_plan.capability_id, "cpu_power");
+    assert_eq!(cpu_max_plan.requested_value, "2200000");
+
     let conservation_plan = service.plan_conservation_mode_write("0").unwrap();
     assert_eq!(conservation_plan.method, "SetConservationMode");
     assert_eq!(conservation_plan.capability_id, "ideapad_toggles");
@@ -402,6 +411,26 @@ fn daemon_builds_dry_run_plans_without_other_dbus_write_methods() {
     assert_eq!(dpm_plan.capability_id, "amd_gpu_power_dpm");
     assert_eq!(dpm_plan.previous_value, "auto");
     assert_eq!(dpm_plan.requested_value, "low");
+
+    let wifi_fixture = copied_fixture_root("wifi-power-plan");
+    let wifi_dir = wifi_fixture.join("sys/class/net/wlp-test/wireless");
+    fs::create_dir_all(&wifi_dir).unwrap();
+    fs::write(wifi_dir.join("power_save"), "off\n").unwrap();
+    let wifi_service = LegionControl::new(ProbeOptions {
+        sysfs_root: wifi_fixture.clone(),
+    });
+    let wifi_request = legion_common::WifiPowerSaveRequest {
+        interface: "wlp-test".to_owned(),
+        enabled: true,
+    };
+    let wifi_plan = wifi_service
+        .plan_wifi_power_save_write(&wifi_request)
+        .unwrap();
+    assert_eq!(wifi_plan.method, "SetWifiPowerSave");
+    assert_eq!(wifi_plan.capability_id, "wireless_power");
+    assert_eq!(wifi_plan.previous_value, "off");
+    assert_eq!(wifi_plan.requested_value, "on");
+    let _ = fs::remove_dir_all(wifi_fixture);
 
     let co_plan = service.plan_curve_optimizer_all_core_write("-20").unwrap();
     assert_eq!(co_plan.method, "SetCurveOptimizerAllCore");
@@ -937,10 +966,12 @@ fn platform_profile_write_applies_when_policy_and_authorizer_allow_it() {
             gpu_mode_enabled: false,
             cpu_governor_enabled: false,
             cpu_epp_enabled: false,
+            cpu_max_frequency_enabled: false,
             firmware_attribute_enabled: false,
             cpu_boost_enabled: false,
             conservation_mode_enabled: false,
             amd_gpu_dpm_enabled: false,
+            wifi_power_save_enabled: false,
             curve_optimizer_enabled: false,
             openrgb_access_setup_enabled: false,
             hardware_profile_apply_enabled: false,
@@ -992,10 +1023,12 @@ fn platform_profile_write_rejects_invalid_choice_before_write() {
             gpu_mode_enabled: false,
             cpu_governor_enabled: false,
             cpu_epp_enabled: false,
+            cpu_max_frequency_enabled: false,
             firmware_attribute_enabled: false,
             cpu_boost_enabled: false,
             conservation_mode_enabled: false,
             amd_gpu_dpm_enabled: false,
+            wifi_power_save_enabled: false,
             curve_optimizer_enabled: false,
             openrgb_access_setup_enabled: false,
             hardware_profile_apply_enabled: false,
@@ -1042,10 +1075,12 @@ fn platform_profile_write_reports_write_failure_without_changing_value() {
             gpu_mode_enabled: false,
             cpu_governor_enabled: false,
             cpu_epp_enabled: false,
+            cpu_max_frequency_enabled: false,
             firmware_attribute_enabled: false,
             cpu_boost_enabled: false,
             conservation_mode_enabled: false,
             amd_gpu_dpm_enabled: false,
+            wifi_power_save_enabled: false,
             curve_optimizer_enabled: false,
             openrgb_access_setup_enabled: false,
             hardware_profile_apply_enabled: false,
@@ -1097,10 +1132,12 @@ fn platform_profile_write_rolls_back_after_readback_mismatch() {
             gpu_mode_enabled: false,
             cpu_governor_enabled: false,
             cpu_epp_enabled: false,
+            cpu_max_frequency_enabled: false,
             firmware_attribute_enabled: false,
             cpu_boost_enabled: false,
             conservation_mode_enabled: false,
             amd_gpu_dpm_enabled: false,
+            wifi_power_save_enabled: false,
             curve_optimizer_enabled: false,
             openrgb_access_setup_enabled: false,
             hardware_profile_apply_enabled: false,
@@ -1155,10 +1192,12 @@ fn battery_charge_type_write_applies_when_policy_and_authorizer_allow_it() {
             gpu_mode_enabled: false,
             cpu_governor_enabled: false,
             cpu_epp_enabled: false,
+            cpu_max_frequency_enabled: false,
             firmware_attribute_enabled: false,
             cpu_boost_enabled: false,
             conservation_mode_enabled: false,
             amd_gpu_dpm_enabled: false,
+            wifi_power_save_enabled: false,
             curve_optimizer_enabled: false,
             openrgb_access_setup_enabled: false,
             hardware_profile_apply_enabled: false,
@@ -1210,10 +1249,12 @@ fn battery_charge_type_write_rolls_back_after_readback_mismatch() {
             gpu_mode_enabled: false,
             cpu_governor_enabled: false,
             cpu_epp_enabled: false,
+            cpu_max_frequency_enabled: false,
             firmware_attribute_enabled: false,
             cpu_boost_enabled: false,
             conservation_mode_enabled: false,
             amd_gpu_dpm_enabled: false,
+            wifi_power_save_enabled: false,
             curve_optimizer_enabled: false,
             openrgb_access_setup_enabled: false,
             hardware_profile_apply_enabled: false,
@@ -1268,10 +1309,12 @@ fn firmware_attribute_write_applies_when_policy_and_authorizer_allow_it() {
             gpu_mode_enabled: false,
             cpu_governor_enabled: false,
             cpu_epp_enabled: false,
+            cpu_max_frequency_enabled: false,
             firmware_attribute_enabled: true,
             cpu_boost_enabled: false,
             conservation_mode_enabled: false,
             amd_gpu_dpm_enabled: false,
+            wifi_power_save_enabled: false,
             curve_optimizer_enabled: false,
             openrgb_access_setup_enabled: false,
             hardware_profile_apply_enabled: false,
@@ -1327,10 +1370,12 @@ fn firmware_attribute_write_rejects_out_of_range_before_write() {
             gpu_mode_enabled: false,
             cpu_governor_enabled: false,
             cpu_epp_enabled: false,
+            cpu_max_frequency_enabled: false,
             firmware_attribute_enabled: true,
             cpu_boost_enabled: false,
             conservation_mode_enabled: false,
             amd_gpu_dpm_enabled: false,
+            wifi_power_save_enabled: false,
             curve_optimizer_enabled: false,
             openrgb_access_setup_enabled: false,
             hardware_profile_apply_enabled: false,
@@ -1383,10 +1428,12 @@ fn led_state_write_applies_when_policy_and_authorizer_allow_it() {
             gpu_mode_enabled: false,
             cpu_governor_enabled: false,
             cpu_epp_enabled: false,
+            cpu_max_frequency_enabled: false,
             firmware_attribute_enabled: false,
             cpu_boost_enabled: false,
             conservation_mode_enabled: false,
             amd_gpu_dpm_enabled: false,
+            wifi_power_save_enabled: false,
             curve_optimizer_enabled: false,
             openrgb_access_setup_enabled: false,
             hardware_profile_apply_enabled: false,
@@ -1438,10 +1485,12 @@ fn led_state_write_rolls_back_after_readback_mismatch() {
             gpu_mode_enabled: false,
             cpu_governor_enabled: false,
             cpu_epp_enabled: false,
+            cpu_max_frequency_enabled: false,
             firmware_attribute_enabled: false,
             cpu_boost_enabled: false,
             conservation_mode_enabled: false,
             amd_gpu_dpm_enabled: false,
+            wifi_power_save_enabled: false,
             curve_optimizer_enabled: false,
             openrgb_access_setup_enabled: false,
             hardware_profile_apply_enabled: false,
@@ -1596,10 +1645,12 @@ fn ideapad_toggle_write_applies_when_policy_and_authorizer_allow_it() {
             gpu_mode_enabled: false,
             cpu_governor_enabled: false,
             cpu_epp_enabled: false,
+            cpu_max_frequency_enabled: false,
             firmware_attribute_enabled: false,
             cpu_boost_enabled: false,
             conservation_mode_enabled: false,
             amd_gpu_dpm_enabled: false,
+            wifi_power_save_enabled: false,
             curve_optimizer_enabled: false,
             openrgb_access_setup_enabled: false,
             hardware_profile_apply_enabled: false,
@@ -1659,10 +1710,12 @@ fn ideapad_toggle_write_rolls_back_after_readback_mismatch() {
             gpu_mode_enabled: false,
             cpu_governor_enabled: false,
             cpu_epp_enabled: false,
+            cpu_max_frequency_enabled: false,
             firmware_attribute_enabled: false,
             cpu_boost_enabled: false,
             conservation_mode_enabled: false,
             amd_gpu_dpm_enabled: false,
+            wifi_power_save_enabled: false,
             curve_optimizer_enabled: false,
             openrgb_access_setup_enabled: false,
             hardware_profile_apply_enabled: false,
@@ -1723,10 +1776,12 @@ fn camera_power_write_applies_when_policy_and_authorizer_allow_it() {
             gpu_mode_enabled: false,
             cpu_governor_enabled: false,
             cpu_epp_enabled: false,
+            cpu_max_frequency_enabled: false,
             firmware_attribute_enabled: false,
             cpu_boost_enabled: false,
             conservation_mode_enabled: false,
             amd_gpu_dpm_enabled: false,
+            wifi_power_save_enabled: false,
             curve_optimizer_enabled: false,
             openrgb_access_setup_enabled: false,
             hardware_profile_apply_enabled: false,
@@ -1780,10 +1835,12 @@ fn camera_power_write_rolls_back_after_readback_mismatch() {
             gpu_mode_enabled: false,
             cpu_governor_enabled: false,
             cpu_epp_enabled: false,
+            cpu_max_frequency_enabled: false,
             firmware_attribute_enabled: false,
             cpu_boost_enabled: false,
             conservation_mode_enabled: false,
             amd_gpu_dpm_enabled: false,
+            wifi_power_save_enabled: false,
             curve_optimizer_enabled: false,
             openrgb_access_setup_enabled: false,
             hardware_profile_apply_enabled: false,
@@ -1839,10 +1896,12 @@ fn usb_charging_write_reports_policy_block_when_write_is_disabled() {
             gpu_mode_enabled: false,
             cpu_governor_enabled: false,
             cpu_epp_enabled: false,
+            cpu_max_frequency_enabled: false,
             firmware_attribute_enabled: false,
             cpu_boost_enabled: false,
             conservation_mode_enabled: false,
             amd_gpu_dpm_enabled: false,
+            wifi_power_save_enabled: false,
             curve_optimizer_enabled: false,
             openrgb_access_setup_enabled: false,
             hardware_profile_apply_enabled: false,
@@ -1903,10 +1962,12 @@ fn usb_charging_write_applies_when_policy_and_authorizer_allow_it() {
             gpu_mode_enabled: false,
             cpu_governor_enabled: false,
             cpu_epp_enabled: false,
+            cpu_max_frequency_enabled: false,
             firmware_attribute_enabled: false,
             cpu_boost_enabled: false,
             conservation_mode_enabled: false,
             amd_gpu_dpm_enabled: false,
+            wifi_power_save_enabled: false,
             curve_optimizer_enabled: false,
             openrgb_access_setup_enabled: false,
             hardware_profile_apply_enabled: false,
@@ -1961,10 +2022,12 @@ fn usb_charging_write_rolls_back_after_readback_mismatch() {
             gpu_mode_enabled: false,
             cpu_governor_enabled: false,
             cpu_epp_enabled: false,
+            cpu_max_frequency_enabled: false,
             firmware_attribute_enabled: false,
             cpu_boost_enabled: false,
             conservation_mode_enabled: false,
             amd_gpu_dpm_enabled: false,
+            wifi_power_save_enabled: false,
             curve_optimizer_enabled: false,
             openrgb_access_setup_enabled: false,
             hardware_profile_apply_enabled: false,
@@ -2672,6 +2735,188 @@ fn apply_hardware_profile_executes_battery_charge_type_action() {
 }
 
 #[test]
+fn hardware_profile_restores_cpu_cap_to_platform_reported_maximum() {
+    let fixture = copied_fixture_root("hardware-profile-cpu-max-restore");
+    let state_path = unique_state_path("hardware-profile-cpu-max-restore");
+    let policy = fixture.join("sys/devices/system/cpu/cpufreq/policy0");
+    fs::create_dir_all(&policy).unwrap();
+    fs::write(policy.join("scaling_max_freq"), "3601000\n").unwrap();
+    fs::write(policy.join("cpuinfo_max_freq"), "5385280\n").unwrap();
+    fs::write(policy.join("scaling_min_freq"), "400000\n").unwrap();
+    fs::write(policy.join("scaling_governor"), "powersave\n").unwrap();
+    fs::write(
+        policy.join("scaling_available_governors"),
+        "performance powersave\n",
+    )
+    .unwrap();
+
+    let service = LegionControl::new_with_runtime(
+        ProbeOptions {
+            sysfs_root: fixture.clone(),
+        },
+        &state_path,
+        WriteAccessPolicy {
+            platform_profile_enabled: true,
+            cpu_max_frequency_enabled: true,
+            hardware_profile_apply_enabled: true,
+            ..Default::default()
+        },
+        Arc::new(AllowAllAuthorizer),
+        Arc::new(RealFixturePlatformProfileWriter),
+        Arc::new(RealFixtureBatteryChargeTypeWriter),
+        Arc::new(RealFixtureLedStateWriter),
+        Arc::new(RealFixtureIdeapadToggleWriter),
+        Arc::new(NoOpCpuGovernorWriter),
+        Arc::new(NoOpCpuEppWriter),
+    );
+    let profile_json = serde_json::json!({
+        "schema_version": 1,
+        "label": "Performance with restored CPU maximum",
+        "actions": {
+            "platform_profile": "performance",
+            "cpu_max_restore": true
+        }
+    })
+    .to_string();
+
+    service
+        .set_hardware_profile("performance_restore", &profile_json)
+        .unwrap();
+    let run = service
+        .apply_hardware_profile("performance_restore", "test.sender")
+        .unwrap();
+
+    assert!(run.completed);
+    assert_eq!(run.results.len(), 2);
+    assert_eq!(run.results[1].action_id, "cpu_max_restore");
+    assert_eq!(
+        run.results[1].result.readback_value.as_deref(),
+        Some("5385280")
+    );
+    assert_eq!(
+        fs::read_to_string(policy.join("scaling_max_freq"))
+            .unwrap()
+            .trim(),
+        "5385280"
+    );
+
+    let _ = fs::remove_file(state_path);
+    let _ = fs::remove_dir_all(fixture);
+}
+
+#[test]
+fn apply_hardware_profile_executes_wifi_power_save_action() {
+    let fixture = copied_fixture_root("hardware-profile-wifi-power-save");
+    let wifi_dir = fixture.join("sys/class/net/wlp-test/wireless");
+    fs::create_dir_all(&wifi_dir).unwrap();
+    fs::write(wifi_dir.join("power_save"), "off\n").unwrap();
+    let state_path = unique_state_path("hardware-profile-wifi-power-save");
+    let service = LegionControl::new_with_runtime(
+        ProbeOptions {
+            sysfs_root: fixture.clone(),
+        },
+        &state_path,
+        WriteAccessPolicy {
+            wifi_power_save_enabled: true,
+            hardware_profile_apply_enabled: true,
+            ..Default::default()
+        },
+        Arc::new(AllowAllAuthorizer),
+        Arc::new(RealFixturePlatformProfileWriter),
+        Arc::new(RealFixtureBatteryChargeTypeWriter),
+        Arc::new(RealFixtureLedStateWriter),
+        Arc::new(RealFixtureIdeapadToggleWriter),
+        Arc::new(NoOpCpuGovernorWriter),
+        Arc::new(NoOpCpuEppWriter),
+    )
+    .with_wifi_power_save_writer(Arc::new(FixtureWifiPowerSaveWriter {
+        root: fixture.clone(),
+    }));
+    let profile_json = serde_json::json!({
+        "schema_version": 1,
+        "label": "Wi-Fi saver",
+        "actions": {
+            "wifi_power_save": {
+                "interface": "wlp-test",
+                "enabled": true
+            }
+        }
+    })
+    .to_string();
+
+    service
+        .set_hardware_profile("wifi_saver", &profile_json)
+        .unwrap();
+    let run = service
+        .apply_hardware_profile("wifi_saver", "test.sender")
+        .unwrap();
+
+    assert!(run.completed);
+    assert_eq!(run.results.len(), 1);
+    assert_eq!(run.results[0].action_id, "wifi_power_save");
+    assert_eq!(run.results[0].result.status, WriteExecutionStatus::Applied);
+    assert_eq!(run.results[0].result.readback_value.as_deref(), Some("on"));
+    assert_eq!(
+        fs::read_to_string(fixture.join("sys/class/net/wlp-test/wireless/power_save"))
+            .unwrap()
+            .trim(),
+        "on"
+    );
+
+    let _ = fs::remove_file(state_path);
+    let _ = fs::remove_dir_all(fixture);
+}
+
+#[test]
+fn wifi_power_save_skips_writer_when_requested_state_is_already_live() {
+    let fixture = copied_fixture_root("wifi-power-save-noop");
+    let wifi_dir = fixture.join("sys/class/net/wlp-test/wireless");
+    fs::create_dir_all(&wifi_dir).unwrap();
+    fs::write(wifi_dir.join("power_save"), "on\n").unwrap();
+    let state_path = unique_state_path("wifi-power-save-noop");
+    let writes = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+    let service = LegionControl::new_with_runtime(
+        ProbeOptions {
+            sysfs_root: fixture.clone(),
+        },
+        &state_path,
+        WriteAccessPolicy {
+            wifi_power_save_enabled: true,
+            ..Default::default()
+        },
+        Arc::new(AllowAllAuthorizer),
+        Arc::new(RealFixturePlatformProfileWriter),
+        Arc::new(RealFixtureBatteryChargeTypeWriter),
+        Arc::new(RealFixtureLedStateWriter),
+        Arc::new(RealFixtureIdeapadToggleWriter),
+        Arc::new(NoOpCpuGovernorWriter),
+        Arc::new(NoOpCpuEppWriter),
+    )
+    .with_wifi_power_save_writer(Arc::new(CountingWifiPowerSaveWriter {
+        root: fixture.clone(),
+        writes: writes.clone(),
+    }));
+
+    let result = service
+        .set_wifi_power_save(
+            &WifiPowerSaveRequest {
+                interface: "wlp-test".to_owned(),
+                enabled: true,
+            },
+            "test.sender",
+        )
+        .unwrap();
+
+    assert_eq!(result.status, WriteExecutionStatus::Applied);
+    assert!(result.message.contains("no write needed"));
+    assert_eq!(result.readback_value.as_deref(), Some("on"));
+    assert_eq!(writes.load(std::sync::atomic::Ordering::SeqCst), 0);
+
+    let _ = fs::remove_file(state_path);
+    let _ = fs::remove_dir_all(fixture);
+}
+
+#[test]
 fn mixed_daily_hardware_profile_preview_combines_safe_actions_and_staged_rgb() {
     let fixture = copied_fixture_root("hardware-profile-mixed-daily-preview");
     let device = fixture.join("sys/class/hidraw/hidraw9/device");
@@ -3083,7 +3328,7 @@ fn fast_charge_threshold_automation_selects_and_applies_profile() {
 }
 
 #[test]
-fn automation_observer_tick_applies_saved_rule_once_per_cooldown() {
+fn automation_observer_tick_applies_stable_selection_once() {
     let fixture = copied_fixture_root("automation-observer-tick");
     let state_path = unique_state_path("automation-observer-tick");
     let service = LegionControl::new_with_state_path(
@@ -3123,7 +3368,7 @@ fn automation_observer_tick_applies_saved_rule_once_per_cooldown() {
         "fast_charge_profile_id": "fast_charge",
         "protect_profile_id": "battery_protect",
         "require_ac": true,
-        "cooldown_secs": 300
+        "cooldown_secs": 0
     })
     .to_string();
     service
@@ -3164,7 +3409,7 @@ fn automation_observer_tick_applies_saved_rule_once_per_cooldown() {
     .unwrap();
     assert_eq!(runs.len(), 1);
     assert!(runs[0].profile_run.is_none());
-    assert!(runs[0].evaluation.reason.contains("cooldown"));
+    assert!(runs[0].evaluation.reason.contains("already applied"));
 
     let _ = fs::remove_file(state_path);
     let _ = fs::remove_dir_all(fixture);
@@ -3295,7 +3540,7 @@ fn periodic_idle_automation_reapplies_profile_with_cooldown() {
         "enabled": true,
         "kind": "periodic_idle",
         "profile_id": "periodic_repair",
-        "cooldown_secs": 300
+        "cooldown_secs": 0
     })
     .to_string();
     service
@@ -3348,8 +3593,7 @@ fn periodic_idle_automation_reapplies_profile_with_cooldown() {
     )
     .unwrap();
     assert_eq!(runs.len(), 1);
-    assert!(runs[0].profile_run.is_none());
-    assert!(runs[0].evaluation.reason.contains("cooldown"));
+    assert!(runs[0].profile_run.as_ref().unwrap().completed);
 
     let _ = fs::remove_file(state_path);
     let _ = fs::remove_dir_all(fixture);
@@ -3509,6 +3753,373 @@ fn ac_profile_router_preview_includes_cpu_tuning_actions() {
             "SetCpuEpp",
             "SetCpuBoost"
         ]
+    );
+
+    let _ = fs::remove_file(state_path);
+    let _ = fs::remove_dir_all(fixture);
+}
+
+#[test]
+fn desktop_power_profile_rule_selects_power_saver_profile() {
+    let fixture = copied_fixture_root("automation-desktop-power-profile");
+    let state_path = unique_state_path("automation-desktop-power-profile");
+    let service = LegionControl::new_with_state_path(
+        ProbeOptions {
+            sysfs_root: fixture.clone(),
+        },
+        &state_path,
+    );
+    let saver_profile = serde_json::json!({
+        "schema_version": 1,
+        "label": "Desktop power-saver max",
+        "actions": {
+            "platform_profile": "low-power",
+            "cpu_governor": "powersave",
+            "cpu_epp": "power",
+            "cpu_boost": "0",
+            "amd_gpu_dpm_force_level": "low"
+        }
+    })
+    .to_string();
+    service
+        .set_hardware_profile("desktop_power_saver_max", &saver_profile)
+        .unwrap();
+    let rule = serde_json::json!({
+        "schema_version": 1,
+        "label": "Desktop power-saver max",
+        "enabled": true,
+        "kind": "desktop_power_profile",
+        "desktop_profile": "power-saver",
+        "profile_id": "desktop_power_saver_max",
+        "cooldown_secs": 30
+    })
+    .to_string();
+    service
+        .set_automation_rule("desktop_power_saver_max", &rule)
+        .unwrap();
+
+    assert!(service
+        .automation_rule_preview("desktop_power_saver_max")
+        .unwrap()
+        .reason
+        .contains("telemetry is unavailable"));
+
+    legion_control_daemon::handle_desktop_power_profile_change_observer_tick_with_current(
+        &state_path,
+        &ProbeOptions {
+            sysfs_root: fixture.clone(),
+        },
+        WriteAccessPolicy::default(),
+        "balanced".to_owned(),
+    )
+    .unwrap();
+    let reloaded = LegionControl::new_with_state_path(
+        ProbeOptions {
+            sysfs_root: fixture.clone(),
+        },
+        &state_path,
+    );
+    let preview = reloaded
+        .automation_rule_preview("desktop_power_saver_max")
+        .unwrap();
+    assert!(!preview.matched);
+    assert!(preview.reason.contains("waiting for `power-saver`"));
+
+    legion_control_daemon::handle_desktop_power_profile_change_observer_tick_with_current(
+        &state_path,
+        &ProbeOptions {
+            sysfs_root: fixture.clone(),
+        },
+        WriteAccessPolicy::default(),
+        "power-saver".to_owned(),
+    )
+    .unwrap();
+    let reloaded = LegionControl::new_with_state_path(
+        ProbeOptions {
+            sysfs_root: fixture.clone(),
+        },
+        &state_path,
+    );
+    let preview = reloaded
+        .automation_rule_preview("desktop_power_saver_max")
+        .unwrap();
+    assert!(preview.matched);
+    assert_eq!(
+        preview.selected_profile_id.as_deref(),
+        Some("desktop_power_saver_max")
+    );
+    let methods = preview
+        .profile_preview
+        .unwrap()
+        .plans
+        .iter()
+        .map(|plan| plan.method.clone())
+        .collect::<Vec<_>>();
+    assert_eq!(
+        methods,
+        vec![
+            "SetPlatformProfile".to_owned(),
+            "SetCpuGovernor".to_owned(),
+            "SetCpuEpp".to_owned(),
+            "SetCpuBoost".to_owned(),
+            "SetAmdGpuDpmForceLevel".to_owned()
+        ]
+    );
+
+    let _ = fs::remove_file(state_path);
+    let _ = fs::remove_dir_all(fixture);
+}
+
+#[test]
+fn platform_profile_router_rule_selects_current_profile_mapping() {
+    let fixture = copied_fixture_root("automation-platform-profile-router");
+    let state_path = unique_state_path("automation-platform-profile-router");
+    let service = LegionControl::new_with_state_path(
+        ProbeOptions {
+            sysfs_root: fixture.clone(),
+        },
+        &state_path,
+    );
+    let balanced_profile = serde_json::json!({
+        "schema_version": 1,
+        "label": "Fn+Q balanced full response",
+        "actions": {
+            "platform_profile": "balanced",
+            "cpu_governor": "powersave",
+            "cpu_epp": "balance_performance",
+            "cpu_boost": "1"
+        }
+    })
+    .to_string();
+    let performance_profile = serde_json::json!({
+        "schema_version": 1,
+        "label": "Fn+Q performance full response",
+        "actions": {
+            "platform_profile": "performance",
+            "cpu_governor": "performance",
+            "cpu_epp": "performance",
+            "cpu_boost": "1"
+        }
+    })
+    .to_string();
+    service
+        .set_hardware_profile("fnq_balanced_full", &balanced_profile)
+        .unwrap();
+    service
+        .set_hardware_profile("fnq_performance_full", &performance_profile)
+        .unwrap();
+    let rule = serde_json::json!({
+        "schema_version": 1,
+        "label": "Fn+Q full profile router",
+        "enabled": true,
+        "kind": "platform_profile_router",
+        "mappings": {
+            "balanced": "fnq_balanced_full",
+            "performance": "fnq_performance_full"
+        },
+        "cooldown_secs": 0
+    })
+    .to_string();
+    service
+        .set_automation_rule("fnq_full_profile_router", &rule)
+        .unwrap();
+
+    fs::write(
+        fixture.join("sys/firmware/acpi/platform_profile"),
+        "performance\n",
+    )
+    .unwrap();
+    let preview = service
+        .automation_rule_preview("fnq_full_profile_router")
+        .unwrap();
+    assert!(preview.matched);
+    assert_eq!(
+        preview.selected_profile_id.as_deref(),
+        Some("fnq_performance_full")
+    );
+    assert!(preview.reason.contains("platform profile is `performance`"));
+
+    let _ = fs::remove_file(state_path);
+    let _ = fs::remove_dir_all(fixture);
+}
+
+#[test]
+fn platform_profile_change_observer_applies_matching_router_rule() {
+    let fixture = copied_fixture_root("platform-profile-router-observer");
+    let state_path = unique_state_path("platform-profile-router-observer");
+    let service = LegionControl::new_with_state_path(
+        ProbeOptions {
+            sysfs_root: fixture.clone(),
+        },
+        &state_path,
+    );
+    let balanced_profile = serde_json::json!({
+        "schema_version": 1,
+        "label": "Fn+Q balanced full response",
+        "actions": {
+            "battery_charge_type": "Standard"
+        }
+    })
+    .to_string();
+    let performance_profile = serde_json::json!({
+        "schema_version": 1,
+        "label": "Fn+Q performance full response",
+        "actions": {
+            "battery_charge_type": "Fast"
+        }
+    })
+    .to_string();
+    service
+        .set_hardware_profile("fnq_balanced_full", &balanced_profile)
+        .unwrap();
+    service
+        .set_hardware_profile("fnq_performance_full", &performance_profile)
+        .unwrap();
+    let rule = serde_json::json!({
+        "schema_version": 1,
+        "label": "Fn+Q full profile router",
+        "enabled": true,
+        "kind": "platform_profile_router",
+        "mappings": {
+            "balanced": "fnq_balanced_full",
+            "performance": "fnq_performance_full"
+        },
+        "cooldown_secs": 0
+    })
+    .to_string();
+    service
+        .set_automation_rule("fnq_full_profile_router", &rule)
+        .unwrap();
+
+    let policy = WriteAccessPolicy {
+        battery_charge_type_enabled: true,
+        hardware_profile_apply_enabled: true,
+        ..Default::default()
+    };
+    let first = legion_control_daemon::handle_platform_profile_change_observer_tick(
+        &state_path,
+        &ProbeOptions {
+            sysfs_root: fixture.clone(),
+        },
+        policy.clone(),
+    )
+    .unwrap();
+    assert!(first.is_none());
+
+    fs::write(
+        fixture.join("sys/firmware/acpi/platform_profile"),
+        "performance\n",
+    )
+    .unwrap();
+    let second = legion_control_daemon::handle_platform_profile_change_observer_tick(
+        &state_path,
+        &ProbeOptions {
+            sysfs_root: fixture.clone(),
+        },
+        policy,
+    )
+    .unwrap();
+    assert!(second.is_none());
+
+    let reloaded = LegionControl::new_with_state_path(
+        ProbeOptions {
+            sysfs_root: fixture.clone(),
+        },
+        &state_path,
+    );
+    let last = reloaded.last_automation_rule_apply().unwrap();
+    let run = last.get("fnq_full_profile_router").unwrap();
+    assert_eq!(
+        run.evaluation.selected_profile_id.as_deref(),
+        Some("fnq_performance_full")
+    );
+    assert!(run.profile_run.as_ref().unwrap().completed);
+    assert_eq!(
+        fs::read_to_string(fixture.join("sys/class/power_supply/BAT0/charge_type"))
+            .unwrap()
+            .trim(),
+        "Fast"
+    );
+
+    let _ = fs::remove_file(state_path);
+    let _ = fs::remove_dir_all(fixture);
+}
+
+#[test]
+fn desktop_power_profile_change_observer_applies_matching_rule() {
+    let fixture = copied_fixture_root("desktop-power-profile-observer-rule");
+    let state_path = unique_state_path("desktop-power-profile-observer-rule");
+    let service = LegionControl::new_with_state_path(
+        ProbeOptions {
+            sysfs_root: fixture.clone(),
+        },
+        &state_path,
+    );
+    let saver_profile = serde_json::json!({
+        "schema_version": 1,
+        "label": "Desktop power-saver max",
+        "actions": {
+            "platform_profile": "low-power"
+        }
+    })
+    .to_string();
+    service
+        .set_hardware_profile("desktop_power_saver_max", &saver_profile)
+        .unwrap();
+    let rule = serde_json::json!({
+        "schema_version": 1,
+        "label": "Desktop power-saver max",
+        "enabled": true,
+        "kind": "desktop_power_profile",
+        "desktop_profile": "power-saver",
+        "profile_id": "desktop_power_saver_max",
+        "cooldown_secs": 0
+    })
+    .to_string();
+    service
+        .set_automation_rule("desktop_power_saver_max", &rule)
+        .unwrap();
+
+    legion_control_daemon::handle_desktop_power_profile_change_observer_tick_with_current(
+        &state_path,
+        &ProbeOptions {
+            sysfs_root: fixture.clone(),
+        },
+        WriteAccessPolicy::default(),
+        "balanced".to_owned(),
+    )
+    .unwrap();
+
+    let trigger_run =
+        legion_control_daemon::handle_desktop_power_profile_change_observer_tick_with_current(
+            &state_path,
+            &ProbeOptions {
+                sysfs_root: fixture.clone(),
+            },
+            WriteAccessPolicy {
+                platform_profile_enabled: true,
+                hardware_profile_apply_enabled: true,
+                ..Default::default()
+            },
+            "power-saver".to_owned(),
+        )
+        .unwrap();
+    assert!(trigger_run.is_none());
+
+    let reloaded = LegionControl::new_with_state_path(
+        ProbeOptions {
+            sysfs_root: fixture.clone(),
+        },
+        &state_path,
+    );
+    let last = reloaded.last_automation_rule_apply().unwrap();
+    let run = last.get("desktop_power_saver_max").unwrap();
+    assert!(run.profile_run.as_ref().unwrap().completed);
+    assert_eq!(
+        fs::read_to_string(fixture.join("sys/firmware/acpi/platform_profile"))
+            .unwrap()
+            .trim(),
+        "low-power"
     );
 
     let _ = fs::remove_file(state_path);
@@ -4775,6 +5386,51 @@ struct NoOpCpuEppWriter;
 impl CpuEppWriter for NoOpCpuEppWriter {
     fn write_cpu_epp(&self, _path: &str, _requested: &str) -> std::result::Result<(), String> {
         Ok(())
+    }
+}
+
+struct FixtureWifiPowerSaveWriter {
+    root: PathBuf,
+}
+
+impl WifiPowerSaveWriter for FixtureWifiPowerSaveWriter {
+    fn write_wifi_power_save(
+        &self,
+        interface: &str,
+        enabled: bool,
+    ) -> std::result::Result<(), String> {
+        fs::write(
+            self.root
+                .join("sys/class/net")
+                .join(interface)
+                .join("wireless/power_save"),
+            if enabled { "on\n" } else { "off\n" },
+        )
+        .map_err(|error| error.to_string())
+    }
+}
+
+struct CountingWifiPowerSaveWriter {
+    root: PathBuf,
+    writes: Arc<std::sync::atomic::AtomicUsize>,
+}
+
+impl WifiPowerSaveWriter for CountingWifiPowerSaveWriter {
+    fn write_wifi_power_save(
+        &self,
+        interface: &str,
+        enabled: bool,
+    ) -> std::result::Result<(), String> {
+        self.writes
+            .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+        fs::write(
+            self.root
+                .join("sys/class/net")
+                .join(interface)
+                .join("wireless/power_save"),
+            if enabled { "on\n" } else { "off\n" },
+        )
+        .map_err(|error| error.to_string())
     }
 }
 

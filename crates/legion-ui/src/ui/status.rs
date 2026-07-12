@@ -1,4 +1,4 @@
-use crate::{capability_status_label, DiagnosticsBundle, GpuModePending, UiStatus};
+use crate::{DiagnosticsBundle, GpuModePending, UiStatus};
 use adw::prelude::*;
 use anyhow::Result;
 use legion_common::CapabilityRegistry;
@@ -29,37 +29,23 @@ fn append_status(
     append_runtime_overview(page, diagnostics, &gpu_pending);
 
     let group = adw::PreferencesGroup::new();
-    group.set_title("Machine");
+    group.set_title("This PC");
     group.add(&info_row("Product", &status.hardware.product_name));
-    group.add(&info_row("Version", &status.hardware.product_version));
-    if let Some(sku) = &status.hardware.product_sku {
-        group.add(&info_row("SKU", sku));
+    if !status.hardware.product_version.trim().is_empty() {
+        group.add(&info_row("Model", &status.hardware.product_version));
     }
-    group.add(&info_row(
-        "Capabilities",
-        &status.capability_count().to_string(),
-    ));
-    group.add(&info_row(
-        "GPU pending reboot",
-        &render_gpu_pending_row(gpu_pending),
-    ));
+    if gpu_pending
+        .as_ref()
+        .ok()
+        .and_then(|pending| pending.as_ref())
+        .is_some()
+    {
+        group.add(&info_row(
+            "Graphics change",
+            &render_gpu_pending_row(gpu_pending),
+        ));
+    }
     page.add(&group);
-
-    let capabilities = adw::PreferencesGroup::new();
-    capabilities.set_title("Capability Health");
-    capabilities.set_description(Some(
-        "Detailed paths and raw probe evidence live in Diagnostics.",
-    ));
-    for capability in &status.capabilities {
-        let row = adw::ActionRow::builder()
-            .title(&capability.label)
-            .subtitle(capability_status_label(capability.status))
-            .selectable(false)
-            .build();
-        row.add_suffix(&super::shared::risk_badge(capability.risk));
-        capabilities.add(&row);
-    }
-    page.add(&capabilities);
 }
 
 fn append_runtime_overview(
@@ -68,13 +54,13 @@ fn append_runtime_overview(
     gpu_pending: &Result<Option<GpuModePending>>,
 ) {
     let group = adw::PreferencesGroup::new();
-    group.set_title("Control Center");
+    group.set_title("At a glance");
 
     match diagnostics {
         Ok(bundle) => {
             let report = &bundle.raw_probe_report;
             group.add(&section_note(
-                "Current daemon readback. Writes count only after kernel read-back agrees.",
+                "Live hardware state. Changes are shown here only after the system confirms them.",
             ));
             let grid = gtk4::Grid::new();
             grid.set_column_spacing(12);
@@ -87,25 +73,14 @@ fn append_runtime_overview(
 
             let tiles = [
                 (
-                    "Platform",
+                    "Power mode",
                     platform_profile(report),
-                    "kernel profile".to_owned(),
+                    format!("Fedora: {}", desktop_power_profile(report)),
                     profile_tone(
                         report
                             .platform_profile
                             .as_ref()
                             .and_then(|p| p.current.as_deref()),
-                    ),
-                ),
-                (
-                    "Fedora power",
-                    desktop_power_profile(report),
-                    "desktop profile".to_owned(),
-                    profile_tone(
-                        report
-                            .power_profiles
-                            .as_ref()
-                            .and_then(|p| p.active_profile.as_deref()),
                     ),
                 ),
                 (
@@ -115,27 +90,21 @@ fn append_runtime_overview(
                     PillTone::Good,
                 ),
                 (
-                    "GPU",
+                    "Cooling",
+                    fan_summary(report),
+                    "Live fan speed".to_owned(),
+                    PillTone::Neutral,
+                ),
+                (
+                    "Graphics",
                     gpu_summary(report, gpu_pending),
                     gpu_detail(gpu_pending),
                     PillTone::Neutral,
                 ),
-                (
-                    "Fans",
-                    fan_summary(report),
-                    "telemetry".to_owned(),
-                    PillTone::Neutral,
-                ),
-                (
-                    "Devices",
-                    devices_summary(report),
-                    "firmware toggles".to_owned(),
-                    PillTone::Warning,
-                ),
             ];
             for (index, (title, value, detail, tone)) in tiles.into_iter().enumerate() {
                 let tile = state_tile(title, &value, &detail, tone);
-                grid.attach(&tile, (index % 3) as i32, (index / 3) as i32, 1, 1);
+                grid.attach(&tile, (index % 2) as i32, (index / 2) as i32, 1, 1);
             }
             group.add(&grid);
         }
@@ -212,34 +181,6 @@ fn battery_summary(report: &CapabilityRegistry) -> String {
     }
 }
 
-fn toggle_state(report: &CapabilityRegistry, name: &str) -> String {
-    report
-        .ideapad_toggles
-        .iter()
-        .find(|toggle| toggle.name == name)
-        .and_then(|toggle| toggle.current_value.as_deref())
-        .map(binary_state)
-        .unwrap_or_else(|| "unavailable".to_owned())
-}
-
-fn led_state(report: &CapabilityRegistry, name: &str) -> String {
-    report
-        .leds
-        .iter()
-        .find(|led| led.name == name)
-        .and_then(|led| led.brightness)
-        .map(|brightness| binary_state(&brightness.to_string()))
-        .unwrap_or_else(|| "unavailable".to_owned())
-}
-
-fn binary_state(value: &str) -> String {
-    match value {
-        "0" => "off".to_owned(),
-        "1" => "on".to_owned(),
-        other => other.to_owned(),
-    }
-}
-
 fn gpu_summary(report: &CapabilityRegistry, pending: &Result<Option<GpuModePending>>) -> String {
     if let Ok(Some(pending)) = pending {
         return legion_common::format_gpu_mode_pending_summary(Some(pending));
@@ -278,14 +219,4 @@ fn fan_summary(report: &CapabilityRegistry) -> String {
     } else {
         fans.join(", ")
     }
-}
-
-fn devices_summary(report: &CapabilityRegistry) -> String {
-    [
-        format!("Fn lock {}", toggle_state(report, "fn_lock")),
-        format!("USB charge {}", toggle_state(report, "usb_charging")),
-        format!("Logo {}", led_state(report, "platform::ylogo")),
-        format!("Camera {}", toggle_state(report, "camera_power")),
-    ]
-    .join("\n")
 }

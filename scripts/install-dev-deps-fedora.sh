@@ -12,6 +12,8 @@ sudo dnf install -y \
   dbus \
   dbus-devel \
   desktop-file-utils \
+  git \
+  gitleaks \
   glib2-devel \
   gtk4-devel \
   ImageMagick \
@@ -20,6 +22,9 @@ sudo dnf install -y \
   pkgconf-pkg-config \
   rust \
   cargo \
+  ShellCheck \
   systemd-devel \
   systemd-rpm-macros \
   xorg-x11-server-Xvfb
+
+cargo install cargo-audit --locked --version 0.22.2

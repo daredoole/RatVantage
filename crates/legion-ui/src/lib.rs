@@ -5,7 +5,7 @@ use anyhow::Result;
 use legion_common::{
     format_fan_curve_snapshot_summary, format_gpu_mode_pending_summary, format_gpu_switch_type,
     format_power_profiles_probe_summary, AutomationRule, AutomationRuleApplyRun,
-    AutomationRuleEvaluation, Capability, CapabilityRegistry, CapabilityStatus,
+    AutomationRuleEvaluation, AutomationRuleKind, Capability, CapabilityRegistry, CapabilityStatus,
     CurveOptimizerWriteState, CustomThermalPlanPreview, DesktopPowerProfileChangeEvent,
     FanCurveSnapshot, GpuModePending, GpuSwitchType, HardwareProfile,
     HardwareProfileApplyActionResult, HardwareProfileApplyPreview, HardwareProfileApplyRun,
@@ -766,7 +766,7 @@ impl UiStatus {
 
     pub fn render_lines(&self) -> Vec<String> {
         vec![
-            "Legion Control status".to_owned(),
+            "RatVantage status".to_owned(),
             format!("vendor={}", self.hardware.vendor),
             format!("product_name={}", self.hardware.product_name),
             format!("product_version={}", self.hardware.product_version),
@@ -810,7 +810,7 @@ pub fn render_overview_lines_with_pending(
     fan_preset_reapply_after_resume: bool,
 ) -> Vec<String> {
     let mut lines = vec![
-        "Legion Control overview".to_owned(),
+        "RatVantage overview".to_owned(),
         format!(
             "platform_profile={}",
             report
@@ -1360,6 +1360,213 @@ mod tests {
     };
 
     #[test]
+    fn platform_profiles_map_to_matching_desktop_profiles() {
+        assert_eq!(
+            desktop_profile_for_platform_profile("low-power"),
+            Some("power-saver")
+        );
+        assert_eq!(
+            desktop_profile_for_platform_profile("balanced"),
+            Some("balanced")
+        );
+        assert_eq!(
+            desktop_profile_for_platform_profile("performance"),
+            Some("performance")
+        );
+        assert_eq!(
+            desktop_profile_for_platform_profile("max-power"),
+            Some("performance")
+        );
+        assert_eq!(desktop_profile_for_platform_profile("custom"), None);
+    }
+
+    #[test]
+    fn repeated_platform_selection_uses_enabled_full_profile_router() {
+        let mut mappings = BTreeMap::new();
+        mappings.insert("performance".to_owned(), "fnq_performance_full".to_owned());
+        let rules = BTreeMap::from([(
+            "fnq_router".to_owned(),
+            AutomationRule {
+                schema_version: 1,
+                label: "Fn+Q router".to_owned(),
+                enabled: true,
+                kind: AutomationRuleKind::PlatformProfileRouter {
+                    mappings,
+                    cooldown_secs: 1,
+                },
+            },
+        )]);
+
+        assert_eq!(
+            mapped_platform_profile(&rules, "performance"),
+            Some("fnq_performance_full")
+        );
+        assert_eq!(mapped_platform_profile(&rules, "balanced"), None);
+    }
+
+    #[test]
+    fn transitioning_profile_updates_firmware_before_desktop() {
+        let events = std::cell::RefCell::new(Vec::new());
+        let result = set_transitioning_platform_profile_with_desktop_sync(
+            "performance",
+            "low-power",
+            "power-saver",
+            |profile| {
+                events.borrow_mut().push(format!("platform:{profile}"));
+                Ok(true)
+            },
+            |profile| {
+                events.borrow_mut().push(format!("desktop:{profile}"));
+                Ok(())
+            },
+            |applied| *applied,
+        )
+        .expect("transition should succeed");
+
+        assert!(result);
+        assert_eq!(
+            events.into_inner(),
+            vec!["platform:performance", "desktop:performance"]
+        );
+    }
+
+    #[test]
+    fn transitioning_profile_restores_firmware_when_desktop_fails() {
+        let events = std::cell::RefCell::new(Vec::new());
+        let error = set_transitioning_platform_profile_with_desktop_sync(
+            "performance",
+            "low-power",
+            "power-saver",
+            |profile| {
+                events.borrow_mut().push(format!("platform:{profile}"));
+                Ok(true)
+            },
+            |profile| {
+                events.borrow_mut().push(format!("desktop:{profile}"));
+                anyhow::bail!("boost write failed")
+            },
+            |applied| *applied,
+        )
+        .expect_err("desktop failure should be reported");
+
+        assert!(error
+            .to_string()
+            .contains("restored firmware profile `low-power`"));
+        assert_eq!(
+            events.into_inner(),
+            vec![
+                "platform:performance",
+                "desktop:performance",
+                "platform:low-power"
+            ]
+        );
+    }
+
+    #[test]
+    fn synchronized_profile_change_updates_desktop_before_platform() {
+        let events = std::cell::RefCell::new(Vec::new());
+        let result = set_platform_profile_with_desktop_sync(
+            "balanced",
+            Some("power-saver"),
+            |profile| {
+                events.borrow_mut().push(format!("desktop:{profile}"));
+                Ok(())
+            },
+            |profile| {
+                events.borrow_mut().push(format!("platform:{profile}"));
+                Ok(true)
+            },
+            |applied| *applied,
+        )
+        .expect("synchronized profile change should succeed");
+
+        assert!(result);
+        assert_eq!(
+            events.into_inner(),
+            vec!["desktop:balanced", "platform:balanced"]
+        );
+    }
+
+    #[test]
+    fn synchronized_profile_change_restores_desktop_when_platform_is_blocked() {
+        let events = std::cell::RefCell::new(Vec::new());
+        let result = set_platform_profile_with_desktop_sync(
+            "balanced",
+            Some("power-saver"),
+            |profile| {
+                events.borrow_mut().push(format!("desktop:{profile}"));
+                Ok(())
+            },
+            |profile| {
+                events.borrow_mut().push(format!("platform:{profile}"));
+                Ok(false)
+            },
+            |applied| *applied,
+        )
+        .expect("desktop rollback should succeed");
+
+        assert!(!result);
+        assert_eq!(
+            events.into_inner(),
+            vec![
+                "desktop:balanced",
+                "platform:balanced",
+                "desktop:power-saver"
+            ]
+        );
+    }
+
+    #[test]
+    fn synchronized_profile_change_restores_desktop_after_desktop_write_error() {
+        let events = std::cell::RefCell::new(Vec::new());
+        let error = set_platform_profile_with_desktop_sync(
+            "balanced",
+            Some("power-saver"),
+            |profile| {
+                events.borrow_mut().push(format!("desktop:{profile}"));
+                if profile == "balanced" {
+                    anyhow::bail!("read-back mismatch");
+                }
+                Ok(())
+            },
+            |profile| {
+                events.borrow_mut().push(format!("platform:{profile}"));
+                Ok(true)
+            },
+            |applied| *applied,
+        )
+        .expect_err("desktop write error should stop the platform write");
+
+        assert!(error.to_string().contains("read-back mismatch"));
+        assert_eq!(
+            events.into_inner(),
+            vec!["desktop:balanced", "desktop:power-saver"]
+        );
+    }
+
+    #[test]
+    fn custom_platform_profile_does_not_change_desktop_profile() {
+        let events = std::cell::RefCell::new(Vec::new());
+        let result = set_platform_profile_with_desktop_sync(
+            "custom",
+            Some("power-saver"),
+            |profile| {
+                events.borrow_mut().push(format!("desktop:{profile}"));
+                Ok(())
+            },
+            |profile| {
+                events.borrow_mut().push(format!("platform:{profile}"));
+                Ok(true)
+            },
+            |applied| *applied,
+        )
+        .expect("custom platform profile should still be applied");
+
+        assert!(result);
+        assert_eq!(events.into_inner(), vec!["platform:custom"]);
+    }
+
+    #[test]
     fn render_overview_lines_include_fan_preset_fields() {
         use std::collections::BTreeMap;
 
@@ -1877,6 +2084,8 @@ mod tests {
             choices: vec!["balanced".to_owned(), "performance".to_owned()],
             path: "/tmp/platform_profile".to_owned(),
             choices_path: "/tmp/platform_profile_choices".to_owned(),
+            custom_profile_path: None,
+            custom_profile_driver: None,
         });
         report.battery_charge_type = Some(legion_common::BatteryChargeTypeCapability {
             current: Some(charge_type.to_owned()),
@@ -2093,6 +2302,67 @@ impl LegionControlClient {
         self.call_json_arg("SetPlatformProfile", requested)
     }
 
+    pub fn set_platform_and_desktop_profile(
+        &self,
+        requested: &str,
+    ) -> Result<legion_common::WriteExecutionResult> {
+        let diagnostics = self.diagnostics_bundle()?;
+        let current_platform_profile = diagnostics
+            .raw_probe_report
+            .platform_profile
+            .as_ref()
+            .and_then(|profile| profile.current.clone());
+        let mapped_profile_id = (current_platform_profile.as_deref() == Some(requested))
+            .then(|| mapped_platform_profile(&diagnostics.automation_rules, requested))
+            .flatten();
+        let current_desktop_profile = diagnostics
+            .raw_probe_report
+            .power_profiles
+            .as_ref()
+            .map(|_| ppd_active_profile())
+            .transpose()?;
+
+        if let (Some(previous_platform_profile), Some(previous_desktop_profile)) = (
+            current_platform_profile.as_deref(),
+            current_desktop_profile.as_deref(),
+        ) {
+            if previous_platform_profile != requested
+                && desktop_profile_for_platform_profile(requested).is_some()
+            {
+                return set_transitioning_platform_profile_with_desktop_sync(
+                    requested,
+                    previous_platform_profile,
+                    previous_desktop_profile,
+                    |profile| self.set_platform_profile(profile),
+                    set_ppd_active_profile,
+                    |result| result.applied,
+                );
+            }
+        }
+
+        set_platform_profile_with_desktop_sync(
+            requested,
+            current_desktop_profile.as_deref(),
+            set_ppd_active_profile,
+            |profile| {
+                if let Some(profile_id) = mapped_profile_id {
+                    let run = self.apply_hardware_profile(profile_id)?;
+                    return run
+                        .results
+                        .last()
+                        .map(|action| action.result.clone())
+                        .ok_or_else(|| {
+                            anyhow::anyhow!(
+                                "mapped hardware profile `{profile_id}` returned no action results"
+                            )
+                        });
+                }
+                self.set_platform_profile(profile)
+            },
+            |result| result.applied,
+        )
+    }
+
     pub fn plan_battery_charge_type_write(&self, requested: &str) -> Result<WriteDryRunPlan> {
         self.call_json_arg("PlanBatteryChargeTypeWrite", requested)
     }
@@ -2195,6 +2465,14 @@ impl LegionControlClient {
 
     pub fn set_cpu_epp(&self, requested: &str) -> Result<WriteExecutionResult> {
         self.call_json_arg("SetCpuEpp", requested)
+    }
+
+    pub fn plan_cpu_max_frequency_write(&self, requested_khz: i64) -> Result<WriteDryRunPlan> {
+        self.call_json_i64_arg("PlanCpuMaxFrequencyWrite", requested_khz)
+    }
+
+    pub fn set_cpu_max_frequency(&self, requested_khz: i64) -> Result<WriteExecutionResult> {
+        self.call_json_i64_arg("SetCpuMaxFrequency", requested_khz)
     }
 
     pub fn plan_cpu_boost_write(&self, requested: &str) -> Result<WriteDryRunPlan> {
@@ -2505,6 +2783,15 @@ impl LegionControlClient {
         Ok(serde_json::from_str(&payload)?)
     }
 
+    fn call_json_i64_arg<T>(&self, method: &str, arg: i64) -> Result<T>
+    where
+        T: DeserializeOwned,
+    {
+        let proxy = Proxy::new(&self.connection, DBUS_INTERFACE, DBUS_PATH, DBUS_INTERFACE)?;
+        let payload: String = proxy.call(method, &(arg,))?;
+        Ok(serde_json::from_str(&payload)?)
+    }
+
     fn call_json_two_args<T>(&self, method: &str, first: &str, second: &str) -> Result<T>
     where
         T: DeserializeOwned,
@@ -2521,6 +2808,131 @@ const PPD_INTERFACE: &str = "org.freedesktop.UPower.PowerProfiles";
 
 /// Standard desktop power profile choices exposed by power-profiles-daemon.
 pub const PPD_PROFILE_CHOICES: &[&str] = &["power-saver", "balanced", "performance"];
+
+/// Map a firmware platform profile to its matching desktop power profile.
+/// Custom firmware modes intentionally leave the desktop profile unchanged.
+pub fn desktop_profile_for_platform_profile(profile: &str) -> Option<&'static str> {
+    match profile {
+        "low-power" => Some("power-saver"),
+        "balanced" => Some("balanced"),
+        "performance" | "max-power" => Some("performance"),
+        _ => None,
+    }
+}
+
+fn mapped_platform_profile<'a>(
+    rules: &'a BTreeMap<String, AutomationRule>,
+    requested: &str,
+) -> Option<&'a str> {
+    rules.values().find_map(|rule| {
+        if !rule.enabled {
+            return None;
+        }
+        let AutomationRuleKind::PlatformProfileRouter { mappings, .. } = &rule.kind else {
+            return None;
+        };
+        mappings.get(requested).map(String::as_str)
+    })
+}
+
+fn set_platform_profile_with_desktop_sync<T>(
+    requested: &str,
+    current_desktop_profile: Option<&str>,
+    mut set_desktop_profile: impl FnMut(&str) -> Result<()>,
+    set_platform_profile: impl FnOnce(&str) -> Result<T>,
+    platform_profile_applied: impl FnOnce(&T) -> bool,
+) -> Result<T> {
+    let Some(requested_desktop_profile) = desktop_profile_for_platform_profile(requested) else {
+        return set_platform_profile(requested);
+    };
+    let Some(previous_desktop_profile) = current_desktop_profile else {
+        return set_platform_profile(requested);
+    };
+
+    let desktop_profile_changed = previous_desktop_profile != requested_desktop_profile;
+    if desktop_profile_changed {
+        if let Err(desktop_error) = set_desktop_profile(requested_desktop_profile) {
+            if let Err(rollback_error) = set_desktop_profile(previous_desktop_profile) {
+                return Err(anyhow::anyhow!(
+                    "desktop profile change failed: {desktop_error}; rollback to `{previous_desktop_profile}` also failed: {rollback_error}"
+                ));
+            }
+            return Err(desktop_error);
+        }
+    }
+
+    match set_platform_profile(requested) {
+        Ok(result) if platform_profile_applied(&result) => Ok(result),
+        Ok(result) => {
+            if desktop_profile_changed {
+                set_desktop_profile(previous_desktop_profile).map_err(|rollback_error| {
+                    anyhow::anyhow!(
+                        "platform profile was not applied and desktop profile rollback to `{previous_desktop_profile}` failed: {rollback_error}"
+                    )
+                })?;
+            }
+            Ok(result)
+        }
+        Err(platform_error) => {
+            if desktop_profile_changed {
+                if let Err(rollback_error) = set_desktop_profile(previous_desktop_profile) {
+                    return Err(anyhow::anyhow!(
+                        "platform profile change failed: {platform_error}; desktop profile rollback to `{previous_desktop_profile}` also failed: {rollback_error}"
+                    ));
+                }
+            }
+            Err(platform_error)
+        }
+    }
+}
+
+fn set_transitioning_platform_profile_with_desktop_sync<T>(
+    requested: &str,
+    previous_platform_profile: &str,
+    previous_desktop_profile: &str,
+    mut set_platform_profile: impl FnMut(&str) -> Result<T>,
+    mut set_desktop_profile: impl FnMut(&str) -> Result<()>,
+    platform_profile_applied: impl Fn(&T) -> bool,
+) -> Result<T> {
+    let requested_desktop_profile = desktop_profile_for_platform_profile(requested)
+        .ok_or_else(|| anyhow::anyhow!("firmware profile `{requested}` has no desktop mapping"))?;
+    let result = set_platform_profile(requested)?;
+    if !platform_profile_applied(&result) {
+        return Ok(result);
+    }
+    if previous_desktop_profile == requested_desktop_profile {
+        return Ok(result);
+    }
+
+    if let Err(desktop_error) = set_desktop_profile(requested_desktop_profile) {
+        match set_platform_profile(previous_platform_profile) {
+            Ok(rollback) if platform_profile_applied(&rollback) => {
+                return Err(anyhow::anyhow!(
+                    "desktop profile change failed after firmware transition: {desktop_error}; restored firmware profile `{previous_platform_profile}`"
+                ));
+            }
+            Ok(_) => {
+                return Err(anyhow::anyhow!(
+                    "desktop profile change failed after firmware transition: {desktop_error}; firmware rollback to `{previous_platform_profile}` was not applied"
+                ));
+            }
+            Err(rollback_error) => {
+                return Err(anyhow::anyhow!(
+                    "desktop profile change failed after firmware transition: {desktop_error}; firmware rollback to `{previous_platform_profile}` also failed: {rollback_error}"
+                ));
+            }
+        }
+    }
+
+    Ok(result)
+}
+
+/// Read the active power-profiles-daemon profile from the system bus.
+pub fn ppd_active_profile() -> Result<String> {
+    let connection = Connection::system()?;
+    let proxy = Proxy::new(&connection, PPD_BUS_NAME, PPD_OBJECT_PATH, PPD_INTERFACE)?;
+    Ok(proxy.get_property("ActiveProfile")?)
+}
 
 /// Set the active power-profiles-daemon profile directly on the system bus.
 /// PPD allows regular session users to change the active profile; no daemon proxy needed.
@@ -2541,5 +2953,11 @@ pub fn set_ppd_active_profile(profile: &str) -> Result<()> {
             Value::from(profile.to_owned()),
         ),
     )?;
+    let active_profile = ppd_active_profile()?;
+    if active_profile != profile {
+        anyhow::bail!(
+            "power-profiles-daemon read-back mismatch: requested `{profile}`, current `{active_profile}`"
+        );
+    }
     Ok(())
 }

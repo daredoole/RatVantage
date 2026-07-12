@@ -4,9 +4,9 @@ use legion_control_daemon::{
     session_connection, spawn_amd_gpu_power_profile_sync_observer, spawn_automation_observer,
     spawn_fan_preset_resume_observer, system_connection, CommandOpenRgbKeyboardRgbSdkWriter,
     LegionControl, PkcheckAuthorizer, SysfsBatteryChargeTypeWriter, SysfsCpuEppWriter,
-    SysfsCpuGovernorWriter, SysfsIdeapadToggleWriter, SysfsLedStateWriter,
-    SysfsPlatformProfileWriter, WriteAccessPolicy, DBUS_INTERFACE, DBUS_PATH, DEFAULT_STATE_PATH,
-    GATED_WRITE_METHODS, READ_ONLY_METHODS,
+    SysfsCpuGovernorWriter, SysfsCpuMaxFrequencyWriter, SysfsIdeapadToggleWriter,
+    SysfsLedStateWriter, SysfsPlatformProfileWriter, WriteAccessPolicy, DBUS_INTERFACE, DBUS_PATH,
+    DEFAULT_STATE_PATH, GATED_WRITE_METHODS, READ_ONLY_METHODS,
 };
 use legion_probe::{probe, ProbeOptions};
 
@@ -61,6 +61,9 @@ struct Args {
     enable_cpu_epp_write: bool,
 
     #[arg(long)]
+    enable_cpu_max_frequency_write: bool,
+
+    #[arg(long)]
     enable_firmware_attribute_write: bool,
 
     #[arg(long)]
@@ -71,6 +74,9 @@ struct Args {
 
     #[arg(long)]
     enable_amd_gpu_dpm_write: bool,
+
+    #[arg(long)]
+    enable_wifi_power_save_write: bool,
 
     #[arg(long)]
     enable_curve_optimizer_write: bool,
@@ -107,10 +113,12 @@ fn main() -> Result<()> {
         gpu_mode_enabled: args.enable_gpu_mode_write,
         cpu_governor_enabled: args.enable_cpu_governor_write,
         cpu_epp_enabled: args.enable_cpu_epp_write,
+        cpu_max_frequency_enabled: args.enable_cpu_max_frequency_write,
         firmware_attribute_enabled: args.enable_firmware_attribute_write,
         cpu_boost_enabled: args.enable_cpu_boost_write,
         conservation_mode_enabled: args.enable_conservation_mode_write,
         amd_gpu_dpm_enabled: args.enable_amd_gpu_dpm_write,
+        wifi_power_save_enabled: args.enable_wifi_power_save_write,
         curve_optimizer_enabled: args.enable_curve_optimizer_write,
         openrgb_access_setup_enabled: args.enable_openrgb_access_setup,
         hardware_profile_apply_enabled: args.enable_hardware_profile_apply,
@@ -126,7 +134,8 @@ fn main() -> Result<()> {
         std::sync::Arc::new(SysfsIdeapadToggleWriter),
         std::sync::Arc::new(SysfsCpuGovernorWriter),
         std::sync::Arc::new(SysfsCpuEppWriter),
-    );
+    )
+    .with_cpu_max_frequency_writer(std::sync::Arc::new(SysfsCpuMaxFrequencyWriter));
     if let Some(helper_path) = args.openrgb_sdk_helper.clone() {
         service = service.with_openrgb_keyboard_rgb_sdk_writer(std::sync::Arc::new(
             CommandOpenRgbKeyboardRgbSdkWriter::new(helper_path),
@@ -180,6 +189,9 @@ fn main() -> Result<()> {
             if args.enable_cpu_epp_write {
                 methods.push("SetCpuEpp");
             }
+            if args.enable_cpu_max_frequency_write {
+                methods.push("SetCpuMaxFrequency");
+            }
             if args.enable_firmware_attribute_write {
                 methods.push("SetFirmwareAttribute");
             }
@@ -191,6 +203,9 @@ fn main() -> Result<()> {
             }
             if args.enable_amd_gpu_dpm_write {
                 methods.push("SetAmdGpuDpmForceLevel");
+            }
+            if args.enable_wifi_power_save_write {
+                methods.push("SetWifiPowerSave");
             }
             if args.enable_curve_optimizer_write {
                 methods.push("SetCurveOptimizerAllCore");

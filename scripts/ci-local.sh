@@ -37,6 +37,21 @@ command -v appstreamcli >/dev/null 2>&1 || {
   exit 1
 }
 
+command -v cargo-audit >/dev/null 2>&1 || {
+  echo "missing cargo-audit; run: scripts/install-dev-deps-fedora.sh" >&2
+  exit 1
+}
+
+command -v gitleaks >/dev/null 2>&1 || {
+  echo "missing gitleaks; run: scripts/install-dev-deps-fedora.sh" >&2
+  exit 1
+}
+
+command -v shellcheck >/dev/null 2>&1 || {
+  echo "missing shellcheck; run: scripts/install-dev-deps-fedora.sh" >&2
+  exit 1
+}
+
 rust_minor="$(rustc --version | awk '{print $2}' | cut -d. -f2)"
 if (( rust_minor < 92 )); then
   echo "rustc 1.92+ required for gtk-rs; current: $(rustc --version)" >&2
@@ -47,6 +62,9 @@ fi
 need_pkg_config gtk4 "scripts/install-dev-deps-fedora.sh"
 need_pkg_config libadwaita-1 "scripts/install-dev-deps-fedora.sh"
 
+gitleaks git --no-banner --redact
+cargo audit --deny warnings
+rg --files -g '*.sh' -0 | xargs -0 shellcheck -S warning
 cargo fmt --all --check
 python3 -m py_compile tests/ui/*.py
 python3 tests/ui/test_semantic_diff_classifier.py

@@ -10,6 +10,7 @@ Use this checklist before tagging or publishing a RatVantage package.
 - [ ] `scripts/qa-gui.sh`
 - [ ] `scripts/ci-local.sh`
 - [ ] `scripts/validate-release-packaging.sh`
+- [ ] `scripts/audit-public-release.sh`
 - [ ] Review `target/qa-report/review.md`
 - [ ] Confirm visual, semantic UI, and D-Bus baselines are unchanged or intentionally reviewed.
 
@@ -30,6 +31,7 @@ Use this checklist before tagging or publishing a RatVantage package.
 - [ ] README/install instructions match the package being released.
 - [ ] OpenRGB helper instructions are present only for already implemented helper paths.
 - [ ] Known release risks are recorded.
+- [ ] Public feature claims match the safe parity contract in `lenovo-legion-toolkit-parity-audit.md`.
 
 ## Release Mechanics
 

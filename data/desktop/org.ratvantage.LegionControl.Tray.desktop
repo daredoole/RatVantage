@@ -1,12 +1,12 @@
 [Desktop Entry]
 Type=Application
-Name=Legion Control Tray
-Comment=Read-only Legion Control tray/status helper
+Name=RatVantage Tray
+Comment=Hardware status and quick controls
 Exec=legion-control-tray
 Icon=org.ratvantage.LegionControl
 Terminal=false
 Categories=Settings;HardwareSettings;
-Keywords=RatVantage;Legion;Lenovo;Fan;Battery;Power;Hardware;Tray;
+Keywords=RatVantage;Laptop;Fan;Battery;Power;Hardware;Tray;
 NoDisplay=false
 Hidden=false
 X-GNOME-Autostart-enabled=true

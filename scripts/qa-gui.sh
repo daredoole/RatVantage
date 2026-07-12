@@ -30,6 +30,15 @@ while (($#)); do
   esac
 done
 
+rm -rf -- \
+  "$report_dir/screenshots" \
+  "$report_dir/visual-diffs" \
+  "$report_dir/widget-trees" \
+  "$report_dir/semantic-ui" \
+  "$report_dir/dbus" \
+  "$report_dir/logs" \
+  "$report_dir/screenshot-capture"
+rm -f -- "$report_dir/review.md" "$report_dir/results.json" "$report_dir/summary.md"
 mkdir -p "$report_dir"/{screenshots,visual-diffs,widget-trees,semantic-ui,dbus,logs}
 
 for tool in cargo dbus-daemon gdbus import python3; do
@@ -46,14 +55,23 @@ PY
 
 atspi_pid=""
 atspi_registry_pid=""
-cleanup_atspi() {
+stages_json=""
+stop_atspi() {
   if [[ -n "$atspi_registry_pid" ]]; then
     kill "$atspi_registry_pid" 2>/dev/null || true
     wait "$atspi_registry_pid" 2>/dev/null || true
+    atspi_registry_pid=""
   fi
   if [[ -n "$atspi_pid" ]]; then
     kill "$atspi_pid" 2>/dev/null || true
     wait "$atspi_pid" 2>/dev/null || true
+    atspi_pid=""
+  fi
+}
+cleanup_atspi() {
+  stop_atspi
+  if [[ -n "$stages_json" ]]; then
+    rm -f -- "$stages_json"
   fi
 }
 trap cleanup_atspi EXIT
@@ -71,8 +89,9 @@ for candidate in /usr/libexec/at-spi2-registryd /usr/lib/at-spi2-core/at-spi2-re
     break
   fi
 done
-if [[ -n "$atspi_launcher" ]]; then
-  "$atspi_launcher" --launch-immediately >"$report_dir/logs/at-spi-bus.log" 2>&1 &
+start_atspi() {
+  [[ -n "$atspi_launcher" ]] || return 0
+  "$atspi_launcher" --launch-immediately >>"$report_dir/logs/at-spi-bus.log" 2>&1 &
   atspi_pid="$!"
   sleep 0.5
   AT_SPI_BUS_ADDRESS="$(
@@ -84,14 +103,15 @@ if [[ -n "$atspi_launcher" ]]; then
   )"
   export AT_SPI_BUS_ADDRESS
   if [[ -n "$atspi_registry" ]]; then
-    AT_SPI_BUS_ADDRESS="$AT_SPI_BUS_ADDRESS" "$atspi_registry" --use-gnome-session >"$report_dir/logs/at-spi-registry.log" 2>&1 &
+    AT_SPI_BUS_ADDRESS="$AT_SPI_BUS_ADDRESS" "$atspi_registry" --use-gnome-session >>"$report_dir/logs/at-spi-registry.log" 2>&1 &
     atspi_registry_pid="$!"
     sleep 0.5
   fi
-fi
+}
+start_atspi
 
 overall=0
-stages_json="$report_dir/logs/stages.jsonl"
+stages_json="$(mktemp -t ratvantage-qa-stages.XXXXXX)"
 : >"$stages_json"
 
 run_stage() {
@@ -119,10 +139,13 @@ cargo build -q -p legion-control-daemon
 cargo build -q -p legion-control-ui --features gtk-ui
 
 run_stage "GTK UI state" python3 "$repo_root/tests/ui/test_gtk_accessibility.py" --report-dir "$report_dir" --sysfs-root "$sysfs_root"
+stop_atspi
+unset AT_SPI_BUS_ADDRESS
 run_stage "Screenshot capture" python3 "$repo_root/tests/ui/capture_tab_screenshots.py" --report-dir "$report_dir" --sysfs-root "$sysfs_root"
 run_stage "Visual regression" python3 "$repo_root/tests/ui/compare_screenshots.py" --report-dir "$report_dir"
 run_stage "Semantic UI capture" python3 "$repo_root/tests/ui/capture_semantic_ui.py" --report-dir "$report_dir"
 run_stage "Semantic UI snapshot" python3 "$repo_root/tests/ui/compare_semantic_ui.py" --report-dir "$report_dir"
+start_atspi
 run_stage "Widget tree snapshot" python3 "$repo_root/tests/ui/dump_widget_tree.py" --report-dir "$report_dir" --sysfs-root "$sysfs_root"
 run_stage "D-Bus contract" "$repo_root/scripts/capture-dbus-contract.sh" --output-dir "$report_dir/dbus" --sysfs-root "$sysfs_root"
 

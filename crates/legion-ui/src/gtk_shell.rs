@@ -84,7 +84,7 @@ pub fn run(
         root.set_hexpand(true);
         root.set_vexpand(true);
         let header = adw::HeaderBar::new();
-        let title = adw::WindowTitle::new("RatVantage", "Legion hardware control");
+        let title = adw::WindowTitle::new("RatVantage", "Hardware control");
         header.set_title_widget(Some(&title));
         root.append(&header);
         let bus_address = Rc::clone(&bus_address);
@@ -263,7 +263,7 @@ fn build_sidebar(
     brand_name.set_xalign(0.0);
     brand_name.add_css_class("rv-brand-name");
     brand_text.append(&brand_name);
-    let brand_sub = gtk4::Label::new(Some(hardware_product.unwrap_or("Legion hardware")));
+    let brand_sub = gtk4::Label::new(Some(hardware_product.unwrap_or("Supported hardware")));
     brand_sub.set_xalign(0.0);
     brand_sub.set_max_width_chars(18);
     brand_sub.set_ellipsize(gtk4::pango::EllipsizeMode::End);
@@ -293,7 +293,14 @@ fn build_sidebar(
 
     let buttons: Vec<gtk4::Button> = nav_tabs
         .iter()
-        .map(|(id, glyph, label)| {
+        .enumerate()
+        .map(|(index, (id, glyph, label))| {
+            if index == 0 || index == 6 {
+                let section = gtk4::Label::new(Some(if index == 0 { "CONTROL" } else { "TOOLS" }));
+                section.set_xalign(0.0);
+                section.add_css_class("rv-nav-section");
+                nav_box.append(&section);
+            }
             let row = gtk4::Box::new(gtk4::Orientation::Horizontal, 6);
             row.set_hexpand(true);
 
@@ -351,10 +358,7 @@ fn build_sidebar(
     footer.set_margin_end(12);
     footer.set_margin_bottom(12);
 
-    for text in &[
-        "org.ratvantage.LegionControl1",
-        "system bus · polkit active",
-    ] {
+    for text in &["Hardware changes use system approval", "Read-back verified"] {
         let lbl = gtk4::Label::new(Some(text));
         lbl.set_xalign(0.0);
         lbl.add_css_class("rv-side-foot-label");

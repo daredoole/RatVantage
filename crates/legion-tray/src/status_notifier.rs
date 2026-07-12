@@ -468,7 +468,7 @@ fn execute_tray_action(
     };
 
     match action {
-        TrayAction::SetPlatformProfile(profile) => client.set_platform_profile(profile),
+        TrayAction::SetPlatformProfile(profile) => client.set_platform_and_desktop_profile(profile),
         TrayAction::SetBatteryChargeType(charge_type) => {
             client.set_battery_charge_type(charge_type)
         }
@@ -788,7 +788,7 @@ fn send_desktop_notification(notification: &DesktopNotification, replaces_id: u3
         .call(
             "Notify",
             &(
-                "Legion Control",
+                "RatVantage",
                 replaces_id,
                 ICON_NAME,
                 notification.title.as_str(),
@@ -978,7 +978,7 @@ mod tests {
 
         assert_eq!(tray.id(), TRAY_ID);
         assert_eq!(tray.category(), Category::Hardware);
-        assert_eq!(tray.title(), "Legion Control");
+        assert_eq!(tray.title(), "RatVantage");
         assert_eq!(tray.status(), Status::Active);
         assert_eq!(tray.icon_name(), ICON_NAME);
         assert_eq!(
@@ -1773,6 +1773,8 @@ mod tests {
                 ],
                 path: "/tmp/platform_profile".to_owned(),
                 choices_path: "/tmp/platform_profile_choices".to_owned(),
+                custom_profile_path: None,
+                custom_profile_driver: None,
             }),
             battery_charge_type: Some(legion_common::BatteryChargeTypeCapability {
                 current: Some("Standard".to_owned()),
@@ -1936,6 +1938,8 @@ mod tests {
                 ],
                 path: "/tmp/platform_profile".to_owned(),
                 choices_path: "/tmp/platform_profile_choices".to_owned(),
+                custom_profile_path: None,
+                custom_profile_driver: None,
             }),
             battery_charge_type: Some(legion_common::BatteryChargeTypeCapability {
                 current: Some(charge_type.to_owned()),

@@ -30,10 +30,12 @@ polkit.addRule(function(action, subject) {
     "org.ratvantage.LegionControl1.set-gpu-mode",
     "org.ratvantage.LegionControl1.set-cpu-governor",
     "org.ratvantage.LegionControl1.set-cpu-epp",
+    "org.ratvantage.LegionControl1.set-cpu-max-frequency",
     "org.ratvantage.LegionControl1.set-firmware-attribute",
     "org.ratvantage.LegionControl1.set-cpu-boost",
     "org.ratvantage.LegionControl1.set-conservation-mode",
     "org.ratvantage.LegionControl1.set-amd-gpu-dpm-force-level",
+    "org.ratvantage.LegionControl1.set-wifi-power-save",
     "org.ratvantage.LegionControl1.set-curve-optimizer",
     "org.ratvantage.LegionControl1.setup-openrgb-access",
     "org.ratvantage.LegionControl1.apply-hardware-profile"

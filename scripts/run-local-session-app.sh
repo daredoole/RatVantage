@@ -30,7 +30,6 @@ Options:
 EOF
 }
 
-repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 frontend=""
 sysfs_root="/"
 gsk_renderer=""

@@ -151,8 +151,18 @@ def expected_plan_methods(control_id):
         "keyboard_rgb": ["SetKeyboardRgb", "SetOpenRgbKeyboardRgbSdk"],
         "curve_optimizer_all_core": ["SetCurveOptimizerAllCore"],
         "gpu_mode": ["SetGpuMode"],
-        "hardware_profile": ["SetCpuGovernor", "SetCpuEpp", "SetCpuBoost"],
-        "hardware_profile_trigger": ["SetCpuGovernor", "SetCpuEpp", "SetCpuBoost"],
+        "hardware_profile": [
+            "SetCpuGovernor",
+            "SetCpuEpp",
+            "SetCpuMaxFrequency",
+            "SetCpuBoost",
+        ],
+        "hardware_profile_trigger": [
+            "SetCpuGovernor",
+            "SetCpuEpp",
+            "SetCpuMaxFrequency",
+            "SetCpuBoost",
+        ],
     }.get(control_id, [])
 
 def expected_plan_polkit_actions(control_id):
@@ -162,11 +172,13 @@ def expected_plan_polkit_actions(control_id):
         "conservation_mode": ["org.ratvantage.LegionControl1.set-conservation-mode"],
         "cpu_governor": ["org.ratvantage.LegionControl1.set-cpu-governor"],
         "cpu_epp": ["org.ratvantage.LegionControl1.set-cpu-epp"],
+        "cpu_max_khz": ["org.ratvantage.LegionControl1.set-cpu-max-frequency"],
         "cpu_boost": ["org.ratvantage.LegionControl1.set-cpu-boost"],
         "fan_mode": ["org.ratvantage.LegionControl1.set-ideapad-toggle"],
         "amd_gpu_dpm_force_level": [
             "org.ratvantage.LegionControl1.set-amd-gpu-dpm-force-level"
         ],
+        "wifi_power_save": ["org.ratvantage.LegionControl1.set-wifi-power-save"],
         "keyboard_rgb": ["org.ratvantage.LegionControl1.set-keyboard-rgb"],
         "curve_optimizer_all_core": [
             "org.ratvantage.LegionControl1.set-curve-optimizer"
@@ -175,11 +187,13 @@ def expected_plan_polkit_actions(control_id):
         "hardware_profile": [
             "org.ratvantage.LegionControl1.set-cpu-governor",
             "org.ratvantage.LegionControl1.set-cpu-epp",
+            "org.ratvantage.LegionControl1.set-cpu-max-frequency",
             "org.ratvantage.LegionControl1.set-cpu-boost",
         ],
         "hardware_profile_trigger": [
             "org.ratvantage.LegionControl1.set-cpu-governor",
             "org.ratvantage.LegionControl1.set-cpu-epp",
+            "org.ratvantage.LegionControl1.set-cpu-max-frequency",
             "org.ratvantage.LegionControl1.set-cpu-boost",
         ],
     }.get(control_id, [])
@@ -197,8 +211,8 @@ def expected_plan_readback_required(control_id):
         "keyboard_rgb": [True],
         "curve_optimizer_all_core": [False],
         "gpu_mode": [True],
-        "hardware_profile": [True, True, True],
-        "hardware_profile_trigger": [True, True, True],
+        "hardware_profile": [True, True, True, True],
+        "hardware_profile_trigger": [True, True, True, True],
     }.get(control_id, [])
 
 def expected_negative_evidence(control_id):
