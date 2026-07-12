@@ -13,7 +13,7 @@ jobs:
   rust:
     name: Rust
     runs-on: ubuntu-latest
-    container: fedora:44@sha256:5ccaa26fd655e39c390c2a3c840884e13621fe46b40c6341f2c6a89f2acccb4b
+    container: registry.fedoraproject.org/fedora:44@sha256:5ccaa26fd655e39c390c2a3c840884e13621fe46b40c6341f2c6a89f2acccb4b
 
     steps:
       - name: Install system test dependencies
