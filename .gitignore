@@ -12,6 +12,3 @@ __pycache__/
 
 # OpenRGB may create this in the repo root during local RGB sessions
 /OpenRGB.json
-
-# Claude Code user-local settings (project settings.json is committed; local overrides are not)
-.claude/settings.local.json
