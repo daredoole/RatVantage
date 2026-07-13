@@ -123,4 +123,7 @@ read-only by default and does not enable hardware writes.
 
 ## License
 
-MIT. See [LICENSE](LICENSE).
+Current development and releases after `v0.1.0` are licensed under
+GPL-3.0-or-later. Distributed modified versions and derivative works must provide
+their corresponding source under the GPL. The previously published `v0.1.0`
+release remains available under MIT. See [LICENSE](LICENSE).

@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.1.1 - 2026-07-12
+
+- Relicense current development and future releases from MIT to GPL-3.0-or-later.
+- Preserve the already-published `v0.1.0` release under its original MIT license.
+
 ## 0.1.0 - 2026-07-12
 
 - Working Rust workspace with probe, common model, daemon, GTK UI, tray helper, and test-support crates.

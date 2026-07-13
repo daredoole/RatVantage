@@ -83,7 +83,7 @@ Use standard Fedora macros:
 %global crate_name legion-control
 
 Name:           legion-control
-Version:        0.1.0
+Version:        0.1.1
 Release:        1%{?dist}
 Summary:        Fedora-native control dashboard for Lenovo Legion laptops
 License:        GPL-3.0-or-later
