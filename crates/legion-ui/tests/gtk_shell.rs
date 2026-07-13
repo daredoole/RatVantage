@@ -258,6 +258,12 @@ fn dashboard_pages_render_quick_apply_and_gpu_controls() {
 
     let profile_text = collect_widget_text(&profiles.clone().upcast());
     assert!(profile_text.iter().any(|text| text == "Power Profiles"));
+    assert!(profile_text
+        .iter()
+        .any(|text| text == "Display Refresh Automation"));
+    assert!(profile_text
+        .iter()
+        .any(|text| { text == "Defaults to the highest rate at the current resolution" }));
     assert!(profile_text.iter().any(|text| text == "Platform Control"));
     assert!(profile_text.iter().any(|text| text == "Requested profile"));
     assert!(profile_text.iter().any(|text| text == "Apply profile"));

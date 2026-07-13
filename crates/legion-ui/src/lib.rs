@@ -15,6 +15,7 @@ use legion_common::{
 use serde::{de::DeserializeOwned, Serialize};
 use zbus::blocking::{Connection, ConnectionBuilder, Proxy};
 
+pub mod display_refresh;
 #[cfg(feature = "gtk-ui")]
 pub mod gtk_shell;
 #[cfg(feature = "gtk-ui")]

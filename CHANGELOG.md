@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.1.3 - 2026-07-13
+
+- Add KDE user-session refresh-rate automation with highest-rate defaults for balanced, performance, and max-power platform profiles.
+- Preserve the active resolution, limit changes to the internal panel, verify KScreen read-back, and roll back mismatches.
+- Add dashboard overrides for keeping, maximizing, minimizing, or selecting a detected fixed refresh rate per platform profile.
+
 ## 0.1.2 - 2026-07-13
 
 - Prevent the dashboard from aborting when saved platform-profile or desktop-power-profile automation rules are present.

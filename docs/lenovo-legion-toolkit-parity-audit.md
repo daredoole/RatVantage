@@ -55,7 +55,7 @@ This is safe Linux behavioral parity, not byte-for-byte parity with a Windows ve
 | White keyboard backlight | Energy driver or Lenovo lighting | LED sysfs/OpenRGB only if detected | Partial. Avoid assuming LLT levels map to Linux brightness values. |
 | Instant boot / flip to start | capability/feature-flag/UEFI | No stable Linux control | Missing. Requires UEFI or platform attribute evidence. |
 | Battery night charge | `IOCTL_ENERGY_BATTERY_NIGHT_CHARGE` | No equivalent | Missing. |
-| HDR, refresh rate, resolution, DPI | Windows display APIs | Desktop/display-server concern | Out of scope for daemon hardware control. |
+| HDR, refresh rate, resolution, DPI | Windows display APIs | KDE KScreen refresh automation for the internal panel; resolution/DPI/HDR remain desktop-owned | Partial. Refresh changes run unprivileged in the tray with read-back and rollback; the root daemon remains out of scope. |
 | GPU overclock / NVIDIA telemetry | LLT NVAPI/GameZone support checks | AMD DPM force level, no NVIDIA OC | Mostly missing by design; do not add unsafe OC paths. |
 
 ## Likely corrections
