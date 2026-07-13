@@ -2,6 +2,10 @@
 
 Thanks for helping make RatVantage safer and more useful on Linux.
 
+By submitting a contribution, you agree to license it under
+GPL-3.0-or-later, the project license in [LICENSE](LICENSE). Contributions must
+be your own work or code you have the right to submit under compatible terms.
+
 ## Development Setup
 
 RatVantage is a Rust workspace. Fedora is the primary development target.

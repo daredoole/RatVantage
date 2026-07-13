@@ -1,8 +1,8 @@
 Name:           legion-control
-Version:        0.1.0
+Version:        0.1.1
 Release:        1%{?dist}
 Summary:        Safe laptop hardware control for Fedora
-License:        MIT
+License:        GPL-3.0-or-later
 URL:            https://github.com/daredoole/RatVantage
 Source0:        %{name}-%{version}.tar.gz
 
