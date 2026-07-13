@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.1.4 - 2026-07-13
+
+- Fix display refresh preference rows so clicking opens the available choices instead of scrolling the page.
+- Use native Adwaita combo rows and cover all five profile selectors with GTK regression tests.
+
 ## 0.1.3 - 2026-07-13
 
 - Add KDE user-session refresh-rate automation with highest-rate defaults for balanced, performance, and max-power platform profiles.
