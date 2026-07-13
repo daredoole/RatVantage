@@ -1,5 +1,5 @@
 Name:           legion-control
-Version:        0.1.1
+Version:        0.1.2
 Release:        1%{?dist}
 Summary:        Safe laptop hardware control for Fedora
 License:        GPL-3.0-or-later
