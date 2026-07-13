@@ -264,6 +264,11 @@ fn dashboard_pages_render_quick_apply_and_gpu_controls() {
     assert!(profile_text
         .iter()
         .any(|text| { text == "Defaults to the highest rate at the current resolution" }));
+    let refresh_choosers = find_all_combo_rows(&profiles.clone().upcast());
+    assert_eq!(refresh_choosers.len(), 5);
+    for chooser in refresh_choosers {
+        assert!(chooser.model().is_some_and(|model| model.n_items() >= 3));
+    }
     assert!(profile_text.iter().any(|text| text == "Platform Control"));
     assert!(profile_text.iter().any(|text| text == "Requested profile"));
     assert!(profile_text.iter().any(|text| text == "Apply profile"));
@@ -2341,6 +2346,23 @@ fn find_dropdown(root: &gtk4::Widget) -> Option<gtk4::DropDown> {
         child = current.next_sibling();
     }
     None
+}
+
+fn find_all_combo_rows(root: &gtk4::Widget) -> Vec<adw::ComboRow> {
+    let mut rows = Vec::new();
+    find_all_combo_rows_recursive(root, &mut rows);
+    rows
+}
+
+fn find_all_combo_rows_recursive(widget: &gtk4::Widget, rows: &mut Vec<adw::ComboRow>) {
+    if let Ok(row) = widget.clone().downcast::<adw::ComboRow>() {
+        rows.push(row);
+    }
+    let mut child = widget.first_child();
+    while let Some(current) = child {
+        find_all_combo_rows_recursive(&current, rows);
+        child = current.next_sibling();
+    }
 }
 
 fn find_drawing_area(root: &gtk4::Widget) -> Option<gtk4::DrawingArea> {

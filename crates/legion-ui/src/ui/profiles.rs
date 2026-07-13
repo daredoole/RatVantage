@@ -872,12 +872,8 @@ fn build_display_refresh_automation_controls() -> adw::PreferencesGroup {
         "custom",
     ] {
         let selected = automation.preference_for(platform_profile);
-        let dropdown = gtk4::DropDown::from_strings(&label_refs);
-        if let Some(index) = preferences.iter().position(|value| value == &selected) {
-            dropdown.set_selected(index as u32);
-        }
-        dropdown.set_valign(gtk4::Align::Center);
-        let row = adw::ActionRow::builder()
+        let model = gtk4::StringList::new(&label_refs);
+        let row = adw::ComboRow::builder()
             .title(platform_profile)
             .subtitle(
                 if matches!(platform_profile, "balanced" | "performance" | "max-power") {
@@ -886,11 +882,13 @@ fn build_display_refresh_automation_controls() -> adw::PreferencesGroup {
                     "Defaults to keeping the current refresh rate"
                 },
             )
-            .selectable(false)
+            .model(&model)
             .build();
-        row.add_suffix(&dropdown);
+        if let Some(index) = preferences.iter().position(|value| value == &selected) {
+            row.set_selected(index as u32);
+        }
         group.add(&row);
-        controls.push((platform_profile.to_owned(), dropdown));
+        controls.push((platform_profile.to_owned(), row));
     }
 
     let save_row = adw::ActionRow::builder()
@@ -910,8 +908,8 @@ fn build_display_refresh_automation_controls() -> adw::PreferencesGroup {
     group.add(&feedback);
     save.connect_clicked(move |button| {
         let mut updated = DisplayRefreshAutomation::default();
-        for (platform_profile, dropdown) in &controls {
-            let selected = dropdown.selected() as usize;
+        for (platform_profile, row) in &controls {
+            let selected = row.selected() as usize;
             let Some(preference) = preferences.get(selected).cloned() else {
                 feedback.set_title("Save error");
                 feedback.set_subtitle("Selected refresh preference is unavailable.");
