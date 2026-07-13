@@ -65,6 +65,7 @@ workflow are designed but not implemented yet. See the
 - Supported LEDs, firmware attributes, and platform toggles
 - Evidence-backed OpenRGB keyboard control
 - Hardware profiles and automation rules
+- KDE internal-panel refresh automation with per-platform-profile overrides
 - Fan and temperature telemetry
 - Diagnostics, drift detection, rollback, and recovery feedback
 

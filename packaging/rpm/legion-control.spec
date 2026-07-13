@@ -1,5 +1,5 @@
 Name:           legion-control
-Version:        0.1.2
+Version:        0.1.3
 Release:        1%{?dist}
 Summary:        Safe laptop hardware control for Fedora
 License:        GPL-3.0-or-later
@@ -57,11 +57,13 @@ authorization; no setuid helper is packaged.
 %package tray
 Summary:        Tray status and quick-control helper for RatVantage
 Requires:       %{name}-daemon%{?_isa} = %{version}-%{release}
+Recommends:     libkscreen
 
 %description tray
 The RatVantage tray helper provides a StatusNotifier tray item, guarded quick
-controls, status, and tooltip output. It starts with the desktop session; GNOME
-requires an AppIndicator/KStatusNotifier extension to display tray icons.
+controls, status, tooltip output, and KDE internal-panel refresh automation. It
+starts with the desktop session; GNOME requires an AppIndicator/KStatusNotifier
+extension to display tray icons.
 
 %prep
 %autosetup

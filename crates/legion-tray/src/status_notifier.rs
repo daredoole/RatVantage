@@ -14,6 +14,10 @@ use ksni::blocking::TrayMethods;
 use ksni::menu::StandardItem;
 use ksni::{Category, MenuItem, Status, ToolTip, Tray};
 use legion_common::WriteExecutionResult;
+#[cfg(not(test))]
+use legion_control_ui::display_refresh::{
+    apply_display_refresh_preference, refresh_preference_for_platform, DisplayRefreshPreference,
+};
 use legion_control_ui::{
     runtime_refresh_notice, FanCurveDriftReport, HardwareProfileDriftReport, LegionControlClient,
     RuntimeSnapshot,
@@ -45,6 +49,8 @@ pub struct StatusNotifierTray {
     last_snapshot: Option<RuntimeSnapshot>,
     last_notification_ids: HashMap<&'static str, u32>,
     last_notification_times: HashMap<&'static str, Instant>,
+    #[cfg(not(test))]
+    last_display_refresh_request: Option<(String, DisplayRefreshPreference)>,
     state_stale: bool,
     state_loader: StateLoader,
     action_executor: ActionExecutor,
@@ -101,6 +107,8 @@ impl StatusNotifierTray {
             last_snapshot: None,
             last_notification_ids: HashMap::new(),
             last_notification_times: HashMap::new(),
+            #[cfg(not(test))]
+            last_display_refresh_request: None,
             state_stale: false,
             state_loader,
             action_executor,
@@ -123,6 +131,8 @@ impl StatusNotifierTray {
                 let recovered_from_error = self.last_error.is_some();
                 let state_notifications =
                     state_change_notifications(self.last_snapshot.as_ref(), &state.snapshot);
+                #[cfg(not(test))]
+                let display_refresh_result = self.reconcile_display_refresh(&state.snapshot);
                 self.last_notice = runtime_refresh_notice(
                     self.last_snapshot.as_ref(),
                     &state.snapshot,
@@ -136,6 +146,18 @@ impl StatusNotifierTray {
                 self.last_write_status = None;
                 self.state_stale = false;
                 let mut notification_errors = Vec::new();
+                #[cfg(not(test))]
+                match display_refresh_result {
+                    Ok(Some(message)) => {
+                        self.last_notice = Some(format!("Display refresh applied: {message}"));
+                    }
+                    Ok(None) => {}
+                    Err(error) => {
+                        let message = format!("display refresh automation failed: {error}");
+                        eprintln!("legion-control-tray: {message}");
+                        notification_errors.push(message);
+                    }
+                }
                 let notification_now = Instant::now();
                 for notification in state_notifications {
                     let replaces_id = reusable_notification_id(
@@ -166,6 +188,26 @@ impl StatusNotifierTray {
                 self.state_stale = true;
             }
         }
+    }
+
+    #[cfg(not(test))]
+    fn reconcile_display_refresh(&mut self, snapshot: &RuntimeSnapshot) -> Result<Option<String>> {
+        let Some(platform_profile) = snapshot
+            .diagnostics
+            .raw_probe_report
+            .platform_profile
+            .as_ref()
+            .and_then(|profile| profile.current.as_deref())
+        else {
+            return Ok(None);
+        };
+        let preference = refresh_preference_for_platform(platform_profile)?;
+        let request = (platform_profile.to_owned(), preference.clone());
+        if self.last_display_refresh_request.as_ref() == Some(&request) {
+            return Ok(None);
+        }
+        self.last_display_refresh_request = Some(request);
+        apply_display_refresh_preference(&preference)
     }
 
     fn open_dashboard(&mut self) {

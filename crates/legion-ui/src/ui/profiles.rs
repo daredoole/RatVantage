@@ -1,3 +1,7 @@
+use crate::display_refresh::{
+    available_internal_refresh_rates, load_display_refresh_automation,
+    save_display_refresh_automation, DisplayRefreshAutomation, DisplayRefreshPreference,
+};
 use crate::{
     capability_status_label, set_ppd_active_profile, DiagnosticsBundle, PPD_PROFILE_CHOICES,
 };
@@ -91,6 +95,8 @@ fn append_profiles(page: &adw::PreferencesPage, bundle: &DiagnosticsBundle) {
             page.add(&build_ppd_write_controls(pp.active_profile.as_deref()));
         }
     }
+
+    page.add(&build_display_refresh_automation_controls());
 
     // CPU frequency scaling / amd-pstate — read-only display.
     if let Some(cpu) = &bundle.raw_probe_report.cpu_power {
@@ -826,6 +832,110 @@ fn string_dropdown(values: &[String], selected: Option<&str>) -> gtk4::DropDown 
         dropdown.set_selected(position as u32);
     }
     dropdown
+}
+
+fn build_display_refresh_automation_controls() -> adw::PreferencesGroup {
+    let group = adw::PreferencesGroup::new();
+    group.set_title("Display Refresh Automation");
+    group.add(&section_note(
+        "The unprivileged tray applies these preferences to the internal panel through KDE KScreen when the platform profile changes. Resolution is preserved; external displays are untouched.",
+    ));
+
+    let (automation, load_error) = match load_display_refresh_automation() {
+        Ok(automation) => (automation, None),
+        Err(error) => (DisplayRefreshAutomation::default(), Some(error.to_string())),
+    };
+    if let Some(error) = load_error {
+        group.add(&info_row("Configuration warning", &error));
+    }
+
+    let mut preferences = vec![
+        DisplayRefreshPreference::Keep,
+        DisplayRefreshPreference::Highest,
+        DisplayRefreshPreference::Lowest,
+    ];
+    if let Ok(rates) = available_internal_refresh_rates() {
+        preferences.extend(rates.into_iter().map(DisplayRefreshPreference::Hertz));
+    }
+    let labels = preferences
+        .iter()
+        .map(DisplayRefreshPreference::label)
+        .collect::<Vec<_>>();
+    let label_refs = labels.iter().map(String::as_str).collect::<Vec<_>>();
+
+    let mut controls = Vec::new();
+    for platform_profile in [
+        "balanced",
+        "performance",
+        "max-power",
+        "low-power",
+        "custom",
+    ] {
+        let selected = automation.preference_for(platform_profile);
+        let dropdown = gtk4::DropDown::from_strings(&label_refs);
+        if let Some(index) = preferences.iter().position(|value| value == &selected) {
+            dropdown.set_selected(index as u32);
+        }
+        dropdown.set_valign(gtk4::Align::Center);
+        let row = adw::ActionRow::builder()
+            .title(platform_profile)
+            .subtitle(
+                if matches!(platform_profile, "balanced" | "performance" | "max-power") {
+                    "Defaults to the highest rate at the current resolution"
+                } else {
+                    "Defaults to keeping the current refresh rate"
+                },
+            )
+            .selectable(false)
+            .build();
+        row.add_suffix(&dropdown);
+        group.add(&row);
+        controls.push((platform_profile.to_owned(), dropdown));
+    }
+
+    let save_row = adw::ActionRow::builder()
+        .title("Save display automation")
+        .subtitle("The tray picks up changes on its next status refresh")
+        .selectable(false)
+        .build();
+    let save = gtk4::Button::builder()
+        .label("Save")
+        .css_classes(["suggested-action", "pill"])
+        .valign(gtk4::Align::Center)
+        .build();
+    save_row.add_suffix(&save);
+    group.add(&save_row);
+
+    let feedback = write_feedback_row("Display refresh automation");
+    group.add(&feedback);
+    save.connect_clicked(move |button| {
+        let mut updated = DisplayRefreshAutomation::default();
+        for (platform_profile, dropdown) in &controls {
+            let selected = dropdown.selected() as usize;
+            let Some(preference) = preferences.get(selected).cloned() else {
+                feedback.set_title("Save error");
+                feedback.set_subtitle("Selected refresh preference is unavailable.");
+                return;
+            };
+            updated
+                .platform_profiles
+                .insert(platform_profile.clone(), preference);
+        }
+        button.set_sensitive(false);
+        match save_display_refresh_automation(&updated) {
+            Ok(()) => {
+                feedback.set_title("Saved");
+                feedback.set_subtitle("Display refresh automation updated.");
+            }
+            Err(error) => {
+                feedback.set_title("Save error");
+                feedback.set_subtitle(&format!("Failed: {error}"));
+            }
+        }
+        button.set_sensitive(true);
+    });
+
+    group
 }
 
 fn build_hardware_profile_apply_controls(bundle: &DiagnosticsBundle) -> adw::PreferencesGroup {
