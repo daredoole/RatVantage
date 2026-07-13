@@ -2658,6 +2658,144 @@ fn append_recent_desktop_power_profile_changes(
     page.add(&group);
 }
 
+fn append_saved_rule_actions(
+    group: &adw::PreferencesGroup,
+    expander: &adw::ExpanderRow,
+    rule_id: &str,
+) -> gtk4::Button {
+    let action_row = adw::ActionRow::builder()
+        .title("Actions")
+        .subtitle("Preview, test run, save edits, or delete this rule")
+        .selectable(false)
+        .build();
+    let preview = gtk4::Button::builder()
+        .label("Preview")
+        .css_classes(["flat"])
+        .valign(gtk4::Align::Center)
+        .build();
+    let run = gtk4::Button::builder()
+        .label("Test run")
+        .css_classes(["flat"])
+        .valign(gtk4::Align::Center)
+        .build();
+    let save = gtk4::Button::builder()
+        .label("Save")
+        .css_classes(["suggested-action", "pill"])
+        .valign(gtk4::Align::Center)
+        .build();
+    let delete = gtk4::Button::builder()
+        .label("Delete")
+        .css_classes(["destructive-action", "pill"])
+        .valign(gtk4::Align::Center)
+        .build();
+    action_row.add_suffix(&preview);
+    action_row.add_suffix(&run);
+    action_row.add_suffix(&save);
+    action_row.add_suffix(&delete);
+    expander.add_row(&action_row);
+    group.add(expander);
+
+    let rule_id_for_preview = rule_id.to_owned();
+    preview.connect_clicked(move |button| {
+        button.set_sensitive(false);
+        let button_for_recv = button.clone();
+        let rule_id_for_call = rule_id_for_preview.clone();
+        spawn_dbus_call(
+            move || {
+                make_client().and_then(|client| client.automation_rule_preview(&rule_id_for_call))
+            },
+            move |result| {
+                button_for_recv.set_sensitive(true);
+                match result {
+                    Ok(evaluation) => {
+                        store_write_feedback_state(
+                            "Automation rule",
+                            if evaluation.matched {
+                                "Matched"
+                            } else {
+                                "Skipped"
+                            },
+                            &evaluation.reason,
+                        );
+                        let _ = request_dashboard_refresh();
+                    }
+                    Err(error) => store_write_feedback_state(
+                        "Automation rule",
+                        "Preview error",
+                        &format!("Failed: {error}"),
+                    ),
+                }
+            },
+        );
+    });
+
+    let rule_id_for_run = rule_id.to_owned();
+    run.connect_clicked(move |button| {
+        button.set_sensitive(false);
+        let button_for_recv = button.clone();
+        let rule_id_for_call = rule_id_for_run.clone();
+        spawn_dbus_call(
+            move || {
+                make_client().and_then(|client| client.apply_automation_rule(&rule_id_for_call))
+            },
+            move |result| {
+                button_for_recv.set_sensitive(true);
+                match result {
+                    Ok(run) => {
+                        store_write_feedback_state(
+                            "Automation rule",
+                            if run.profile_run.is_some() {
+                                "Test run complete"
+                            } else {
+                                "Test run skipped"
+                            },
+                            &run.evaluation.reason,
+                        );
+                        let _ = request_dashboard_refresh();
+                    }
+                    Err(error) => store_write_feedback_state(
+                        "Automation rule",
+                        "Test run error",
+                        &format!("Failed: {error}"),
+                    ),
+                }
+            },
+        );
+    });
+
+    let rule_id_for_delete = rule_id.to_owned();
+    delete.connect_clicked(move |button| {
+        button.set_sensitive(false);
+        let button_for_recv = button.clone();
+        let rule_id_for_call = rule_id_for_delete.clone();
+        spawn_dbus_call(
+            move || {
+                make_client().and_then(|client| client.remove_automation_rule(&rule_id_for_call))
+            },
+            move |result| {
+                button_for_recv.set_sensitive(true);
+                match result {
+                    Ok(_) => {
+                        store_write_feedback_state(
+                            "Automation rule",
+                            "Deleted",
+                            "Rule removed from the daemon.",
+                        );
+                        let _ = request_dashboard_refresh();
+                    }
+                    Err(error) => store_write_feedback_state(
+                        "Automation rule",
+                        "Delete error",
+                        &format!("Failed: {error}"),
+                    ),
+                }
+            },
+        );
+    });
+
+    save
+}
+
 fn append_persisted_automation_rules(page: &adw::PreferencesPage, bundle: &DiagnosticsBundle) {
     let group = adw::PreferencesGroup::new();
     group.set_title("Saved Automation Rules");
@@ -3526,6 +3664,240 @@ fn append_persisted_automation_rules(page: &adw::PreferencesPage, bundle: &Diagn
                                     &format!("Failed: {error}"),
                                 );
                             }
+                        }
+                    },
+                );
+            });
+
+            continue;
+        }
+
+        if let AutomationRuleKind::PlatformProfileRouter {
+            mappings,
+            cooldown_secs,
+        } = &rule.kind
+        {
+            expander.add_row(
+                &adw::ActionRow::builder()
+                    .title("Rule type")
+                    .subtitle("Platform profile router")
+                    .selectable(false)
+                    .build(),
+            );
+
+            let mut mapping_controls = Vec::new();
+            for (platform_profile, profile_id) in mappings {
+                let profile = profile_dropdown(&profile_ids, profile_id);
+                profile.set_valign(gtk4::Align::Center);
+                profile.set_sensitive(!profile_ids.is_empty());
+                let row = adw::ActionRow::builder()
+                    .title(format!("{platform_profile} profile"))
+                    .subtitle(profile_id.as_str())
+                    .selectable(false)
+                    .build();
+                row.add_suffix(&profile);
+                expander.add_row(&row);
+                mapping_controls.push((platform_profile.clone(), profile));
+            }
+
+            let cooldown = gtk4::SpinButton::with_range(0.0, 86_400.0, 60.0);
+            cooldown.set_value(*cooldown_secs as f64);
+            cooldown.set_digits(0);
+            cooldown.set_valign(gtk4::Align::Center);
+            let cooldown_row = adw::ActionRow::builder()
+                .title("Cooldown seconds")
+                .subtitle("Minimum interval between routed profile applications")
+                .selectable(false)
+                .build();
+            cooldown_row.add_suffix(&cooldown);
+            expander.add_row(&cooldown_row);
+
+            let save = append_saved_rule_actions(&group, &expander, rule_id);
+            let rule_id_for_save = rule_id.clone();
+            let label_for_save = rule.label.clone();
+            let profile_ids_for_save = profile_ids.clone();
+            save.connect_clicked(move |button| {
+                let mut mappings = std::collections::BTreeMap::new();
+                for (platform_profile, profile) in &mapping_controls {
+                    let Some(profile_id) = selected_dropdown_value(profile) else {
+                        store_write_feedback_state(
+                            "Automation rule",
+                            "Save error",
+                            "Failed: select a profile for every platform mode",
+                        );
+                        return;
+                    };
+                    if !profile_ids_for_save.contains(&profile_id) {
+                        store_write_feedback_state(
+                            "Automation rule",
+                            "Save error",
+                            "Failed: a selected profile no longer exists",
+                        );
+                        return;
+                    }
+                    mappings.insert(platform_profile.clone(), profile_id);
+                }
+                let enabled_value = enabled.is_active();
+                let cooldown_value = cooldown.value_as_int();
+                button.set_sensitive(false);
+                let button_for_recv = button.clone();
+                let rule_id_for_call = rule_id_for_save.clone();
+                let label_for_call = label_for_save.clone();
+                spawn_dbus_call(
+                    move || {
+                        let rule_json = serde_json::json!({
+                            "schema_version": 1,
+                            "label": label_for_call,
+                            "enabled": enabled_value,
+                            "kind": "platform_profile_router",
+                            "mappings": mappings,
+                            "cooldown_secs": cooldown_value
+                        })
+                        .to_string();
+                        make_client().and_then(|client| {
+                            client.set_automation_rule(&rule_id_for_call, &rule_json)
+                        })
+                    },
+                    move |result| {
+                        button_for_recv.set_sensitive(true);
+                        match result {
+                            Ok(_) => {
+                                store_write_feedback_state(
+                                    "Automation rule",
+                                    "Saved",
+                                    "Platform profile router edits saved to the daemon.",
+                                );
+                                let _ = request_dashboard_refresh();
+                            }
+                            Err(error) => store_write_feedback_state(
+                                "Automation rule",
+                                "Save error",
+                                &format!("Failed: {error}"),
+                            ),
+                        }
+                    },
+                );
+            });
+
+            continue;
+        }
+
+        if let AutomationRuleKind::DesktopPowerProfile {
+            desktop_profile,
+            profile_id,
+            cooldown_secs,
+        } = &rule.kind
+        {
+            expander.add_row(
+                &adw::ActionRow::builder()
+                    .title("Rule type")
+                    .subtitle("Desktop power profile router")
+                    .selectable(false)
+                    .build(),
+            );
+
+            let desktop_profile_entry = gtk4::Entry::new();
+            desktop_profile_entry.set_text(desktop_profile);
+            desktop_profile_entry.set_valign(gtk4::Align::Center);
+            let desktop_row = adw::ActionRow::builder()
+                .title("Desktop profile")
+                .subtitle("PowerProfiles name reported by KDE or GNOME")
+                .selectable(false)
+                .build();
+            desktop_row.add_suffix(&desktop_profile_entry);
+            expander.add_row(&desktop_row);
+
+            let profile = profile_dropdown(&profile_ids, profile_id);
+            profile.set_valign(gtk4::Align::Center);
+            profile.set_sensitive(!profile_ids.is_empty());
+            let profile_row = adw::ActionRow::builder()
+                .title("Hardware profile")
+                .subtitle(profile_id.as_str())
+                .selectable(false)
+                .build();
+            profile_row.add_suffix(&profile);
+            expander.add_row(&profile_row);
+
+            let cooldown = gtk4::SpinButton::with_range(0.0, 86_400.0, 60.0);
+            cooldown.set_value(*cooldown_secs as f64);
+            cooldown.set_digits(0);
+            cooldown.set_valign(gtk4::Align::Center);
+            let cooldown_row = adw::ActionRow::builder()
+                .title("Cooldown seconds")
+                .subtitle("Minimum interval between desktop-triggered applications")
+                .selectable(false)
+                .build();
+            cooldown_row.add_suffix(&cooldown);
+            expander.add_row(&cooldown_row);
+
+            let save = append_saved_rule_actions(&group, &expander, rule_id);
+            let rule_id_for_save = rule_id.clone();
+            let label_for_save = rule.label.clone();
+            let profile_ids_for_save = profile_ids.clone();
+            save.connect_clicked(move |button| {
+                let desktop_profile = desktop_profile_entry.text().trim().to_owned();
+                if desktop_profile.is_empty() {
+                    store_write_feedback_state(
+                        "Automation rule",
+                        "Save error",
+                        "Failed: desktop profile cannot be empty",
+                    );
+                    return;
+                }
+                let Some(profile_id) = selected_dropdown_value(&profile) else {
+                    store_write_feedback_state(
+                        "Automation rule",
+                        "Save error",
+                        "Failed: select a hardware profile",
+                    );
+                    return;
+                };
+                if !profile_ids_for_save.contains(&profile_id) {
+                    store_write_feedback_state(
+                        "Automation rule",
+                        "Save error",
+                        "Failed: selected profile no longer exists",
+                    );
+                    return;
+                }
+                let enabled_value = enabled.is_active();
+                let cooldown_value = cooldown.value_as_int();
+                button.set_sensitive(false);
+                let button_for_recv = button.clone();
+                let rule_id_for_call = rule_id_for_save.clone();
+                let label_for_call = label_for_save.clone();
+                spawn_dbus_call(
+                    move || {
+                        let rule_json = serde_json::json!({
+                            "schema_version": 1,
+                            "label": label_for_call,
+                            "enabled": enabled_value,
+                            "kind": "desktop_power_profile",
+                            "desktop_profile": desktop_profile,
+                            "profile_id": profile_id,
+                            "cooldown_secs": cooldown_value
+                        })
+                        .to_string();
+                        make_client().and_then(|client| {
+                            client.set_automation_rule(&rule_id_for_call, &rule_json)
+                        })
+                    },
+                    move |result| {
+                        button_for_recv.set_sensitive(true);
+                        match result {
+                            Ok(_) => {
+                                store_write_feedback_state(
+                                    "Automation rule",
+                                    "Saved",
+                                    "Desktop power profile edits saved to the daemon.",
+                                );
+                                let _ = request_dashboard_refresh();
+                            }
+                            Err(error) => store_write_feedback_state(
+                                "Automation rule",
+                                "Save error",
+                                &format!("Failed: {error}"),
+                            ),
                         }
                     },
                 );

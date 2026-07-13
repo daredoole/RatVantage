@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.1.2 - 2026-07-13
+
+- Prevent the dashboard from aborting when saved platform-profile or desktop-power-profile automation rules are present.
+- Render and edit every supported saved automation rule kind.
+- Cover every automation rule kind in the installed-dashboard GTK regression test.
+
 ## 0.1.1 - 2026-07-12
 
 - Relicense current development and future releases from MIT to GPL-3.0-or-later.

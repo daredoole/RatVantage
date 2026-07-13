@@ -587,7 +587,7 @@ fn dashboard_pages_render_quick_apply_and_gpu_controls() {
 }
 
 #[gtk4::test]
-fn automations_page_renders_ac_profile_router_rules() {
+fn automations_page_renders_every_saved_rule_kind() {
     init_gtk();
 
     let mut diagnostics = sample_diagnostics();
@@ -672,6 +672,52 @@ fn automations_page_renders_ac_profile_router_rules() {
             },
         },
     );
+    diagnostics.automation_rules.insert(
+        "platform_router".to_owned(),
+        AutomationRule {
+            schema_version: 1,
+            label: "Fn+Q profile router".to_owned(),
+            enabled: true,
+            kind: AutomationRuleKind::PlatformProfileRouter {
+                mappings: [
+                    ("balanced".to_owned(), "plugged_in".to_owned()),
+                    ("performance".to_owned(), "plugged_in".to_owned()),
+                    ("low-power".to_owned(), "on_battery".to_owned()),
+                ]
+                .into_iter()
+                .collect(),
+                cooldown_secs: 60,
+            },
+        },
+    );
+    diagnostics.automation_rules.insert(
+        "desktop_power_saver".to_owned(),
+        AutomationRule {
+            schema_version: 1,
+            label: "Desktop power saver".to_owned(),
+            enabled: true,
+            kind: AutomationRuleKind::DesktopPowerProfile {
+                desktop_profile: "power-saver".to_owned(),
+                profile_id: "on_battery".to_owned(),
+                cooldown_secs: 120,
+            },
+        },
+    );
+    diagnostics.automation_rules.insert(
+        "fast_charge_threshold".to_owned(),
+        AutomationRule {
+            schema_version: 1,
+            label: "Fast charge below 70%".to_owned(),
+            enabled: true,
+            kind: AutomationRuleKind::FastChargeUntilThreshold {
+                threshold_percent: 70,
+                fast_charge_profile_id: "plugged_in".to_owned(),
+                protect_profile_id: "on_battery".to_owned(),
+                require_ac: true,
+                cooldown_secs: 120,
+            },
+        },
+    );
     diagnostics
         .recent_platform_profile_changes
         .push(PlatformProfileChangeEvent {
@@ -698,6 +744,11 @@ fn automations_page_renders_ac_profile_router_rules() {
     assert!(text
         .iter()
         .any(|value| value == "Desktop power profile changed"));
+    assert!(text.iter().any(|value| value == "Platform profile router"));
+    assert!(text
+        .iter()
+        .any(|value| value == "Desktop power profile router"));
+    assert!(text.iter().any(|value| value == "Battery threshold"));
     assert!(text
         .iter()
         .any(|value| value == "Periodic idle correction starter"));
